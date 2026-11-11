@@ -1,9 +1,20 @@
-// Placeholder UI. The real toolbar (address bar, back/forward) comes in later M1 steps.
+import { TOOLBAR_HEIGHT } from './layout';
+
+// The toolbar strip. The address bar and back/forward buttons come next.
 export function App() {
   return (
-    <div>
-      <h1>AI Browser</h1>
-      <p>Secure bridge connected (platform: {window.browserApi.platform})</p>
+    <div
+      style={{
+        height: TOOLBAR_HEIGHT,
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 12px',
+        background: '#f1f3f4',
+        borderBottom: '1px solid #d0d0d0',
+      }}
+    >
+      Toolbar (platform: {window.browserApi.platform})
     </div>
   );
 }
