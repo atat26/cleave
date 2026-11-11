@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { FRAME_COLOR } from './layout';
+import { registerLlm } from './llm';
 import { createTabs } from './tabs';
 import { loadUi } from './ui';
 
@@ -37,6 +38,11 @@ const createWindow = () => {
 
   // Load the app's UI page (the toolbar).
   void loadUi(mainWindow.webContents);
+
+  // The AI provider connection (key storage, model choice, network calls).
+  registerLlm(mainWindow).catch((error) =>
+    console.error('Failed to start the AI connection:', error),
+  );
 
   // The sidebar and the web page tabs.
   createTabs(mainWindow).catch((error) =>

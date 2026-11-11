@@ -4,7 +4,7 @@
 - [x] M2: Multiple tabs plus a vertical tab list
 - [x] M3: Spaces as Chrome-style tab groups (create, rename, recolour, collapse, ungroup, delete, move tabs), a Lead overview tab per Space, collapsible/draggable vertical sidebar, saved to disk
 - [x] M4a: Connected frame: left sidebar, top address strip, right rail with resizable panels, bottom chat (compact or expanded) around a rounded page card; everything slides together and is draggable; view modes (page only / both / chat only); context-aware rail (Skills with chat, Extensions with web, Settings always) and left panel (tabs with the page, chat list in chat-only); conversation list (new, switch, rename, delete) saved to its own file
-- [ ] M4b: Settings panel, encrypted API key storage (Electron safeStorage, main process only), OpenRouter provider adapter with streaming parser, model picker, test connection
+- [x] M4b: Settings panel, encrypted API key storage (Electron safeStorage, main process only), OpenRouter provider adapter with streaming parser, model picker, test connection
 - [ ] M4c: Chat itself: streaming replies with a Stop button, per-conversation history, `@` links to Spaces and tabs (titles and addresses only until M5), error messages
 - [ ] M5: Read-only agent ("summarize these tabs"), no clicking yet
 - [ ] M6: Acting agent with confirmations, step limit, stop button
