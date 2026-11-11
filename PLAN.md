@@ -10,6 +10,7 @@
 - [x] M5: Read-only agent: linked pages can be read by the assistant (read_page / list_linked_tabs tools, linked tabs only, 8 reads and 6 rounds per reply, pages treated as untrusted data, no acting or file tools), each read shown in the chat; models record whether they support tools and images, with a note when a model cannot read pages; dev startup watchdog reloads a page that fails to start
 - [ ] M5b: Web search tool for the agent (OpenRouter built-in web search first; optional own-key providers or a user-supplied SearXNG address later; results treated as untrusted)
 - [x] M6 timeline: a reply keeps thinking, tool calls and answer text in the order they happened; tool calls expand to show exactly what was called
+- [x] M6a: look_at_page, a read-only tool that lists a linked page's buttons, links, fields and headings as numbered controls (names cleaned, typed text never shown, password/card fields marked sensitive, capped in size)
 - [ ] M6: Acting agent with confirmations, step limit, stop button
 - [ ] M7: Module system plus builder agent
 - [ ] M8: Daily-driver polish
