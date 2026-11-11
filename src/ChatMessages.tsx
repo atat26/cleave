@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { MentionToken } from './LinkChips';
 import { errorMessage } from './openrouter';
-import type { ChatMessage, SpaceInfo, TabInfo } from './types';
+import type { ChatMessage, MessagePart, SpaceInfo, TabInfo } from './types';
 
 // ---- Getting a chat's messages ----------------------------------------------------
 
@@ -148,26 +148,44 @@ function FailedReply({
   );
 }
 
-// The model's thinking, in a block you can open. While the model is still thinking
-// (before its answer starts) it is labelled "Thinking…", and the text shows live
-// if you open it; afterwards it is the "Thought process". It is collapsed by
-// default. Models that do not show their thinking get only a plain "Thinking…"
-// while they work. (Some models, such as Claude, send a short summary of their
-// thinking rather than all of it.)
-function ThinkingBlock({ message }: { message: ChatMessage }) {
+const blockButton: CSSProperties = {
+  ...smallButton,
+  padding: '2px 0',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: 12,
+  textAlign: 'left',
+};
+
+const blockBody: CSSProperties = {
+  margin: '4px 0',
+  padding: '4px 10px',
+  borderLeft: '3px solid #dadce0',
+  color: '#5f6368',
+  fontSize: 13,
+  lineHeight: 1.45,
+  maxHeight: 240,
+  overflowY: 'auto',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+  userSelect: 'text',
+};
+
+// One stretch of the model's thinking, in a block you can open. While the model
+// is still thinking (this is the newest part of a reply being written) it is
+// labelled "Thinking…" and shows its text live if open; afterwards it is the
+// "Thought process". It is collapsed by default. (Some models, such as Claude,
+// send a short summary of their thinking rather than all of it.)
+function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const thinking = message.status === 'streaming' && message.content === '';
 
   // While it streams, an open block follows the newest thinking.
   useLayoutEffect(() => {
     const el = box.current;
-    if (open && thinking && el) el.scrollTop = el.scrollHeight;
-  }, [open, thinking, message.reasoning]);
-
-  if (message.reasoning === '') {
-    return thinking ? <div style={muted}>Thinking…</div> : null;
-  }
+    if (open && live && el) el.scrollTop = el.scrollHeight;
+  }, [open, live, text]);
 
   return (
     <div style={{ margin: '0 0 6px' }}>
@@ -176,36 +194,82 @@ function ThinkingBlock({ message }: { message: ChatMessage }) {
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         title={open ? 'Hide the thinking' : 'Show the thinking'}
+        style={blockButton}
+      >
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+        {live ? 'Thinking…' : 'Thought process'}
+      </button>
+      {open && (
+        <div ref={box} style={blockBody}>
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The arguments a tool was called with, exactly as the model wrote them, laid out
+// readably when they are valid JSON.
+function showArguments(raw: string): string {
+  if (raw.trim() === '') return '(none)';
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+type ToolPart = Extract<MessagePart, { type: 'tool' }>;
+
+// A tool the assistant used, in its place in the reply. The line says what it did;
+// open it to see exactly what was called (the tool and its arguments) and how it
+// ended. What a page said is not kept, only what was called.
+function ToolBlock({ part }: { part: ToolPart }) {
+  const [open, setOpen] = useState(false);
+  const icon =
+    part.status === 'running' ? '…' : part.status === 'ok' ? '✓' : '✕';
+  return (
+    <div style={{ margin: '0 0 6px' }}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        title={open ? 'Hide what was called' : 'Show what was called'}
         style={{
-          ...smallButton,
-          padding: '2px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 12,
+          ...blockButton,
+          color: part.status === 'error' ? '#b3261e' : '#5f6368',
         }}
       >
         <span aria-hidden="true">{open ? '▾' : '▸'}</span>
-        {thinking ? 'Thinking…' : 'Thought process'}
+        <span aria-hidden="true">{icon}</span>
+        <span style={{ overflowWrap: 'anywhere' }}>{part.label}</span>
       </button>
       {open && (
         <div
-          ref={box}
           style={{
-            margin: '4px 0',
-            padding: '4px 10px',
-            borderLeft: '3px solid #dadce0',
-            color: '#5f6368',
-            fontSize: 13,
-            lineHeight: 1.45,
-            maxHeight: 240,
-            overflowY: 'auto',
-            whiteSpace: 'pre-wrap',
-            overflowWrap: 'anywhere',
-            userSelect: 'text',
+            ...blockBody,
+            fontFamily: 'ui-monospace, Consolas, monospace',
+            fontSize: 12,
           }}
         >
-          {message.reasoning}
+          <div>
+            <strong>Called:</strong> {part.name || '(unknown)'}
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <strong>Arguments:</strong>
+          </div>
+          <div>{showArguments(part.arguments)}</div>
+          <div style={{ marginTop: 4 }}>
+            <strong>Result:</strong>{' '}
+            {part.status === 'running'
+              ? 'still running'
+              : part.outcome || (part.status === 'ok' ? 'done' : 'failed')}
+          </div>
+          {part.callId !== '' && (
+            <div style={{ marginTop: 4, color: '#80868b' }}>
+              Call id: {part.callId}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -321,38 +385,28 @@ function MessageView({
   const finished = message.status === 'done' || message.status === 'stopped';
   return (
     <div style={{ margin: '10px 0' }}>
-      <ThinkingBlock message={message} />
-      {message.steps.length > 0 && (
-        <div style={{ margin: '0 0 6px', display: 'grid', gap: 2 }}>
-          {message.steps.map((step) => (
-            <div key={step.id} style={{ ...muted, display: 'flex', gap: 6 }}>
-              <span aria-hidden="true">
-                {step.status === 'running'
-                  ? '…'
-                  : step.status === 'ok'
-                    ? '✓'
-                    : '✕'}
-              </span>
-              <span
-                style={{
-                  color: step.status === 'error' ? '#b3261e' : undefined,
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {step.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      {message.content !== '' ? (
-        <div style={text}>
-          {message.content}
-          {streaming && <span aria-hidden="true">▍</span>}
-        </div>
-      ) : message.status === 'done' && message.reasoning === '' ? (
-        <div style={muted}>The model sent an empty reply.</div>
-      ) : null}
+      {/* Everything that happened, in the order it happened. */}
+      {message.parts.map((part, i) => {
+        const last = i === message.parts.length - 1;
+        if (part.type === 'thinking') {
+          return (
+            <ThinkingBlock key={i} text={part.text} live={streaming && last} />
+          );
+        }
+        if (part.type === 'tool') return <ToolBlock key={i} part={part} />;
+        return (
+          <div key={i} style={{ ...text, margin: '0 0 6px' }}>
+            {part.text}
+            {streaming && last && <span aria-hidden="true">▍</span>}
+          </div>
+        );
+      })}
+      {message.parts.length === 0 &&
+        (streaming ? (
+          <div style={muted}>Thinking…</div>
+        ) : message.status === 'done' ? (
+          <div style={muted}>The model sent an empty reply.</div>
+        ) : null)}
 
       {message.status === 'stopped' && (
         <div style={{ ...muted, marginTop: 4 }}>Stopped.</div>

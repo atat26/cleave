@@ -765,3 +765,66 @@ test('a reopened page is picked up by every chat that used it (a removed link st
     [9],
   );
 });
+
+test('replies saved before parts existed are converted, and parts survive a save and load', () => {
+  const old = parseChats(
+    {
+      version: 1,
+      nextId: 10,
+      activeId: 1,
+      conversations: [
+        {
+          id: 1,
+          title: 'Old',
+          messages: [
+            { id: 2, role: 'user', content: 'hi' },
+            {
+              id: 3,
+              role: 'assistant',
+              content: 'The answer.',
+              reasoning: 'Let me think.',
+              steps: [{ id: 1, label: 'Read: Page', status: 'ok' }],
+            },
+          ],
+        },
+      ],
+    },
+    NOW,
+  );
+  const reply = old.conversations[0].messages[1];
+  assert.deepEqual(
+    reply.parts.map((p) => p.type),
+    ['thinking', 'tool', 'text'],
+  );
+  assert.equal(reply.content, 'The answer.');
+  assert.equal(reply.reasoning, 'Let me think.');
+
+  // New style: a call left "running" is marked failed on load; bad parts are dropped.
+  const saved = JSON.parse(JSON.stringify(old));
+  saved.conversations[0].messages[1].parts = [
+    { type: 'text', text: 'A' },
+    {
+      type: 'tool',
+      id: 1,
+      callId: 'c1',
+      name: 'read_page',
+      arguments: '{"tab":1}',
+      label: 'Reading',
+      status: 'running',
+      outcome: '',
+    },
+    { type: 'bogus' },
+    { type: 'text', text: 'B' },
+  ];
+  saved.conversations[0].messages[1].content = 'ignored';
+  const again = parseChats(saved, NOW).conversations[0].messages[1];
+  assert.deepEqual(
+    again.parts.map((p) => p.type),
+    ['text', 'tool', 'text'],
+  );
+  assert.equal(
+    again.parts[1].type === 'tool' && again.parts[1].status,
+    'error',
+  );
+  assert.equal(again.content, 'AB'); // rebuilt from the parts
+});

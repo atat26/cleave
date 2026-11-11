@@ -869,7 +869,12 @@ export async function createTabs(
     'sidebar:hover': () => {
       if (!pinned() && drag === null) setHover(true);
     },
-    'chat:toggle': () => toggleChat(),
+    // Asked for from the chat itself: keep the keyboard in the chat, rather than
+    // moving it to the web page (so typing carries on where it was).
+    'chat:toggle': () => {
+      toggleChat();
+      win.webContents.focus();
+    },
     // Show the page alone (chat closed), both, or the chat alone (page hidden).
     'view:set': (mode) => {
       if (!model.VIEW_MODES.includes(mode as model.ViewMode)) return;

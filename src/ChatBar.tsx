@@ -153,6 +153,10 @@ export function ChatBar({
                 </>
               ) : undefined
             }
+            // The "@" list needs room: open the chat up from the one-row bar.
+            onNeedRoom={() => {
+              if (!full && viewMode === 'both') window.browserApi.toggleChat();
+            }}
             // Sending from the one-row bar opens the chat so the reply is visible.
             onSent={() => {
               if (!full && viewMode === 'both') window.browserApi.toggleChat();
