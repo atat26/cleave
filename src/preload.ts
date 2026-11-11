@@ -17,6 +17,16 @@ const browserApi: BrowserApi = {
   setSpaceCollapsed: (id, collapsed) =>
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
+  showTabMenu: (id) => ipcRenderer.send('tab:menu', id),
+  showSpaceMenu: (id) => ipcRenderer.send('space:menu', id),
+
+  onRenameRequest: (callback) => {
+    const listener = (_event: unknown, spaceId: number) => callback(spaceId);
+    ipcRenderer.on('space:begin-rename', listener);
+    return () => {
+      ipcRenderer.removeListener('space:begin-rename', listener);
+    };
+  },
 
   onState: (callback) => {
     const listener = (_event: unknown, state: UiState) => callback(state);

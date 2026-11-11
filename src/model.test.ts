@@ -11,6 +11,8 @@ import {
   removeTab,
   renameSpace,
   setActive,
+  setSpaceCollapsed,
+  setSpaceColor,
   ungroupSpace,
   updateTab,
 } from './model.ts';
@@ -220,6 +222,21 @@ test('updateTab accepts web addresses only', () => {
   assert.equal(tab?.url, 'https://free.example');
   assert.equal(tab?.title, 'Hello');
   assert.equal(tab?.favicon, null);
+});
+
+test('setSpaceColor and setSpaceCollapsed change only that Space', () => {
+  const { state, spaceId } = build();
+  const other = addSpace(state, 'Other');
+  const recoloured = setSpaceColor(other.state, spaceId, 'red');
+  assert.equal(recoloured.spaces.find((s) => s.id === spaceId)?.color, 'red');
+  assert.equal(
+    recoloured.spaces.find((s) => s.id === other.id)?.color,
+    other.state.spaces.find((s) => s.id === other.id)?.color,
+  );
+  // An unknown colour (e.g. from a bad message) is refused.
+  assert.equal(setSpaceColor(state, spaceId, 'plaid' as never), state);
+  const collapsed = setSpaceCollapsed(state, spaceId, true);
+  assert.equal(collapsed.spaces.find((s) => s.id === spaceId)?.collapsed, true);
 });
 
 test('setActive ignores things that do not exist', () => {

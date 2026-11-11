@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain, WebContentsView } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, WebContentsView } from 'electron';
 import path from 'node:path';
 import { SIDEBAR_WIDTH, TOOLBAR_HEIGHT } from './layout';
+import { spaceMenu, tabMenu } from './menus';
+import type { MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import { createSaver, loadState } from './storage';
@@ -167,19 +169,67 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   const openTab = (url: string, spaceId: number | null) =>
     commitAndShow(model.addTab(state, { url, spaceId }).state);
 
+  // Throw away a tab's live web page (if it has one).
+  const destroyView = (id: number) => {
+    const view = views.get(id);
+    if (!view) return;
+    views.delete(id);
+    win.contentView.removeChildView(view);
+    view.webContents.close();
+  };
+
+  // The window is never left with nothing to show.
+  const withSomethingActive = (next: SavedState): SavedState =>
+    next.active === null
+      ? model.addTab(next, { url: NEW_TAB_URL }).state
+      : next;
+
   const closeTab = (id: number) => {
     if (!model.findTab(state, id)) return;
-    const view = views.get(id);
-    if (view) {
-      views.delete(id);
-      win.contentView.removeChildView(view);
-      view.webContents.close();
+    destroyView(id);
+    commitAndShow(withSomethingActive(model.removeTab(state, id)));
+  };
+
+  const deleteSpace = async (id: number) => {
+    const space = model.findSpace(state, id);
+    if (!space) return;
+    const count = state.tabs.filter((tab) => tab.spaceId === id).length;
+    // Nothing to lose in an empty Space; otherwise ask first.
+    if (count > 0) {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: 'Delete Space',
+        message: `Delete “${space.name}”?`,
+        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
+        buttons: ['Delete Space and close tabs', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      if (response !== 0) return;
     }
-    let next = model.removeTab(state, id);
-    // The window is never left with nothing to show.
-    if (next.active === null)
-      next = model.addTab(next, { url: NEW_TAB_URL }).state;
-    commitAndShow(next);
+    // The Space may have changed while the dialog was open.
+    const result = model.deleteSpace(state, id);
+    for (const tabId of result.removedTabIds) destroyView(tabId);
+    commitAndShow(withSomethingActive(result.state));
+  };
+
+  const menuActions: MenuActions = {
+    moveTab: (tabId, spaceId) => commit(model.moveTab(state, tabId, spaceId)),
+    moveTabToNewSpace: (tabId) => {
+      const created = model.addSpace(state);
+      commit(model.moveTab(created.state, tabId, created.id));
+    },
+    closeTab,
+    // The sidebar shows the rename box.
+    renameSpace: (spaceId) =>
+      win.webContents.send('space:begin-rename', spaceId),
+    setSpaceColor: (spaceId, color) =>
+      commit(model.setSpaceColor(state, spaceId, color)),
+    setSpaceCollapsed: (spaceId, collapsed) =>
+      commit(model.setSpaceCollapsed(state, spaceId, collapsed)),
+    ungroupSpace: (spaceId) =>
+      commitAndShow(model.ungroupSpace(state, spaceId)),
+    deleteSpace: (spaceId) => void deleteSpace(spaceId),
   };
 
   const select = (ref: ActiveRef) => commitAndShow(model.setActive(state, ref));
@@ -267,6 +317,12 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     'space:rename': (id, name) => {
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
+    },
+    'tab:menu': (id) => {
+      if (isId(id)) tabMenu(state, id, menuActions)?.popup({ window: win });
+    },
+    'space:menu': (id) => {
+      if (isId(id)) spaceMenu(state, id, menuActions)?.popup({ window: win });
     },
   };
   const listeners = Object.entries(requests).map(([channel, handle]) => {

@@ -46,6 +46,10 @@ export function LeadView({
       }}
     >
       <div
+        onContextMenu={(event) => {
+          event.preventDefault();
+          window.browserApi.showSpaceMenu(space.id);
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -125,6 +129,10 @@ export function LeadView({
             <div
               key={tab.id}
               onClick={() => window.browserApi.selectTab(tab.id)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                window.browserApi.showTabMenu(tab.id);
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',

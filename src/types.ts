@@ -46,6 +46,11 @@ export interface BrowserApi {
   newSpace: () => void;
   setSpaceCollapsed: (id: number, collapsed: boolean) => void;
   renameSpace: (id: number, name: string) => void;
+  // Right-click menus. The app shows a native menu and performs the choice.
+  showTabMenu: (id: number) => void;
+  showSpaceMenu: (id: number) => void;
+  // Called when "Rename Space" is chosen from a menu: show the rename box.
+  onRenameRequest: (callback: (spaceId: number) => void) => () => void;
   // Called whenever anything the UI shows changes. Returns an unsubscribe function.
   onState: (callback: (state: UiState) => void) => () => void;
 }

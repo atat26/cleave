@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { LeadView } from './LeadView';
 import { Sidebar } from './Sidebar';
 import { Toolbar } from './Toolbar';
@@ -10,7 +10,12 @@ import type { UiState } from './types';
 export function App() {
   const [state, setState] = useState<UiState | null>(null);
 
+  // Set when "Rename Space" is chosen from a right-click menu.
+  const [renameRequest, setRenameRequest] = useState<number | null>(null);
+  const clearRenameRequest = useCallback(() => setRenameRequest(null), []);
+
   useEffect(() => window.browserApi.onState(setState), []);
+  useEffect(() => window.browserApi.onRenameRequest(setRenameRequest), []);
 
   if (state === null) return null;
 
@@ -26,7 +31,11 @@ export function App() {
 
   return (
     <>
-      <Sidebar state={state} />
+      <Sidebar
+        state={state}
+        renameRequest={renameRequest}
+        onRenameHandled={clearRenameRequest}
+      />
       <Toolbar
         url={activeTab?.url ?? ''}
         canGoBack={state.canGoBack}

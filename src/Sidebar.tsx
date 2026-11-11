@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
 import { SIDEBAR_WIDTH } from './layout';
 import type { SpaceInfo, TabInfo, UiState } from './types';
@@ -73,6 +73,10 @@ function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
   return (
     <div
       onClick={() => window.browserApi.selectTab(tab.id)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showTabMenu(tab.id);
+      }}
       title={labelFor(tab)}
       style={{ ...rowStyle(active), opacity: tab.loaded ? 1 : 0.6 }}
     >
@@ -99,12 +103,29 @@ function SpaceGroup({
   space,
   tabs,
   active,
+  renameRequest,
+  onRenameHandled,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
   active: UiState['active'];
+  // Set when "Rename Space" was chosen from this Space's right-click menu.
+  renameRequest: number | null;
+  onRenameHandled: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (renameRequest === space.id) {
+      setEditing(true);
+      onRenameHandled();
+    }
+  }, [renameRequest, space.id, onRenameHandled]);
+
+  const openMenu = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    window.browserApi.showSpaceMenu(space.id);
+  };
   const color = SPACE_COLOR_HEX[space.color];
   const leadActive = active?.kind === 'lead' && active.spaceId === space.id;
 
@@ -118,6 +139,7 @@ function SpaceGroup({
   return (
     <div style={{ marginTop: 8 }}>
       <div
+        onContextMenu={openMenu}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -191,6 +213,7 @@ function SpaceGroup({
         >
           <div
             onClick={() => window.browserApi.selectLead(space.id)}
+            onContextMenu={openMenu}
             style={rowStyle(leadActive)}
           >
             <span style={{ width: 16, textAlign: 'center', color }}>★</span>
@@ -210,7 +233,15 @@ function SpaceGroup({
 }
 
 // The vertical tab list on the left.
-export function Sidebar({ state }: { state: UiState }) {
+export function Sidebar({
+  state,
+  renameRequest,
+  onRenameHandled,
+}: {
+  state: UiState;
+  renameRequest: number | null;
+  onRenameHandled: () => void;
+}) {
   const ungrouped = state.tabs.filter((tab) => tab.spaceId === null);
 
   return (
@@ -281,6 +312,8 @@ export function Sidebar({ state }: { state: UiState }) {
             space={space}
             tabs={state.tabs.filter((tab) => tab.spaceId === space.id)}
             active={state.active}
+            renameRequest={renameRequest}
+            onRenameHandled={onRenameHandled}
           />
         ))}
       </div>
