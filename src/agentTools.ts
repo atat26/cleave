@@ -27,6 +27,8 @@ import { parseChoices } from './agentChoices.ts';
 import type { Choices } from './agentChoices.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
 import type { OutlineElement } from './pageOutline.ts';
+import { applyPolicy, defaultLevel, toolInfo } from './toolPolicy.ts';
+import type { ApprovalLevel } from './toolPolicy.ts';
 
 export const MAX_PAGE_CHARS = 20_000;
 export const MAX_READS = 8;
@@ -271,7 +273,13 @@ const failureWords: Record<
   blocked: 'it was blocked',
 };
 
-export function createAgentTools(env: AgentEnv): AgentTools {
+// `levelOf` says how much each tool may do without asking (your choices in the
+// Tools panel); by default every tool has its own default level.
+export function createAgentTools(
+  env: AgentEnv,
+  levelOf: (tool: string) => ApprovalLevel = (tool) =>
+    defaultLevel(tool) ?? 'ask',
+): AgentTools {
   let reads = 0;
   let looks = 0;
   let actions = 0;
@@ -289,16 +297,31 @@ export function createAgentTools(env: AgentEnv): AgentTools {
     tabsOpened: () => tabsOpened,
   };
 
-  const plan = (call: ToolCall): Plan =>
-    isActionName(call.name)
+  // What the call would do on its own (safety refusals included), then your
+  // level for that tool on top. A tool that is turned off is refused.
+  const plan = (call: ToolCall): Plan => {
+    const own: Plan = isActionName(call.name)
       ? planAction(call, actionContext)
       : { kind: 'auto' };
+    return toolInfo(call.name)
+      ? applyPolicy(own, levelOf(call.name), describe(call))
+      : own;
+  };
 
   // Do an action (after the user approved it, if it needed that).
   async function runAction(
     call: ToolCall,
     signal: AbortSignal,
   ): Promise<ToolOutcome> {
+    // Defence in depth: a tool turned off is never run, whoever asks.
+    if (levelOf(call.name) === 'never') {
+      return {
+        label: 'Turned off in Tools',
+        ok: false,
+        note: 'You have turned this tool off in the Tools panel.',
+        result: 'This tool is turned off. Do not try it again.',
+      };
+    }
     // Checked again now: things may have changed while the user decided.
     const decided = planAction(call, actionContext);
     if (decided.kind === 'refuse') {
@@ -612,7 +635,10 @@ export function createAgentTools(env: AgentEnv): AgentTools {
   };
 
   return {
-    definitions: [...TOOL_DEFINITIONS, ...ACTION_DEFINITIONS],
+    // Tools you turned off are not even offered to the assistant.
+    definitions: [...TOOL_DEFINITIONS, ...ACTION_DEFINITIONS].filter(
+      (definition) => levelOf(definition.name) !== 'never',
+    ),
     describe,
     plan,
     run,

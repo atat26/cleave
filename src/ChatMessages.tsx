@@ -608,6 +608,13 @@ function MessageView({
       {/* Everything that happened, in the order it happened. */}
       {message.parts.map((part, i) => {
         const last = i === message.parts.length - 1;
+        // Nothing to show for blank text (older chats may have some): no gap.
+        if (
+          (part.type === 'text' || part.type === 'thinking') &&
+          part.text.trim() === ''
+        ) {
+          return null;
+        }
         if (part.type === 'thinking') {
           return (
             <ThinkingBlock key={i} text={part.text} live={streaming && last} />

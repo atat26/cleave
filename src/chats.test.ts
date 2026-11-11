@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   activeConversation,
   addChoicesPart,
+  addToolPart,
   addRef,
   addUserMessage,
   appendReasoning,
@@ -918,4 +919,39 @@ test('branching copies a message and its reply into a new active chat and leaves
   assert.equal(branchConversation(state, chatId, reply.id, NOW), null);
   assert.equal(branchConversation(state, chatId, 9999, NOW), null);
   assert.equal(branchConversation(state, 9999, first.id, NOW), null);
+});
+
+test('stray blank text between tool calls makes no part, so no gap shows', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'go', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = reply.state;
+  state = addToolPart(state, chatId, reply.id, {
+    callId: 'a',
+    name: 'click',
+    arguments: '{}',
+    label: 'one',
+  })!.state;
+  // Blank text (and blank thinking) after a tool call: no new part.
+  state = appendToMessage(state, chatId, reply.id, '\n\n');
+  state = appendReasoning(state, chatId, reply.id, ' \n');
+  state = addToolPart(state, chatId, reply.id, {
+    callId: 'b',
+    name: 'click',
+    arguments: '{}',
+    label: 'two',
+  })!.state;
+  // Real text starts a part without its leading blank space.
+  state = appendToMessage(state, chatId, reply.id, '\n  Done');
+  state = appendToMessage(state, chatId, reply.id, ' now.');
+  const message = findMessage(state, chatId, reply.id)!;
+  assert.deepEqual(
+    message.parts.map((p) => p.type),
+    ['tool', 'tool', 'text'],
+  );
+  assert.equal(
+    message.parts[2].type === 'text' && message.parts[2].text,
+    'Done now.',
+  );
 });

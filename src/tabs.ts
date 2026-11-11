@@ -54,7 +54,12 @@ import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
-import { createSaver, loadChats, loadState } from './storage';
+import { createSaver, loadChats, loadJson, loadState } from './storage';
+import {
+  defaultToolSettings,
+  levelFor,
+  parseToolSettings,
+} from './toolSettings';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
 import { resolveInput } from './url';
@@ -92,6 +97,12 @@ export async function createTabs(
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
   let chats: ChatsState = await loadChats(chatsFile);
+  // How much each tool may do without asking (the Tools panel's choices).
+  const toolSettings = await loadJson(
+    path.join(app.getPath('userData'), 'tools.json'),
+    parseToolSettings,
+    defaultToolSettings,
+  );
   if (win.isDestroyed()) return;
 
   // The first time ever (or after a reset) there is nothing: start with one tab.
@@ -871,6 +882,7 @@ export async function createTabs(
     readPage: readTab,
     outlinePage: outlineTab,
     actions: actionEnv,
+    toolLevel: (tool) => levelFor(toolSettings, tool),
     linkTab: (chatId, tabId) => {
       const tab = model.findTab(state, tabId);
       if (!tab) return;

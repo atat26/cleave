@@ -9,6 +9,7 @@ import {
   MAX_READS,
 } from './agentTools.ts';
 import type { AgentEnv, OutlineRead, PageRead } from './agentTools.ts';
+import type { ApprovalLevel } from './toolPolicy.ts';
 import { buildLinkedContext, linkedTabs } from './chatLinks.ts';
 import type { Workspace, WorkspaceTab } from './chatLinks.ts';
 
@@ -33,6 +34,7 @@ function setup(
     url: 'https://shop.example/pricing?token=SECRET',
     text: 'Plans start at $5.',
   },
+  levelOf?: (tool: string) => ApprovalLevel,
 ) {
   const tabs = [
     tab(1, 'Pricing', 'https://shop.example/pricing?token=SECRET'),
@@ -114,7 +116,13 @@ function setup(
       return typeof read === 'function' ? read(id) : read;
     },
   };
-  return { tools: createAgentTools(env), reads, looks, done, working };
+  return {
+    tools: createAgentTools(env, levelOf),
+    reads,
+    looks,
+    done,
+    working,
+  };
 }
 
 test('cleanPageText removes control characters and blank runs, and cuts long pages', () => {
@@ -440,4 +448,61 @@ test('with nothing linked the model is still told it can open tabs; without tool
   assert.match(none, /open_tab/);
   assert.match(none, /offer_choices/);
   assert.equal(buildLinkedContext([], workspace), null);
+});
+
+// ---- Your approval levels -------------------------------------------------------
+
+test('a tool turned off is not offered, and is refused and never run if called', async () => {
+  const { tools, done } = setup(undefined, (tool) =>
+    tool === 'click' ? 'never' : 'always',
+  );
+  assert.ok(!tools.definitions.some((d) => d.name === 'click'));
+  assert.ok(tools.definitions.some((d) => d.name === 'type_text'));
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  const click = call('click', { tab: 1, element: 1 });
+  assert.equal(tools.plan(click).kind, 'refuse');
+  assert.equal((await tools.run(click, ABORT)).ok, false);
+  assert.deepEqual(done, []);
+});
+
+test('Always allow skips the question, Allow if safe still asks for risky ones, Ask first asks about everything', async () => {
+  const run = async (level: ApprovalLevel) => {
+    const { tools } = setup(undefined, () => level);
+    await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+    return {
+      safe: tools.plan(call('click', { tab: 1, element: 2 })), // the Email field
+      risky: tools.plan(call('click', { tab: 1, element: 1 })), // the Buy button
+      read: tools.plan(call('read_page', { tab: 1 })),
+    };
+  };
+  const always = await run('always');
+  assert.equal(always.safe.kind, 'auto');
+  assert.equal(always.risky.kind, 'auto');
+  const ifSafe = await run('if-safe');
+  assert.equal(ifSafe.safe.kind, 'auto');
+  assert.equal(ifSafe.risky.kind, 'ask');
+  const ask = await run('ask');
+  assert.equal(ask.safe.kind, 'ask');
+  assert.equal(ask.risky.kind, 'ask');
+  // A read tool set to ask gets a card that says what it is about to do.
+  assert.equal(ask.read.kind, 'ask');
+  assert.match(
+    ask.read.kind === 'ask' ? ask.read.text : '',
+    /Reading: Pricing/,
+  );
+});
+
+test('the safety rules hold even when every tool is set to Always allow', async () => {
+  const { tools, done } = setup(undefined, () => 'always');
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  // The password field.
+  const secret = call('type_text', { tab: 1, element: 3, text: 'hunter2' });
+  assert.equal(tools.plan(secret).kind, 'refuse');
+  assert.equal((await tools.run(secret, ABORT)).ok, false);
+  // A tab that is not linked.
+  assert.equal(
+    tools.plan(call('go_to', { tab: 9, url: 'https://shop.example/' })).kind,
+    'refuse',
+  );
+  assert.deepEqual(done, []);
 });
