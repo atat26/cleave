@@ -702,8 +702,12 @@ function extendParts(
       { type, text: (last.text + text).slice(0, max) },
     ];
   }
-  if (parts.length >= MAX_PARTS) return parts;
-  return [...parts, { type, text: text.slice(0, max) }];
+  // A new part never starts with blank space, and is not made at all for blank
+  // space alone (a model often sends a stray new line between tool calls, which
+  // would show as an empty gap).
+  const trimmed = text.replace(/^\s+/, '');
+  if (trimmed === '' || parts.length >= MAX_PARTS) return parts;
+  return [...parts, { type, text: trimmed.slice(0, max) }];
 }
 
 // Add more of the model's thinking to a reply as it arrives.

@@ -22,6 +22,7 @@ import * as chats from './chats';
 import type { ChatsState } from './chats';
 import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
+import type { ApprovalLevel } from './toolPolicy';
 import type { ChatSendResult } from './types';
 
 const isId = (value: unknown): value is number => Number.isInteger(value);
@@ -64,6 +65,8 @@ export function createChatService(options: {
   actions: ActionEnv;
   // Link a tab to a chat (used for tabs the assistant opens).
   linkTab(chatId: number, tabId: number): void;
+  // How much a tool may do without asking (your choice in the Tools panel).
+  toolLevel(tool: string): ApprovalLevel;
 
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
@@ -197,24 +200,27 @@ export function createChatService(options: {
     // open a new tab (which is then linked to the chat).
     const canRead = llm.getModelInfo(model)?.supportsTools !== false;
     const tools = canRead
-      ? createAgentTools({
-          // Looked up again at each use, so a link removed mid-reply stops
-          // counting at once.
-          linkedTabs: () =>
-            linkedTabs(
-              chats.findConversation(options.getChats(), chatId)?.refs ?? [],
-              options.getWorkspace(),
-            ),
-          readPage: options.readPage,
-          outlinePage: options.outlinePage,
-          ...options.actions,
-          // A tab the assistant opens is linked to this chat, so it can use it.
-          openTab: async (url, signal) => {
-            const opened = await options.actions.openTab(url, signal);
-            if (opened.ok) options.linkTab(chatId, opened.tabId);
-            return opened;
+      ? createAgentTools(
+          {
+            // Looked up again at each use, so a link removed mid-reply stops
+            // counting at once.
+            linkedTabs: () =>
+              linkedTabs(
+                chats.findConversation(options.getChats(), chatId)?.refs ?? [],
+                options.getWorkspace(),
+              ),
+            readPage: options.readPage,
+            outlinePage: options.outlinePage,
+            ...options.actions,
+            // A tab the assistant opens is linked to this chat, so it can use it.
+            openTab: async (url, signal) => {
+              const opened = await options.actions.openTab(url, signal);
+              if (opened.ok) options.linkTab(chatId, opened.tabId);
+              return opened;
+            },
           },
-        })
+          options.toolLevel,
+        )
       : null;
     return {
       ok: true,
