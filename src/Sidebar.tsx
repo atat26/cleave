@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
-import { SIDEBAR_WIDTH } from './layout';
 import type { SpaceInfo, TabInfo, UiState } from './types';
 
 const iconButtonStyle: CSSProperties = {
@@ -69,14 +68,20 @@ export function Favicon({ tab }: { tab: TabInfo }) {
   );
 }
 
+const showTabMenu = (tab: TabInfo) => (event: ReactMouseEvent) => {
+  event.preventDefault();
+  window.browserApi.showTabMenu(tab.id);
+};
+
+// ---------------------------------------------------------------------------
+// Full-width sidebar
+// ---------------------------------------------------------------------------
+
 function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
   return (
     <div
       onClick={() => window.browserApi.selectTab(tab.id)}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        window.browserApi.showTabMenu(tab.id);
-      }}
+      onContextMenu={showTabMenu(tab)}
       title={labelFor(tab)}
       style={{ ...rowStyle(active), opacity: tab.loaded ? 1 : 0.6 }}
     >
@@ -105,6 +110,7 @@ function SpaceGroup({
   active,
   renameRequest,
   onRenameHandled,
+  onRenameDone,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
@@ -112,6 +118,7 @@ function SpaceGroup({
   // Set when "Rename Space" was chosen from this Space's right-click menu.
   renameRequest: number | null;
   onRenameHandled: () => void;
+  onRenameDone: () => void;
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -134,6 +141,7 @@ function SpaceGroup({
     if (value.trim() !== '' && value !== space.name) {
       window.browserApi.renameSpace(space.id, value);
     }
+    onRenameDone();
   };
 
   return (
@@ -163,11 +171,15 @@ function SpaceGroup({
           <input
             autoFocus
             defaultValue={space.name}
+            maxLength={60}
             onFocus={(e) => e.target.select()}
             onBlur={(e) => finishRename(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') finishRename(e.currentTarget.value);
-              if (e.key === 'Escape') setEditing(false);
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                setEditing(false);
+                onRenameDone();
+              }
             }}
             style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}
           />
@@ -232,47 +244,56 @@ function SpaceGroup({
   );
 }
 
-// The vertical tab list on the left.
-export function Sidebar({
+function FullSidebar({
   state,
   renameRequest,
   onRenameHandled,
+  onRenameDone,
 }: {
   state: UiState;
   renameRequest: number | null;
   onRenameHandled: () => void;
+  onRenameDone: () => void;
 }) {
   const ungrouped = state.tabs.filter((tab) => tab.spaceId === null);
 
   return (
-    <nav
-      style={{
-        position: 'fixed',
-        top: 0,
-        bottom: 0,
-        left: 0,
-        width: SIDEBAR_WIDTH,
-        boxSizing: 'border-box',
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#e8eaed',
-        borderRight: '1px solid #d0d0d0',
-        userSelect: 'none',
-      }}
-    >
+    <>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 4,
-          padding: '0 12px',
+          padding: '0 10px 0 12px',
           height: 48,
           boxSizing: 'border-box',
           fontWeight: 600,
           fontSize: 13,
+          flexShrink: 0,
         }}
       >
         <span style={{ flex: 1 }}>Tabs</span>
+        <button
+          type="button"
+          aria-label={state.sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
+          title={
+            state.sidebarPinned
+              ? 'Unpin (collapse when not in use)'
+              : 'Pin open'
+          }
+          onClick={() =>
+            window.browserApi.setSidebarPinned(!state.sidebarPinned)
+          }
+          style={{
+            ...iconButtonStyle,
+            width: 'auto',
+            padding: '0 8px',
+            fontSize: 12,
+            background: state.sidebarPinned ? '#ffffff' : 'transparent',
+          }}
+        >
+          {state.sidebarPinned ? 'Pinned' : 'Pin'}
+        </button>
         <button
           type="button"
           aria-label="New Space"
@@ -298,7 +319,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <div style={{ overflowY: 'auto', padding: '0 6px 12px' }}>
+      <div style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}>
         {ungrouped.map((tab) => (
           <TabRow
             key={tab.id}
@@ -314,9 +335,218 @@ export function Sidebar({
             active={state.active}
             renameRequest={renameRequest}
             onRenameHandled={onRenameHandled}
+            onRenameDone={onRenameDone}
           />
         ))}
       </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Narrow icon strip (the collapsed sidebar)
+// ---------------------------------------------------------------------------
+
+const stripButton = (active: boolean): CSSProperties => ({
+  width: 32,
+  height: 30,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  margin: '0 auto 2px',
+  borderRadius: 8,
+  cursor: 'pointer',
+  background: active ? '#ffffff' : 'transparent',
+  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.15)' : 'none',
+});
+
+function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
+  return (
+    <div
+      onClick={() => window.browserApi.selectTab(tab.id)}
+      onContextMenu={showTabMenu(tab)}
+      title={labelFor(tab)}
+      style={{ ...stripButton(active), opacity: tab.loaded ? 1 : 0.6 }}
+    >
+      <Favicon tab={tab} />
+    </div>
+  );
+}
+
+function StripSpace({
+  space,
+  tabs,
+  active,
+}: {
+  space: SpaceInfo;
+  tabs: TabInfo[];
+  active: UiState['active'];
+}) {
+  const color = SPACE_COLOR_HEX[space.color];
+  const leadActive = active?.kind === 'lead' && active.spaceId === space.id;
+  const openMenu = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    window.browserApi.showSpaceMenu(space.id);
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        marginLeft: 3,
+        borderLeft: `3px solid ${color}`,
+        paddingLeft: 1,
+      }}
+    >
+      <div
+        onClick={() => window.browserApi.selectLead(space.id)}
+        onContextMenu={openMenu}
+        title={`${space.name} overview`}
+        style={{ ...stripButton(leadActive), color, fontSize: 14 }}
+      >
+        ★
+      </div>
+      {!space.collapsed &&
+        tabs.map((tab) => (
+          <StripTab
+            key={tab.id}
+            tab={tab}
+            active={active?.kind === 'tab' && active.id === tab.id}
+          />
+        ))}
+      {space.collapsed && tabs.length > 0 && (
+        <div
+          onClick={() => window.browserApi.setSpaceCollapsed(space.id, false)}
+          onContextMenu={openMenu}
+          title={`${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
+          style={{
+            ...stripButton(false),
+            fontSize: 11,
+            color: '#5f6368',
+          }}
+        >
+          {tabs.length}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Strip({ state }: { state: UiState }) {
+  const ungrouped = state.tabs.filter((tab) => tab.spaceId === null);
+
+  return (
+    <>
+      <div
+        style={{
+          height: 48,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <button
+          type="button"
+          aria-label="New tab"
+          title="New tab (Ctrl+T)"
+          onClick={() => window.browserApi.newTab(null)}
+          style={iconButtonStyle}
+        >
+          +
+        </button>
+      </div>
+      <div style={{ overflowY: 'hidden', flex: 1, paddingBottom: 12 }}>
+        {ungrouped.map((tab) => (
+          <StripTab
+            key={tab.id}
+            tab={tab}
+            active={state.active?.kind === 'tab' && state.active.id === tab.id}
+          />
+        ))}
+        {state.spaces.map((space) => (
+          <StripSpace
+            key={space.id}
+            space={space}
+            tabs={state.tabs.filter((tab) => tab.spaceId === space.id)}
+            active={state.active}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The sidebar page: opens when you hover it, closes when you leave (unless
+// pinned). It fills its own view, which the main process sizes and layers.
+// ---------------------------------------------------------------------------
+
+const OPEN_DELAY_MS = 150;
+const CLOSE_DELAY_MS = 350;
+
+export function Sidebar({
+  state,
+  renameRequest,
+  onRenameHandled,
+}: {
+  state: UiState;
+  renameRequest: number | null;
+  onRenameHandled: () => void;
+}) {
+  const rootRef = useRef<HTMLElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+
+  // Ask the app to open/close after a short delay, so just passing the mouse
+  // over the strip does not make it flicker.
+  const requestHover = (hovering: boolean) => {
+    if (state.sidebarPinned) return;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(
+      () => window.browserApi.setSidebarHover(hovering),
+      hovering ? OPEN_DELAY_MS : CLOSE_DELAY_MS,
+    );
+  };
+
+  // After a rename the mouse may be elsewhere (e.g. it was started from a
+  // menu on the overview page), so close if the mouse is not over us.
+  const closeIfMouseAway = () => {
+    if (!rootRef.current?.matches(':hover')) requestHover(false);
+  };
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  return (
+    <nav
+      ref={rootRef}
+      onMouseEnter={() => requestHover(true)}
+      onMouseLeave={() => requestHover(false)}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
+        background: '#e8eaed',
+        borderRight: '1px solid #d0d0d0',
+        boxShadow:
+          state.sidebarExpanded && !state.sidebarPinned
+            ? '2px 0 8px rgba(0, 0, 0, 0.25)'
+            : 'none',
+        userSelect: 'none',
+        overflow: 'hidden',
+      }}
+    >
+      {state.sidebarExpanded ? (
+        <FullSidebar
+          state={state}
+          renameRequest={renameRequest}
+          onRenameHandled={onRenameHandled}
+          onRenameDone={closeIfMouseAway}
+        />
+      ) : (
+        <Strip state={state} />
+      )}
     </nav>
   );
 }

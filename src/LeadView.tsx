@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
-import { SIDEBAR_WIDTH, TOOLBAR_HEIGHT } from './layout';
+import { TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
 import type { SpaceInfo, TabInfo } from './types';
 
@@ -17,9 +17,13 @@ function hostOf(url: string): string {
 export function LeadView({
   space,
   tabs,
+  left,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
+  // Where the overview starts: right of the sidebar's strip (or of the whole
+  // sidebar when it is pinned).
+  left: number;
 }) {
   const color = SPACE_COLOR_HEX[space.color];
   const [editing, setEditing] = useState(false);
@@ -36,7 +40,7 @@ export function LeadView({
       style={{
         position: 'fixed',
         top: TOOLBAR_HEIGHT,
-        left: SIDEBAR_WIDTH,
+        left,
         right: 0,
         bottom: 0,
         overflowY: 'auto',

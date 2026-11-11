@@ -28,7 +28,10 @@ export interface UiState {
   // Whether the ACTIVE web tab can go back / forward.
   canGoBack: boolean;
   canGoForward: boolean;
+  // Pinned: always open, and the page makes room for it.
   sidebarPinned: boolean;
+  // Currently showing its full width (pinned, or opened by hovering).
+  sidebarExpanded: boolean;
 }
 
 // Shape of the API the preload script exposes to the UI as window.browserApi.
@@ -46,6 +49,9 @@ export interface BrowserApi {
   newSpace: () => void;
   setSpaceCollapsed: (id: number, collapsed: boolean) => void;
   renameSpace: (id: number, name: string) => void;
+  // The mouse is over (true) or has left (false) the sidebar.
+  setSidebarHover: (hovering: boolean) => void;
+  setSidebarPinned: (pinned: boolean) => void;
   // Right-click menus. The app shows a native menu and performs the choice.
   showTabMenu: (id: number) => void;
   showSpaceMenu: (id: number) => void;

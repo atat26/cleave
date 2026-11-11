@@ -1,12 +1,25 @@
-import { app, BrowserWindow, dialog, ipcMain, WebContentsView } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  screen,
+  WebContentsView,
+} from 'electron';
 import path from 'node:path';
-import { SIDEBAR_WIDTH, TOOLBAR_HEIGHT } from './layout';
+import {
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_EXPANDED_WIDTH,
+  TOOLBAR_HEIGHT,
+  contentLeft,
+} from './layout';
 import { spaceMenu, tabMenu } from './menus';
 import type { MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import { createSaver, loadState } from './storage';
 import type { UiState } from './types';
+import { loadUi } from './ui';
 import { resolveInput } from './url';
 
 // What a new tab shows. Later this could become an AI chat / search page.
@@ -21,6 +34,11 @@ const isIdOrNull = (value: unknown): value is number | null =>
 // The saved model (src/model.ts) is the single source of truth. A live web page
 // (a WebContentsView) exists only for tabs opened this session: tabs restored
 // from disk start "asleep" and load the first time you select them.
+//
+// Three layers, bottom to top:
+//   1. the window's own UI page (toolbar, and a Space's overview)
+//   2. the web page views
+//   3. the sidebar view, on top, so it can slide open over a web page
 export async function createTabs(win: BrowserWindow): Promise<void> {
   const file = path.join(app.getPath('userData'), 'spaces.json');
   let state: SavedState = await loadState(file);
@@ -33,15 +51,55 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
 
   const views = new Map<number, WebContentsView>();
   const saver = createSaver(file, () => state);
-  let uiReady = false;
+
+  // The mouse is over the sidebar (so it is open even if not pinned), and a
+  // right-click menu is currently showing (the sidebar must not close under it).
+  let hover = false;
+  let menuOpen = false;
+
+  const pinned = () => state.settings.sidebarPinned;
+  const expanded = () => pinned() || hover;
 
   const activeTabId = () =>
     state.active?.kind === 'tab' ? state.active.id : null;
 
-  // ---- Telling the UI what changed --------------------------------------
+  // ---- The sidebar: our own UI page in a view on top of the web pages -------
+
+  const sidebarView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.contentView.addChildView(sidebarView);
+  const sidebar = sidebarView.webContents;
+  // Like the main window, the sidebar never opens windows or navigates away.
+  sidebar.setWindowOpenHandler(() => ({ action: 'deny' }));
+  sidebar.on('will-navigate', (event) => event.preventDefault());
+
+  // ---- Telling the UI pages what changed -----------------------------------
+
+  // A UI page can only be sent state after it has finished loading.
+  const ready = new Set<Electron.WebContents>();
+  const watchUi = (contents: Electron.WebContents) => {
+    contents.on('did-finish-load', () => {
+      ready.add(contents);
+      sendState();
+    });
+  };
+
+  const sendToUi = (channel: string, ...args: unknown[]) => {
+    for (const contents of [win.webContents, sidebar]) {
+      if (ready.has(contents) && !contents.isDestroyed()) {
+        contents.send(channel, ...args);
+      }
+    }
+  };
 
   const sendState = () => {
-    if (!uiReady || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    if (win.isDestroyed()) return;
     const id = activeTabId();
     const history =
       id === null ? undefined : views.get(id)?.webContents.navigationHistory;
@@ -63,9 +121,10 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       active: state.active,
       canGoBack: history?.canGoBack() ?? false,
       canGoForward: history?.canGoForward() ?? false,
-      sidebarPinned: state.settings.sidebarPinned,
+      sidebarPinned: pinned(),
+      sidebarExpanded: expanded(),
     };
-    win.webContents.send('ui:state', ui);
+    sendToUi('ui:state', ui);
   };
 
   // Change the model, save soon, and refresh the UI.
@@ -75,23 +134,69 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     sendState();
   };
 
-  // ---- Web page views ----------------------------------------------------
+  // ---- Layout -------------------------------------------------------------
 
-  // Every tab's view gets the same area: right of the sidebar, below the toolbar.
+  // Every tab's view gets the same area: right of the sidebar's reserved strip
+  // (or right of the whole sidebar when pinned), below the toolbar.
   const pageBounds = () => {
     const [width, height] = win.getContentSize();
+    const left = contentLeft(pinned());
     return {
-      x: SIDEBAR_WIDTH,
+      x: left,
       y: TOOLBAR_HEIGHT,
-      width: Math.max(0, width - SIDEBAR_WIDTH),
+      width: Math.max(0, width - left),
       height: Math.max(0, height - TOOLBAR_HEIGHT),
     };
   };
 
-  const fitToWindow = () => {
+  // Size the sidebar (it overlays the page when open but not pinned) and the
+  // web pages. Called whenever the window or the sidebar changes.
+  const applyLayout = () => {
+    const [, height] = win.getContentSize();
+    sidebarView.setBounds({
+      x: 0,
+      y: 0,
+      width: expanded() ? SIDEBAR_EXPANDED_WIDTH : SIDEBAR_COLLAPSED_WIDTH,
+      height,
+    });
     const bounds = pageBounds();
     for (const view of views.values()) view.setBounds(bounds);
   };
+
+  const setHover = (value: boolean) => {
+    if (value === hover) return;
+    if (!value && menuOpen) return; // Stay open while a menu is showing.
+    hover = value;
+    applyLayout();
+    sendState();
+  };
+
+  // Is the mouse pointer currently over the sidebar? (Checked after a menu or
+  // dialog closes, when the page was not told the mouse left.)
+  const cursorInSidebar = (width: number) => {
+    const point = screen.getCursorScreenPoint();
+    const bounds = win.getContentBounds();
+    const x = point.x - bounds.x;
+    const y = point.y - bounds.y;
+    return x >= 0 && x < width && y >= 0 && y < bounds.height;
+  };
+
+  const popupMenu = (menu: Electron.Menu | null) => {
+    if (!menu) return;
+    menuOpen = true;
+    menu.popup({
+      window: win,
+      callback: () => {
+        menuOpen = false;
+        const width = expanded()
+          ? SIDEBAR_EXPANDED_WIDTH
+          : SIDEBAR_COLLAPSED_WIDTH;
+        if (!cursorInSidebar(width)) setHover(false);
+      },
+    });
+  };
+
+  // ---- Web page views ----------------------------------------------------
 
   const updateTab = (
     id: number,
@@ -115,6 +220,8 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     });
     views.set(tab.id, view);
     win.contentView.addChildView(view);
+    // Adding an existing view again moves it to the top: keep the sidebar above.
+    win.contentView.addChildView(sidebarView);
     view.setBounds(pageBounds());
     view.setVisible(false);
 
@@ -220,9 +327,13 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       commit(model.moveTab(created.state, tabId, created.id));
     },
     closeTab,
-    // The sidebar shows the rename box.
-    renameSpace: (spaceId) =>
-      win.webContents.send('space:begin-rename', spaceId),
+    // The sidebar shows the rename box, so make sure it is open.
+    renameSpace: (spaceId) => {
+      setHover(true);
+      if (sidebar.isDestroyed()) return;
+      sidebar.send('space:begin-rename', spaceId);
+      sidebar.focus(); // So the rename box can take keyboard input.
+    },
     setSpaceColor: (spaceId, color) =>
       commit(model.setSpaceColor(state, spaceId, color)),
     setSpaceCollapsed: (spaceId, collapsed) =>
@@ -244,7 +355,7 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   };
 
   // Keyboard shortcuts: Ctrl+T new tab, Ctrl+W close, Ctrl+Tab / Ctrl+Shift+Tab
-  // next / previous. Attached to the UI page and to every web page.
+  // next / previous. Attached to both UI pages and to every web page.
   const handleShortcut = (
     event: { preventDefault: () => void },
     input: Electron.Input,
@@ -270,8 +381,8 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   };
 
   // ---- Requests from the UI --------------------------------------------------
-  // We only accept messages that come from our own UI page, and we check the
-  // type of everything they send.
+  // We only accept messages that come from our own two UI pages, and we check
+  // the type of everything they send.
   const requests: Record<string, (...args: unknown[]) => void> = {
     'tab:navigate': (input) => {
       const id = activeTabId();
@@ -318,30 +429,47 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
     },
+    'sidebar:hover': (hovering) => {
+      if (typeof hovering === 'boolean') setHover(hovering);
+    },
+    'sidebar:pin': (isPinned) => {
+      if (typeof isPinned !== 'boolean') return;
+      state = model.setSidebarPinned(state, isPinned);
+      // Pinned: hover no longer matters. Unpinned: stay open only if the mouse
+      // is still over the open sidebar (it just clicked the button there).
+      hover = isPinned ? false : cursorInSidebar(SIDEBAR_EXPANDED_WIDTH);
+      saver.schedule();
+      applyLayout();
+      sendState();
+    },
     'tab:menu': (id) => {
-      if (isId(id)) tabMenu(state, id, menuActions)?.popup({ window: win });
+      if (isId(id)) popupMenu(tabMenu(state, id, menuActions));
     },
     'space:menu': (id) => {
-      if (isId(id)) spaceMenu(state, id, menuActions)?.popup({ window: win });
+      if (isId(id)) popupMenu(spaceMenu(state, id, menuActions));
     },
   };
   const listeners = Object.entries(requests).map(([channel, handle]) => {
     const listener = (event: Electron.IpcMainEvent, ...args: unknown[]) => {
-      if (event.sender === win.webContents) handle(...args);
+      if (event.sender === win.webContents || event.sender === sidebar) {
+        handle(...args);
+      }
     };
     ipcMain.on(channel, listener);
     return { channel, listener };
   });
 
-  win.on('resize', fitToWindow);
+  win.on('resize', applyLayout);
   win.webContents.on('before-input-event', handleShortcut);
-  // Send the first state once the UI page is ready to listen. (Reading the save
-  // file takes a moment, so the page may already have finished loading.)
-  win.webContents.on('did-finish-load', () => {
-    uiReady = true;
-    sendState();
-  });
-  if (!win.webContents.isLoading()) uiReady = true;
+  sidebar.on('before-input-event', handleShortcut);
+
+  // Send the first state once each UI page is ready to listen. (Reading the save
+  // file takes a moment, so the main window's page may already have loaded.)
+  watchUi(win.webContents);
+  watchUi(sidebar);
+  if (!win.webContents.isLoading()) ready.add(win.webContents);
+  void loadUi(sidebar, 'sidebar');
+
   // Save for sure when the window closes (a plain write might not finish).
   win.on('close', () => saver.flushSync());
   win.on('closed', () => {
@@ -349,5 +477,6 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       ipcMain.removeListener(channel, listener);
   });
 
+  applyLayout();
   showActive();
 }

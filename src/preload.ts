@@ -17,6 +17,8 @@ const browserApi: BrowserApi = {
   setSpaceCollapsed: (id, collapsed) =>
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
+  setSidebarHover: (hovering) => ipcRenderer.send('sidebar:hover', hovering),
+  setSidebarPinned: (pinned) => ipcRenderer.send('sidebar:pin', pinned),
   showTabMenu: (id) => ipcRenderer.send('tab:menu', id),
   showSpaceMenu: (id) => ipcRenderer.send('space:menu', id),
 
