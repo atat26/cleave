@@ -1,6 +1,6 @@
 // Reading and writing spaces.json. Uses only Node's file system (no Electron),
 // so it can be tested on its own. The file location is passed in.
-import { promises as fs } from 'node:fs';
+import { mkdirSync, promises as fs, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { defaultState, parseState } from './model.ts';
 import type { SavedState } from './model.ts';
@@ -39,6 +39,14 @@ export async function saveState(
   await fs.rename(temp, file);
 }
 
+// Same as saveState, but blocking.
+export function saveStateSync(file: string, state: SavedState): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  const temp = `${file}.tmp`;
+  writeFileSync(temp, JSON.stringify(state, null, 2), 'utf8');
+  renameSync(temp, file);
+}
+
 // Saves a little after the last change, so a burst of changes is one write.
 // flush() writes right away (use it when the app is quitting).
 export function createSaver(
@@ -69,6 +77,15 @@ export function createSaver(
       if (timer !== null) clearTimeout(timer);
       await write();
       await writing;
+    },
+    // Write right now and wait for nothing: for the moment the window is
+    // closing, when an asynchronous write might never get to finish.
+    flushSync() {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      if (!dirty) return;
+      dirty = false;
+      saveStateSync(file, getState());
     },
   };
 }

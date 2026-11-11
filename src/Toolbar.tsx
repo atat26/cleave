@@ -16,11 +16,18 @@ interface ToolbarProps {
   url: string;
   canGoBack: boolean;
   canGoForward: boolean;
+  // True when no web page is selected (e.g. on a Space's Overview).
+  disabled: boolean;
 }
 
 // The strip along the top: back/forward buttons and the address bar. It always
 // shows the active tab's address.
-export function Toolbar({ url, canGoBack, canGoForward }: ToolbarProps) {
+export function Toolbar({
+  url,
+  canGoBack,
+  canGoForward,
+  disabled,
+}: ToolbarProps) {
   const [text, setText] = useState(url);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -75,7 +82,8 @@ export function Toolbar({ url, canGoBack, canGoForward }: ToolbarProps) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => e.target.select()}
-        placeholder="Search or enter address"
+        disabled={disabled}
+        placeholder={disabled ? 'Space overview' : 'Search or enter address'}
         spellCheck={false}
         style={{
           flex: 1,

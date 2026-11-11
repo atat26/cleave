@@ -1,25 +1,44 @@
 import { useEffect, useState } from 'react';
+import { LeadView } from './LeadView';
 import { Sidebar } from './Sidebar';
 import { Toolbar } from './Toolbar';
-import type { TabsState } from './types';
+import type { UiState } from './types';
 
-// The app's own UI: the tab sidebar and the toolbar. The web pages themselves
-// are drawn by the main process on top of the empty area below the toolbar.
+// The app's own UI: the tab sidebar, the toolbar, and (for a Space's Lead tab)
+// the overview. Web pages are drawn by the main process on top of the empty
+// area below the toolbar.
 export function App() {
-  const [state, setState] = useState<TabsState | null>(null);
+  const [state, setState] = useState<UiState | null>(null);
 
-  useEffect(() => window.browserApi.onTabsState(setState), []);
+  useEffect(() => window.browserApi.onState(setState), []);
 
-  const active = state?.tabs.find((tab) => tab.id === state.activeId);
+  if (state === null) return null;
+
+  const active = state.active;
+  const activeTab =
+    active?.kind === 'tab'
+      ? state.tabs.find((tab) => tab.id === active.id)
+      : undefined;
+  const leadSpace =
+    active?.kind === 'lead'
+      ? state.spaces.find((space) => space.id === active.spaceId)
+      : undefined;
 
   return (
     <>
-      <Sidebar tabs={state?.tabs ?? []} activeId={state?.activeId ?? -1} />
+      <Sidebar state={state} />
       <Toolbar
-        url={active?.url ?? ''}
-        canGoBack={state?.canGoBack ?? false}
-        canGoForward={state?.canGoForward ?? false}
+        url={activeTab?.url ?? ''}
+        canGoBack={state.canGoBack}
+        canGoForward={state.canGoForward}
+        disabled={activeTab === undefined}
       />
+      {leadSpace && (
+        <LeadView
+          space={leadSpace}
+          tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
+        />
+      )}
     </>
   );
 }

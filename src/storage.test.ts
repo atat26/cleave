@@ -53,6 +53,19 @@ test('valid JSON with bad contents is repaired, not trusted', async () => {
   await fs.rm(dir, { recursive: true });
 });
 
+test('flushSync writes immediately and only when something changed', async () => {
+  const { dir, file } = await tempFile();
+  let state = defaultState();
+  const saver = createSaver(file, () => state, 60_000);
+  saver.flushSync(); // nothing scheduled: no file
+  assert.deepEqual(await fs.readdir(dir), []);
+  state = addTab(state, { url: 'https://now.example' }).state;
+  saver.schedule();
+  saver.flushSync();
+  assert.equal((await loadState(file)).tabs.length, 1);
+  await fs.rm(dir, { recursive: true });
+});
+
 test('the saver batches many changes into one write and flush writes at once', async () => {
   const { dir, file } = await tempFile();
   let state = defaultState();

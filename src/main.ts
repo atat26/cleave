@@ -38,7 +38,9 @@ const createWindow = () => {
   }
 
   // The web page tabs, to the right of the sidebar and below the toolbar.
-  createTabs(mainWindow);
+  createTabs(mainWindow).catch((error) =>
+    console.error('Failed to start tabs:', error),
+  );
 
   // Open the DevTools only while developing, never in a packaged app.
   if (!app.isPackaged) {
