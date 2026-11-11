@@ -1,0 +1,35 @@
+# Runs the same checks as `npm run check` on every pull request and on main:
+# type-check, lint/format check, and unit tests.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch cancels the older, still-running check.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+# The check only needs to read the code.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Windows, to match the machine the app is developed on.
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      # The checks never start Electron, so skip downloading its ~100 MB program.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The unit tests run TypeScript directly, which needs a recent Node.
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check

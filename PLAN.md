@@ -17,5 +17,4 @@
 - Separate logins per Space (profiles); currently all Spaces share one cookie jar
 - Home page as a centred AI chat prompt / address bar (the new-tab page is one constant, `NEW_TAB_URL`)
 - Favicons are loaded straight from each site; consider caching them
-- A GitHub check that runs `npm run check` on every pull request
 - Add `test:e2e` (end-to-end test of the running app)

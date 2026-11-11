@@ -1,0 +1,3 @@
+# Always use LF line endings, on every machine. (Windows git would otherwise
+# convert files to CRLF, and the formatter check expects LF.)
+* text=auto eol=lf
