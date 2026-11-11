@@ -3,7 +3,7 @@
 // improve later without being stuck at an old value. Saved to tools.json. Pure
 // data and functions, so it is easy to test.
 import { defaultLevel, isApprovalLevel, TOOL_CATALOG } from './toolPolicy.ts';
-import type { ApprovalLevel } from './toolPolicy.ts';
+import type { ApprovalLevel, ToolInfo } from './toolPolicy.ts';
 
 export interface ToolSettings {
   version: 1;
@@ -36,6 +36,19 @@ export function parseToolSettings(raw: unknown): ToolSettings {
 // The level for a tool: your choice, else its default. Unknown tools are "ask".
 export function levelFor(settings: ToolSettings, tool: string): ApprovalLevel {
   return settings.levels[tool] ?? defaultLevel(tool) ?? 'ask';
+}
+
+// One tool as the Tools panel shows it: its description, its default, and the
+// level it is at now.
+export interface ToolRow extends ToolInfo {
+  level: ApprovalLevel;
+}
+
+export function describeTools(settings: ToolSettings): ToolRow[] {
+  return TOOL_CATALOG.map((tool) => ({
+    ...tool,
+    level: levelFor(settings, tool.name),
+  }));
 }
 
 // Set one tool's level. A tool that is not in the catalog is ignored.

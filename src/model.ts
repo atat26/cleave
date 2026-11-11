@@ -51,7 +51,12 @@ export interface SavedState {
 }
 
 // The panels that can open on the right, from the rail's buttons.
-export const RIGHT_PANELS = ['skills', 'extensions', 'settings'] as const;
+export const RIGHT_PANELS = [
+  'skills',
+  'tools',
+  'extensions',
+  'settings',
+] as const;
 export type RightPanel = (typeof RIGHT_PANELS)[number];
 
 // What the middle of the window shows: the web page and the chat together
@@ -69,6 +74,7 @@ export type ViewMode = (typeof VIEW_MODES)[number];
 export type PanelContext = 'chat' | 'web' | 'always';
 export const PANEL_CONTEXT: Record<RightPanel, PanelContext> = {
   skills: 'chat',
+  tools: 'chat',
   extensions: 'web',
   settings: 'always',
 };

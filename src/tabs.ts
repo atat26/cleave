@@ -55,10 +55,13 @@ import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
 import { createSaver, loadChats, loadJson, loadState } from './storage';
+import { isApprovalLevel } from './toolPolicy';
 import {
   defaultToolSettings,
+  describeTools,
   levelFor,
   parseToolSettings,
+  withLevel,
 } from './toolSettings';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
@@ -98,11 +101,13 @@ export async function createTabs(
   let state: SavedState = await loadState(file);
   let chats: ChatsState = await loadChats(chatsFile);
   // How much each tool may do without asking (the Tools panel's choices).
-  const toolSettings = await loadJson(
-    path.join(app.getPath('userData'), 'tools.json'),
+  const toolsFile = path.join(app.getPath('userData'), 'tools.json');
+  let toolSettings = await loadJson(
+    toolsFile,
     parseToolSettings,
     defaultToolSettings,
   );
+  const toolsSaver = createSaver(toolsFile, () => toolSettings);
   if (win.isDestroyed()) return;
 
   // The first time ever (or after a reset) there is nothing: start with one tab.
@@ -1278,6 +1283,29 @@ export async function createTabs(
     return { channel, listener };
   });
 
+  // The Tools panel asks for the tools and their levels, and changes them. A
+  // change applies from the assistant's next reply.
+  const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
+    event.sender === win.webContents;
+  ipcMain.handle('tools:list', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return describeTools(toolSettings);
+  });
+  ipcMain.handle('tools:set', (event, tool: unknown, level: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (typeof tool === 'string' && isApprovalLevel(level)) {
+      toolSettings = withLevel(toolSettings, tool, level);
+      toolsSaver.schedule();
+    }
+    return describeTools(toolSettings);
+  });
+  ipcMain.handle('tools:reset', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    toolSettings = defaultToolSettings();
+    toolsSaver.schedule();
+    return describeTools(toolSettings);
+  });
+
   win.on('resize', () => applyLayout(false));
   // The window's size can still settle a moment after it appears (when it is
   // first shown, maximized or restored), so lay the frame out again then.
@@ -1345,12 +1373,16 @@ export async function createTabs(
     chatService?.dispose();
     saver.flushSync();
     chatsSaver.flushSync();
+    toolsSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();
     stopWatching();
     for (const timer of startupTimers) clearTimeout(timer);
     ipcMain.removeListener('ui:ready', onUiReady);
+    ipcMain.removeHandler('tools:list');
+    ipcMain.removeHandler('tools:set');
+    ipcMain.removeHandler('tools:reset');
     clearInterval(watchdog);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);

@@ -27,6 +27,7 @@ const RAIL_ITEMS: {
   bottom?: boolean;
 }[] = [
   { panel: 'skills', label: 'Skills', icon: '⚡' },
+  { panel: 'tools', label: 'Tools', icon: '🔧' },
   { panel: 'extensions', label: 'Extensions', icon: '🧩' },
   { panel: 'settings', label: 'Settings', icon: '⚙️', bottom: true },
 ];
@@ -60,7 +61,7 @@ export function Rail({
 
   return (
     <nav
-      aria-label="Tools"
+      aria-label="Panels"
       style={{
         position: 'fixed',
         top: 0,
