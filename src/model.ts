@@ -45,13 +45,54 @@ export interface SavedState {
   // Order in this list is the order within a group in the sidebar.
   tabs: SavedTab[];
   active: ActiveRef | null;
-  settings: {
-    sidebarPinned: boolean;
-    // Width of the sidebar when it is open (pinned, or opened by hovering).
-    sidebarWidth: number;
-  };
+  settings: SavedSettings;
   // Source of new ids for both tabs and Spaces.
   nextId: number;
+}
+
+// The panels that can open on the right, from the rail's buttons.
+export const RIGHT_PANELS = ['skills', 'extensions', 'settings'] as const;
+export type RightPanel = (typeof RIGHT_PANELS)[number];
+
+// What the middle of the window shows: the web page and the chat together
+// ("both"), the page alone with the chat closed, or the chat alone with the page
+// hidden.
+export const VIEW_MODES = ['both', 'page', 'chat'] as const;
+export type ViewMode = (typeof VIEW_MODES)[number];
+
+// Which view each right-hand panel belongs to, so the rail only shows buttons
+// that make sense right now:
+//   'chat'   only while the chat is open (e.g. Skills)
+//   'web'    only while the web page is open (e.g. Extensions)
+//   'always' in every view (e.g. Settings)
+// A new panel declares its context here and the rail follows automatically.
+export type PanelContext = 'chat' | 'web' | 'always';
+export const PANEL_CONTEXT: Record<RightPanel, PanelContext> = {
+  skills: 'chat',
+  extensions: 'web',
+  settings: 'always',
+};
+
+// Is this panel relevant in this view? (The chat is open unless the view is
+// "page only"; the web page is open unless the view is "chat only".)
+export function isPanelRelevant(panel: RightPanel, mode: ViewMode): boolean {
+  const context = PANEL_CONTEXT[panel];
+  if (context === 'always') return true;
+  return context === 'chat' ? mode !== 'page' : mode !== 'chat';
+}
+
+// How the window's panels are set up. All sizes are in pixels.
+export interface SavedSettings {
+  viewMode: ViewMode;
+  sidebarPinned: boolean;
+  // Width of the sidebar when it is open (pinned, or opened by hovering).
+  sidebarWidth: number;
+  // The bottom chat: a compact bar, or expanded to `chatHeight`.
+  chatExpanded: boolean;
+  chatHeight: number;
+  // Which panel is open on the right (null = none) and how wide it is.
+  rightPanel: RightPanel | null;
+  panelWidth: number;
 }
 
 // Limits for the open sidebar's width, in pixels.
@@ -59,8 +100,22 @@ export const SIDEBAR_MIN_WIDTH = 160;
 export const SIDEBAR_MAX_WIDTH = 480;
 export const SIDEBAR_DEFAULT_WIDTH = 240;
 
+// Limits for the expanded chat's height and the right panel's width.
+export const CHAT_MIN_HEIGHT = 160;
+export const CHAT_MAX_HEIGHT = 1200;
+export const CHAT_DEFAULT_HEIGHT = 320;
+export const PANEL_MIN_WIDTH = 260;
+export const PANEL_MAX_WIDTH = 640;
+export const PANEL_DEFAULT_WIDTH = 340;
+
+const clampTo = (min: number, max: number, value: number) =>
+  Math.round(Math.min(max, Math.max(min, value)));
 const clampSidebarWidth = (width: number) =>
-  Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
+  clampTo(SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, width);
+const clampChatHeight = (height: number) =>
+  clampTo(CHAT_MIN_HEIGHT, CHAT_MAX_HEIGHT, height);
+const clampPanelWidth = (width: number) =>
+  clampTo(PANEL_MIN_WIDTH, PANEL_MAX_WIDTH, width);
 
 const MAX_TABS = 1000;
 const MAX_SPACES = 200;
@@ -78,6 +133,9 @@ export const isWebUrl = (value: unknown): value is string =>
 const isId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0;
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -87,7 +145,15 @@ export function defaultState(): SavedState {
     spaces: [],
     tabs: [],
     active: null,
-    settings: { sidebarPinned: false, sidebarWidth: SIDEBAR_DEFAULT_WIDTH },
+    settings: {
+      viewMode: 'both',
+      sidebarPinned: false,
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+      chatExpanded: false,
+      chatHeight: CHAT_DEFAULT_HEIGHT,
+      rightPanel: null,
+      panelWidth: PANEL_DEFAULT_WIDTH,
+    },
     nextId: 1,
   };
 }
@@ -150,9 +216,23 @@ export function parseState(raw: unknown): SavedState {
 
   if (isRecord(raw.settings)) {
     state.settings.sidebarPinned = raw.settings.sidebarPinned === true;
-    const width = raw.settings.sidebarWidth;
-    if (typeof width === 'number' && Number.isFinite(width)) {
-      state.settings.sidebarWidth = clampSidebarWidth(width);
+    const s = raw.settings;
+    const settings = state.settings;
+    settings.viewMode = VIEW_MODES.find((m) => m === s.viewMode) ?? 'both';
+    if (isFiniteNumber(s.sidebarWidth)) {
+      settings.sidebarWidth = clampSidebarWidth(s.sidebarWidth);
+    }
+    settings.chatExpanded = s.chatExpanded === true;
+    if (isFiniteNumber(s.chatHeight)) {
+      settings.chatHeight = clampChatHeight(s.chatHeight);
+    }
+    const panel = RIGHT_PANELS.find((p) => p === s.rightPanel) ?? null;
+    settings.rightPanel =
+      panel !== null && isPanelRelevant(panel, settings.viewMode)
+        ? panel
+        : null;
+    if (isFiniteNumber(s.panelWidth)) {
+      settings.panelWidth = clampPanelWidth(s.panelWidth);
     }
   }
 
@@ -430,6 +510,58 @@ export function setSidebarWidth(state: SavedState, width: number): SavedState {
   return {
     ...state,
     settings: { ...state.settings, sidebarWidth: clampSidebarWidth(width) },
+  };
+}
+
+// Change what the middle of the window shows. An open right panel that does not
+// belong in the new view (e.g. Extensions once the page is closed) is closed.
+export function setViewMode(state: SavedState, mode: ViewMode): SavedState {
+  if (!VIEW_MODES.includes(mode)) return state;
+  const panel = state.settings.rightPanel;
+  const keepPanel = panel !== null && isPanelRelevant(panel, mode);
+  return {
+    ...state,
+    settings: {
+      ...state.settings,
+      viewMode: mode,
+      rightPanel: keepPanel ? panel : null,
+    },
+  };
+}
+
+export function setChatExpanded(
+  state: SavedState,
+  expanded: boolean,
+): SavedState {
+  return { ...state, settings: { ...state.settings, chatExpanded: expanded } };
+}
+
+export function setChatHeight(state: SavedState, height: number): SavedState {
+  if (!isFiniteNumber(height)) return state;
+  return {
+    ...state,
+    settings: { ...state.settings, chatHeight: clampChatHeight(height) },
+  };
+}
+
+// Open one of the right panels, or close it (null).
+export function setRightPanel(
+  state: SavedState,
+  panel: RightPanel | null,
+): SavedState {
+  if (panel !== null && !RIGHT_PANELS.includes(panel)) return state;
+  // A panel that does not belong in the current view cannot be opened.
+  if (panel !== null && !isPanelRelevant(panel, state.settings.viewMode)) {
+    return state;
+  }
+  return { ...state, settings: { ...state.settings, rightPanel: panel } };
+}
+
+export function setPanelWidth(state: SavedState, width: number): SavedState {
+  if (!isFiniteNumber(width)) return state;
+  return {
+    ...state,
+    settings: { ...state.settings, panelWidth: clampPanelWidth(width) },
   };
 }
 

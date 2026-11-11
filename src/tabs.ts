@@ -8,18 +8,32 @@ import {
 } from 'electron';
 import path from 'node:path';
 import {
-  SIDEBAR_ANIMATION_MS,
+  blendSizes,
+  chatHeightWhileDragging,
+  easeOutCubic,
+  pageRect,
+  panelWidthWhileDragging,
+  restingChatHeight,
+  restingPanelWidth,
+  settleChat,
+  settlePanel,
+} from './frame';
+import type { FrameSizes, Size } from './frame';
+import {
+  FRAME_ANIMATION_MS,
+  PAGE_RADIUS,
   SIDEBAR_CLOSE_MARGIN,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_SNAP_WIDTH,
-  TOOLBAR_HEIGHT,
 } from './layout';
-import { spaceMenu, tabMenu } from './menus';
-import type { MenuActions } from './menus';
+import * as chatsModel from './chats';
+import type { ChatsState } from './chats';
+import { chatMenu, chatRowMenu, spaceMenu, tabMenu } from './menus';
+import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
-import { createSaver, loadState } from './storage';
-import type { UiState } from './types';
+import { createSaver, loadChats, loadState } from './storage';
+import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
 import { resolveInput } from './url';
 
@@ -31,6 +45,10 @@ const isIdOrNull = (value: unknown): value is number | null =>
   value === null || isId(value);
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+const isResizeKind = (value: unknown): value is ResizeKind =>
+  value === 'sidebar' || value === 'chat' || value === 'panel';
+const clamp = (min: number, max: number, value: number) =>
+  Math.min(max, Math.max(min, value));
 
 // Manages all tabs and Spaces of one window.
 //
@@ -44,7 +62,9 @@ const isNumber = (value: unknown): value is number =>
 //   3. the sidebar view, on top, so it can slide open over a web page
 export async function createTabs(win: BrowserWindow): Promise<void> {
   const file = path.join(app.getPath('userData'), 'spaces.json');
+  const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
+  let chats: ChatsState = await loadChats(chatsFile);
   if (win.isDestroyed()) return;
 
   // The first time ever (or after a reset) there is nothing: start with one tab.
@@ -54,14 +74,16 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
 
   const views = new Map<number, WebContentsView>();
   const saver = createSaver(file, () => state);
+  const chatsSaver = createSaver(chatsFile, () => chats);
 
   // The sidebar is open without being pinned because the mouse is on it.
   let hover = false;
   // How many menus / dialogs are open (the sidebar must not close under them).
   let busy = 0;
-  // While the sidebar's edge is being dragged: where the edge is now.
-  let dragWidth: number | null = null;
-  let dragStartedPinned = false;
+  // While an edge of the frame is being dragged: which one, and where it is now
+  // (the sidebar's width, the chat's height, or the right panel's width).
+  let drag: { kind: ResizeKind; size: number; startedPinned: boolean } | null =
+    null;
 
   const pinned = () => state.settings.sidebarPinned;
   const expanded = () => pinned() || hover;
@@ -87,35 +109,62 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
 
   // ---- Layout ----------------------------------------------------------------
   //
-  // Two numbers describe the layout, and both can be in the middle of sliding:
-  //   sidebarNow: how wide the sidebar view is
-  //   pageNow:    where the toolbar and web pages start (they are only pushed
-  //               aside by a PINNED sidebar; an opened-by-hover one overlays)
+  // Four numbers describe the frame (see frame.ts and layout.ts), and every one
+  // of them can be in the middle of sliding:
+  //   sidebar: width of the sidebar view (a hover-opened one floats over the page)
+  //   left:    room the sidebar takes from the page (only a PINNED sidebar
+  //            pushes the page aside)
+  //   panel:   width of the right panel (0 when closed)
+  //   chat:    height of the bottom chat
 
-  const sidebarTarget = () =>
-    dragWidth ??
-    (expanded() ? state.settings.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH);
-  const pageTarget = () => {
-    if (dragWidth !== null) {
-      return dragStartedPinned ? dragWidth : SIDEBAR_COLLAPSED_WIDTH;
-    }
-    return pinned() ? state.settings.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH;
+  // The size of the area the views are positioned in. (This is deliberately not
+  // win.getContentSize(): on Windows that can disagree with the real area by the
+  // height of the menu bar, which put the page 26 pixels out of line.)
+  const windowSize = (): Size => {
+    const { width, height } = win.contentView.getBounds();
+    return { width, height };
   };
 
-  let sidebarNow = sidebarTarget();
-  let pageNow = pageTarget();
-
-  // The area for web pages: right of the sidebar strip (or of a pinned sidebar),
-  // below the toolbar.
-  const pageBounds = () => {
-    const [width, height] = win.getContentSize();
-    const left = Math.round(pageNow);
-    return {
-      x: left,
-      y: TOOLBAR_HEIGHT,
-      width: Math.max(0, width - left),
-      height: Math.max(0, height - TOOLBAR_HEIGHT),
+  // Where each part of the frame should be right now.
+  const targetSizes = (): FrameSizes => {
+    const s = state.settings;
+    const window = windowSize();
+    const left = pinned() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH;
+    const sizes: FrameSizes = {
+      sidebar: expanded() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH,
+      left,
+      panel: restingPanelWidth(
+        s.rightPanel !== null,
+        s.panelWidth,
+        { left },
+        window,
+      ),
+      chat: restingChatHeight(s.viewMode, s.chatExpanded, s.chatHeight, window),
     };
+    // The part being dragged follows the mouse exactly.
+    if (drag?.kind === 'sidebar') {
+      sizes.sidebar = drag.size;
+      // A sidebar that was hover-opened floats while you drag it; a pinned one
+      // pushes the page.
+      sizes.left = drag.startedPinned ? drag.size : SIDEBAR_COLLAPSED_WIDTH;
+    } else if (drag?.kind === 'chat') {
+      sizes.chat = drag.size;
+    } else if (drag?.kind === 'panel') {
+      sizes.panel = drag.size;
+    }
+    return sizes;
+  };
+
+  let now: FrameSizes = targetSizes();
+
+  // The rounded card where web pages are drawn.
+  const pageBounds = () => pageRect(now, windowSize());
+  // Is the page on screen? Not in chat-only mode (the chat covers everything),
+  // and not while it has no room.
+  const pageIsShown = () => {
+    if (state.settings.viewMode === 'chat') return false;
+    const rect = pageBounds();
+    return rect.width > 4 && rect.height > 4;
   };
 
   // ---- Telling the UI pages what changed -----------------------------------
@@ -137,11 +186,16 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     }
   };
 
-  // Tell the toolbar/overview page where it should start (it follows the
-  // sidebar while that slides).
+  // Tell the window's UI page how much room each part of the frame takes, so its
+  // toolbar, chat and panels follow the frame while it slides.
   const sendLayout = () => {
     if (ready.has(win.webContents) && !win.webContents.isDestroyed()) {
-      win.webContents.send('ui:layout', Math.round(pageNow));
+      const layout: FrameLayout = {
+        left: Math.round(now.left),
+        panel: Math.round(now.panel),
+        chat: Math.round(now.chat),
+      };
+      win.webContents.send('ui:layout', layout);
     }
   };
 
@@ -170,6 +224,17 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       canGoForward: history?.canGoForward() ?? false,
       sidebarPinned: pinned(),
       sidebarExpanded: expanded(),
+      viewMode: state.settings.viewMode,
+      chats: {
+        conversations: chats.conversations.map((c) => ({
+          id: c.id,
+          title: c.title,
+          messageCount: c.messages.length,
+        })),
+        activeId: chats.activeId,
+      },
+      chatExpanded: state.settings.chatExpanded,
+      rightPanel: state.settings.rightPanel,
     };
     sendToUi('ui:state', ui);
     sendLayout();
@@ -184,20 +249,31 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
 
   // ---- Moving things into place, smoothly -----------------------------------
 
-  // Put the sidebar and the visible web page where sidebarNow / pageNow say.
+  // Put the sidebar and the visible web page where the frame's sizes say.
   const render = () => {
     if (win.isDestroyed()) return;
-    const [, height] = win.getContentSize();
     sidebarView.setBounds({
       x: 0,
       y: 0,
-      width: Math.round(sidebarNow),
-      height,
+      width: Math.round(now.sidebar),
+      height: windowSize().height,
     });
-    const id = activeTabId();
-    if (id !== null) views.get(id)?.setBounds(pageBounds());
+    const view = views.get(activeTabId() ?? -1);
+    if (view) {
+      // In chat-only mode (or while the page is sliding shut) the page has no
+      // room, so hide it instead of leaving a sliver on screen.
+      const shown = pageIsShown();
+      if (shown) view.setBounds(pageBounds());
+      view.setVisible(shown);
+    }
     sendLayout();
   };
+
+  const sameSizes = (a: FrameSizes, b: FrameSizes) =>
+    a.sidebar === b.sidebar &&
+    a.left === b.left &&
+    a.panel === b.panel &&
+    a.chat === b.chat;
 
   let animation: ReturnType<typeof setInterval> | null = null;
   const stopAnimation = () => {
@@ -205,25 +281,21 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     animation = null;
   };
 
-  // Slide (or, with animate = false, jump) to wherever the layout should be now.
+  // Slide (or, with animate = false, jump) to wherever the frame should be now.
+  // Every part moves together, so the whole frame morphs as one.
   const applyLayout = (animate: boolean) => {
     stopAnimation();
-    const toSidebar = sidebarTarget();
-    const toPage = pageTarget();
-    if (!animate || (sidebarNow === toSidebar && pageNow === toPage)) {
-      sidebarNow = toSidebar;
-      pageNow = toPage;
+    const to = targetSizes();
+    if (!animate || sameSizes(now, to)) {
+      now = to;
       render();
       return;
     }
-    const fromSidebar = sidebarNow;
-    const fromPage = pageNow;
+    const from = now;
     const started = Date.now();
     animation = setInterval(() => {
-      const t = Math.min(1, (Date.now() - started) / SIDEBAR_ANIMATION_MS);
-      const eased = 1 - (1 - t) ** 3; // Starts fast, settles gently.
-      sidebarNow = fromSidebar + (toSidebar - fromSidebar) * eased;
-      pageNow = fromPage + (toPage - fromPage) * eased;
+      const t = Math.min(1, (Date.now() - started) / FRAME_ANIMATION_MS);
+      now = blendSizes(from, to, easeOutCubic(t));
       render();
       if (t >= 1) stopAnimation();
     }, 8);
@@ -265,7 +337,7 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     awayTicks = 0;
     if (watcher !== null) return;
     watcher = setInterval(() => {
-      if (!hover || pinned() || dragWidth !== null || busy > 0) {
+      if (!hover || pinned() || drag !== null || busy > 0) {
         awayTicks = 0;
         return;
       }
@@ -319,6 +391,8 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     win.contentView.addChildView(view);
     // Adding an existing view again moves it to the top: keep the sidebar above.
     win.contentView.addChildView(sidebarView);
+    // The page is a rounded card inset in the frame.
+    view.setBorderRadius(PAGE_RADIUS);
     view.setBounds(pageBounds());
     view.setVisible(false);
 
@@ -358,24 +432,33 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     for (const [tabId, view] of views) {
       // Hidden pages are not resized while the layout slides, so catch up now.
       if (tabId === id) view.setBounds(pageBounds());
-      view.setVisible(tabId === id);
+      view.setVisible(tabId === id && pageIsShown());
     }
-    if (id !== null) views.get(id)?.webContents.focus();
+    // Keyboard focus goes to the page, unless it is hidden (chat-only mode).
+    if (id !== null && pageIsShown()) views.get(id)?.webContents.focus();
     else win.webContents.focus();
     sendState();
   };
 
-  // Change the model, save soon, and show the new selection.
+  // Change the model, save soon, and show the new selection. If that also
+  // changed what the middle of the window shows, slide to the new layout.
   const commitAndShow = (next: SavedState) => {
+    const before = state.settings.viewMode;
     state = next;
     saver.schedule();
     showActive();
+    if (state.settings.viewMode !== before) applyLayout(true);
   };
+
+  // Choosing a page (a tab, an overview, an address) while the chat is on its
+  // own brings the page back alongside the chat.
+  const revealPage = (next: SavedState): SavedState =>
+    next.settings.viewMode === 'chat' ? model.setViewMode(next, 'both') : next;
 
   // ---- Actions -------------------------------------------------------------
 
   const openTab = (url: string, spaceId: number | null) =>
-    commitAndShow(model.addTab(state, { url, spaceId }).state);
+    commitAndShow(revealPage(model.addTab(state, { url, spaceId }).state));
 
   // Throw away a tab's live web page (if it has one).
   const destroyView = (id: number) => {
@@ -398,33 +481,97 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     commitAndShow(withSomethingActive(model.removeTab(state, id)));
   };
 
+  // Ask a yes/no question in a native dialog (default answer: cancel). While it
+  // is open the sidebar must not close under it.
+  const confirm = async (options: {
+    title: string;
+    message: string;
+    detail: string;
+    button: string;
+  }): Promise<boolean> => {
+    busy++;
+    try {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: options.title,
+        message: options.message,
+        detail: options.detail,
+        buttons: [options.button, 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0;
+    } finally {
+      busy = Math.max(0, busy - 1);
+    }
+  };
+
   const deleteSpace = async (id: number) => {
     const space = model.findSpace(state, id);
     if (!space) return;
     const count = state.tabs.filter((tab) => tab.spaceId === id).length;
     // Nothing to lose in an empty Space; otherwise ask first.
-    if (count > 0) {
-      busy++;
-      let response: number;
-      try {
-        ({ response } = await dialog.showMessageBox(win, {
-          type: 'warning',
-          title: 'Delete Space',
-          message: `Delete “${space.name}”?`,
-          detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
-          buttons: ['Delete Space and close tabs', 'Cancel'],
-          defaultId: 1,
-          cancelId: 1,
-        }));
-      } finally {
-        busy = Math.max(0, busy - 1);
-      }
-      if (response !== 0) return;
+    if (
+      count > 0 &&
+      !(await confirm({
+        title: 'Delete Space',
+        message: `Delete “${space.name}”?`,
+        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
+        button: 'Delete Space and close tabs',
+      }))
+    ) {
+      return;
     }
     // The Space may have changed while the dialog was open.
     const result = model.deleteSpace(state, id);
     for (const tabId of result.removedTabIds) destroyView(tabId);
     commitAndShow(withSomethingActive(result.state));
+  };
+
+  // ---- Conversations (chats) -----------------------------------------------
+  // Chats are managed on their own: they do not belong to a Space or a tab.
+
+  const commitChats = (next: ChatsState) => {
+    chats = next;
+    chatsSaver.schedule();
+    sendState();
+  };
+
+  const deleteChat = async (id: number) => {
+    const chat = chatsModel.findConversation(chats, id);
+    if (!chat) return;
+    // Nothing to lose in an empty chat; otherwise ask first.
+    if (
+      chat.messages.length > 0 &&
+      !(await confirm({
+        title: 'Delete chat',
+        message: `Delete “${chat.title}”?`,
+        detail: `Its ${chat.messages.length} message${chat.messages.length === 1 ? '' : 's'} will be deleted. It cannot be undone.`,
+        button: 'Delete chat',
+      }))
+    ) {
+      return;
+    }
+    // The chat may have changed while the dialog was open.
+    commitChats(chatsModel.deleteConversation(chats, id));
+  };
+
+  const chatMenuActions: ChatMenuActions = {
+    selectChat: (id) =>
+      commitChats(chatsModel.setActiveConversation(chats, id)),
+    newChat: () => commitChats(chatsModel.newConversation(chats).state),
+    // The chat's name becomes a text box. With only the chat open, the chat list
+    // is in the sidebar (which must be open to show the box); otherwise the
+    // title is in the chat bar.
+    renameChat: (id) => {
+      const inSidebar = state.settings.viewMode === 'chat';
+      const target = inSidebar ? sidebar : win.webContents;
+      if (target.isDestroyed()) return;
+      if (inSidebar && !pinned()) setHover(true);
+      target.send('chats:begin-rename', id);
+      target.focus(); // So the box can take keyboard input.
+    },
+    deleteChat: (id) => void deleteChat(id),
   };
 
   const menuActions: MenuActions = {
@@ -450,7 +597,30 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     deleteSpace: (spaceId) => void deleteSpace(spaceId),
   };
 
-  const select = (ref: ActiveRef) => commitAndShow(model.setActive(state, ref));
+  const select = (ref: ActiveRef) =>
+    commitAndShow(revealPage(model.setActive(state, ref)));
+
+  // Expand the chat, or shrink it back to the compact bar. If the chat is
+  // closed, or fills the window, bring back the page with the chat instead.
+  const toggleChat = () => {
+    const settings = state.settings;
+    state =
+      settings.viewMode === 'both'
+        ? model.setChatExpanded(state, !settings.chatExpanded)
+        : model.setViewMode(state, 'both');
+    saver.schedule();
+    applyLayout(true);
+    showActive();
+  };
+
+  // How far a part of the frame may be dragged while the mouse is down.
+  const sizeWhileDragging = (kind: ResizeKind, size: number) => {
+    if (kind === 'sidebar') {
+      return clamp(SIDEBAR_COLLAPSED_WIDTH, model.SIDEBAR_MAX_WIDTH, size);
+    }
+    if (kind === 'chat') return chatHeightWhileDragging(size, windowSize());
+    return panelWidthWhileDragging(size, { left: now.left }, windowSize());
+  };
 
   // The Space the user is "in": where Ctrl+T puts a new tab.
   const currentSpaceId = (): number | null => {
@@ -462,7 +632,8 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   };
 
   // Keyboard shortcuts: Ctrl+T new tab, Ctrl+W close, Ctrl+Tab / Ctrl+Shift+Tab
-  // next / previous. Attached to both UI pages and to every web page.
+  // next / previous, Ctrl+J expand / shrink the chat. Attached to both UI pages
+  // and to every web page.
   const handleShortcut = (
     event: { preventDefault: () => void },
     input: Electron.Input,
@@ -477,6 +648,9 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       event.preventDefault();
       const id = activeTabId();
       if (id !== null) closeTab(id);
+    } else if (key === 'j') {
+      event.preventDefault();
+      toggleChat();
     } else if (key === 'tab') {
       event.preventDefault();
       const order = model.navOrder(state);
@@ -495,7 +669,10 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       const id = activeTabId();
       if (id === null || typeof input !== 'string') return;
       const url = resolveInput(input);
-      if (url !== '') void views.get(id)?.webContents.loadURL(url);
+      if (url === '') return;
+      void views.get(id)?.webContents.loadURL(url);
+      // Going somewhere while the chat fills the window brings the page back.
+      commitAndShow(revealPage(state));
     },
     'tab:back': () => {
       const id = activeTabId();
@@ -524,7 +701,9 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     'space:new': () => {
       const created = model.addSpace(state);
       commitAndShow(
-        model.setActive(created.state, { kind: 'lead', spaceId: created.id }),
+        revealPage(
+          model.setActive(created.state, { kind: 'lead', spaceId: created.id }),
+        ),
       );
     },
     'space:collapse': (id, collapsed) => {
@@ -537,42 +716,100 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
         commit(model.renameSpace(state, id, name));
     },
     'sidebar:hover': () => {
-      if (!pinned() && dragWidth === null) setHover(true);
+      if (!pinned() && drag === null) setHover(true);
     },
-    // Dragging the sidebar's edge. While dragging the sidebar follows the mouse
-    // exactly. On release: near the left edge it becomes the icon strip, anywhere
-    // else it pins open at that width (which is remembered).
-    'sidebar:drag-start': () => {
-      if (dragWidth !== null) return;
-      stopAnimation();
-      dragStartedPinned = pinned();
-      dragWidth = sidebarNow;
+    'chat:toggle': () => toggleChat(),
+    // Show the page alone (chat closed), both, or the chat alone (page hidden).
+    'view:set': (mode) => {
+      if (!model.VIEW_MODES.includes(mode as model.ViewMode)) return;
+      commitAndShow(model.setViewMode(state, mode as model.ViewMode));
     },
-    'sidebar:drag': (width) => {
-      if (dragWidth === null || !isNumber(width)) return;
-      dragWidth = Math.min(
-        model.SIDEBAR_MAX_WIDTH,
-        Math.max(SIDEBAR_COLLAPSED_WIDTH, width),
+    'panel:toggle': (panel) => {
+      if (!model.RIGHT_PANELS.includes(panel as model.RightPanel)) return;
+      const open = state.settings.rightPanel === panel;
+      state = model.setRightPanel(
+        state,
+        open ? null : (panel as model.RightPanel),
       );
+      saver.schedule();
+      applyLayout(true);
+      sendState();
+    },
+    // Dragging an edge of the frame (the sidebar, the chat or the right panel).
+    // While you drag, that part follows the mouse exactly; the others slide to
+    // make room. On release it either snaps (to the icon strip, the compact
+    // chat bar, or closed) or stays at the size you chose, which is remembered.
+    'resize:start': (kind) => {
+      if (!isResizeKind(kind) || drag !== null) return;
+      // The chat can only be dragged while it shares the window with the page.
+      if (kind === 'chat' && state.settings.viewMode !== 'both') return;
+      stopAnimation();
+      drag = {
+        kind,
+        size:
+          kind === 'sidebar'
+            ? now.sidebar
+            : kind === 'chat'
+              ? now.chat
+              : now.panel,
+        startedPinned: pinned(),
+      };
+    },
+    'resize:move': (kind, size) => {
+      if (!isResizeKind(kind) || drag === null || drag.kind !== kind) return;
+      if (!isNumber(size)) return;
+      drag.size = sizeWhileDragging(kind, size);
       applyLayout(false);
     },
-    'sidebar:drag-end': (width) => {
-      if (dragWidth === null) return;
-      const finalWidth = isNumber(width) ? width : dragWidth;
-      dragWidth = null;
-      hover = false;
-      stopWatching();
-      if (finalWidth < SIDEBAR_SNAP_WIDTH) {
-        state = model.setSidebarPinned(state, false);
+    'resize:end': (kind, size) => {
+      if (!isResizeKind(kind) || drag === null || drag.kind !== kind) return;
+      const final = sizeWhileDragging(kind, isNumber(size) ? size : drag.size);
+      drag = null;
+      if (kind === 'sidebar') {
+        // Near the left edge: back to the icon strip. Anywhere else: pinned open
+        // at that width.
+        hover = false;
+        stopWatching();
+        state =
+          final < SIDEBAR_SNAP_WIDTH
+            ? model.setSidebarPinned(state, false)
+            : model.setSidebarWidth(model.setSidebarPinned(state, true), final);
+      } else if (kind === 'chat') {
+        const result = settleChat(final, windowSize());
+        state = result.expanded
+          ? model.setChatHeight(
+              model.setChatExpanded(state, true),
+              result.height,
+            )
+          : model.setChatExpanded(state, false);
       } else {
-        state = model.setSidebarWidth(
-          model.setSidebarPinned(state, true),
-          finalWidth,
-        );
+        const result = settlePanel(final, { left: now.left }, windowSize());
+        state = result.open
+          ? model.setPanelWidth(state, result.width)
+          : model.setRightPanel(state, null);
       }
       saver.schedule();
       applyLayout(true);
       sendState();
+    },
+    'chats:new': () => chatMenuActions.newChat(),
+    'chats:select': (id) => {
+      if (isId(id)) chatMenuActions.selectChat(id);
+    },
+    'chats:rename': (id, title) => {
+      if (isId(id) && typeof title === 'string') {
+        commitChats(chatsModel.renameConversation(chats, id, title));
+      }
+    },
+    'chats:delete': (id) => {
+      if (isId(id)) void deleteChat(id);
+    },
+    'chats:menu': (id) => {
+      if (id === undefined || id === null) {
+        popupMenu(chatMenu(chats, chatMenuActions));
+      } else if (isId(id) && chatsModel.findConversation(chats, id)) {
+        popupMenu(chatRowMenu(id, chatMenuActions));
+      }
     },
     'tab:menu': (id) => {
       if (isId(id)) popupMenu(tabMenu(state, id, menuActions));
@@ -592,6 +829,20 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   });
 
   win.on('resize', () => applyLayout(false));
+  // The window's size can still settle a moment after it appears (when it is
+  // first shown, maximized or restored), so lay the frame out again then.
+  const relayout = () => {
+    if (!win.isDestroyed()) applyLayout(false);
+  };
+  win.on('show', relayout);
+  win.on('maximize', relayout);
+  win.on('unmaximize', relayout);
+  win.on('restore', relayout);
+  win.on('enter-full-screen', relayout);
+  win.on('leave-full-screen', relayout);
+  win.webContents.on('did-finish-load', relayout);
+  const startupTimers = [300, 1000].map((ms) => setTimeout(relayout, ms));
+
   win.webContents.on('before-input-event', handleShortcut);
   sidebar.on('before-input-event', handleShortcut);
 
@@ -603,10 +854,14 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   void loadUi(sidebar, 'sidebar');
 
   // Save for sure when the window closes (a plain write might not finish).
-  win.on('close', () => saver.flushSync());
+  win.on('close', () => {
+    saver.flushSync();
+    chatsSaver.flushSync();
+  });
   win.on('closed', () => {
     stopAnimation();
     stopWatching();
+    for (const timer of startupTimers) clearTimeout(timer);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);
   });

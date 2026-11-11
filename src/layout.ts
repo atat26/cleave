@@ -1,11 +1,20 @@
-// Window layout, in pixels. The tab sidebar is on the left, the toolbar is
-// along the top (to the right of the sidebar), and web pages fill the rest.
+// Window layout, in pixels.
 //
-// The sidebar is a narrow icon strip by default. Hovering it slides it open
-// OVER the page; pinning it keeps it open and the page makes room. You can drag
-// its right edge to resize it (see model.ts for the min/max/default widths).
+// The window is one connected frame around the web page:
+//
+//     +---------+-------------------------------+-------+------+
+//     |         |  toolbar (address bar)        |       |      |
+//     |  left   +-------------------------------+ right | rail |
+//     | sidebar |  web page (a rounded card)    | panel |      |
+//     |         +-------------------------------+       |      |
+//     |         |  chat (compact or expanded)   |       |      |
+//     +---------+-------------------------------+-------+------+
+//
+// Every part can change size, and they all slide together (see frame.ts).
+
+// Left sidebar: a narrow icon strip, opened over the page by hovering, or
+// pinned open at a width you choose by dragging its edge.
 export const SIDEBAR_COLLAPSED_WIDTH = 48;
-export const TOOLBAR_HEIGHT = 48;
 
 // Drag the sidebar narrower than this and, on release, it snaps to the icon
 // strip. Release it wider and it pins open at that width.
@@ -19,5 +28,33 @@ export const SIDEBAR_FULL_MIN_WIDTH = 120;
 // right edge, so a small slip of the mouse does not close it.
 export const SIDEBAR_CLOSE_MARGIN = 80;
 
-// How long the sidebar takes to slide open, closed or pinned.
-export const SIDEBAR_ANIMATION_MS = 160;
+// Top: the toolbar with the address bar.
+export const TOOLBAR_HEIGHT = 48;
+
+// Right rail: always-visible buttons (Skills, Extensions, Settings).
+export const RAIL_WIDTH = 48;
+
+// Right panel: opens left of the rail. Drag it narrower than this and, on
+// release, it closes.
+export const PANEL_SNAP_WIDTH = 200;
+
+// Bottom chat: a compact bar (one or two lines), or expanded and resizable.
+// Drag it shorter than this and, on release, it shrinks back to the compact bar.
+export const CHAT_COMPACT_HEIGHT = 64;
+export const CHAT_SNAP_HEIGHT = 110;
+// While the chat is shorter than this it draws the compact look.
+export const CHAT_FULL_MIN_HEIGHT = 120;
+
+// The web page is a rounded card inset from the frame by this much.
+export const PAGE_INSET = 6;
+export const PAGE_RADIUS = 10;
+
+// The web page never gets smaller than this, however big the panels are.
+export const MIN_PAGE_WIDTH = 240;
+export const MIN_PAGE_HEIGHT = 120;
+
+// The colour of the frame itself (all the panels share it, so they read as one).
+export const FRAME_COLOR = '#e8eaed';
+
+// How long the frame takes to slide when something opens, closes or snaps.
+export const FRAME_ANIMATION_MS = 160;

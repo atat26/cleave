@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { FRAME_COLOR } from './layout';
 import { createTabs } from './tabs';
 import { loadUi } from './ui';
 
@@ -14,6 +15,11 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    // Never so small that the frame's panels leave no room for the page.
+    minWidth: 800,
+    minHeight: 520,
+    // The frame's colour, so there is no white flash before the UI paints.
+    backgroundColor: FRAME_COLOR,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       // Security: the UI page is isolated from Node.js and from Electron

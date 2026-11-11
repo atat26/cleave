@@ -4,7 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { addSpace, addTab, defaultState } from './model.ts';
-import { createSaver, loadState, saveState } from './storage.ts';
+import { newConversation } from './chats.ts';
+import {
+  createSaver,
+  loadChats,
+  loadState,
+  saveJson,
+  saveState,
+} from './storage.ts';
 
 // Each test works in its own throwaway folder under the system temp directory.
 async function tempFile() {
@@ -63,6 +70,37 @@ test('flushSync writes immediately and only when something changed', async () =>
   saver.schedule();
   saver.flushSync();
   assert.equal((await loadState(file)).tabs.length, 1);
+  await fs.rm(dir, { recursive: true });
+});
+
+test('chats load and save the same careful way (missing, corrupt, tampered)', async () => {
+  const { dir, file } = await tempFile();
+  // Missing file: one fresh conversation.
+  const fresh = await loadChats(file);
+  assert.equal(fresh.conversations.length, 1);
+  // Round trip.
+  const saved = newConversation(fresh).state;
+  await saveJson(file, saved);
+  assert.deepEqual(await loadChats(file), saved);
+  // Tampered: bad entries dropped, still usable.
+  await fs.writeFile(
+    file,
+    JSON.stringify({
+      conversations: [{ id: 1, title: 'ok' }, { id: 'x' }],
+      activeId: 7,
+    }),
+    'utf8',
+  );
+  const repaired = await loadChats(file);
+  assert.deepEqual(
+    repaired.conversations.map((c) => c.title),
+    ['ok'],
+  );
+  assert.equal(repaired.activeId, 1);
+  // Corrupt: set aside, start fresh.
+  await fs.writeFile(file, '{ not json', 'utf8');
+  assert.equal((await loadChats(file)).conversations.length, 1);
+  assert.equal(await fs.readFile(`${file}.corrupt`, 'utf8'), '{ not json');
   await fs.rm(dir, { recursive: true });
 });
 

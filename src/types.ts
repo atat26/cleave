@@ -1,4 +1,4 @@
-import type { ActiveRef, SpaceColor } from './model';
+import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 
 // A tab as the UI sees it.
 export interface TabInfo {
@@ -19,8 +19,22 @@ export interface SpaceInfo {
   collapsed: boolean;
 }
 
+// A conversation as the UI sees it (the messages themselves come later).
+export interface ChatInfo {
+  id: number;
+  title: string;
+  messageCount: number;
+}
+
+export interface ChatsInfo {
+  // In the order they were created.
+  conversations: ChatInfo[];
+  activeId: number;
+}
+
 // Everything the UI needs to draw itself.
 export interface UiState {
+  chats: ChatsInfo;
   spaces: SpaceInfo[];
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
@@ -32,6 +46,27 @@ export interface UiState {
   sidebarPinned: boolean;
   // Currently showing its full width (pinned, or opened by hovering).
   sidebarExpanded: boolean;
+  // What the middle shows: the page and chat together, the page alone, or the
+  // chat alone.
+  viewMode: ViewMode;
+  // The bottom chat is expanded (taller than the compact bar).
+  chatExpanded: boolean;
+  // Which panel is open on the right, if any.
+  rightPanel: RightPanel | null;
+}
+
+// The parts of the frame that can be dragged to a new size.
+export type ResizeKind = 'sidebar' | 'chat' | 'panel';
+
+// How much room the parts of the frame take right now, in pixels. The app
+// sends these many times a second while the frame slides, so the UI can follow.
+export interface FrameLayout {
+  // Where the toolbar, page and chat start (the sidebar's reserved width).
+  left: number;
+  // Width of the right panel (0 when closed), not counting the rail.
+  panel: number;
+  // Height of the chat at the bottom.
+  chat: number;
 }
 
 // Shape of the API the preload script exposes to the UI as window.browserApi.
@@ -52,13 +87,33 @@ export interface BrowserApi {
   // The mouse rested on the sidebar's icon strip: please open it. (Closing is
   // decided by the app, by watching how far the mouse has moved away.)
   hoverSidebar: () => void;
-  // Dragging the sidebar's edge. The width is where the edge is now, in pixels.
-  startSidebarDrag: () => void;
-  dragSidebar: (width: number) => void;
-  endSidebarDrag: (width: number) => void;
-  // Called with how far from the left edge the toolbar and web pages start,
-  // including while the sidebar is sliding. Returns an unsubscribe function.
-  onLayout: (callback: (contentLeft: number) => void) => () => void;
+  // Expand the bottom chat, or shrink it back to the compact bar. (If the chat
+  // is closed, or fills the window, this brings back the page with the chat.)
+  toggleChat: () => void;
+  // Show the page alone (chat closed), both, or the chat alone (page hidden).
+  setViewMode: (mode: ViewMode) => void;
+  // Managing conversations. They are independent of Spaces and tabs.
+  newChat: () => void;
+  selectChat: (id: number) => void;
+  renameChat: (id: number, title: string) => void;
+  // Asks before deleting a chat that has messages.
+  deleteChat: (id: number) => void;
+  // Shows a native menu. Without an id it is the chat title's menu (switch
+  // chats, new chat, rename or delete the current one); with an id it is the
+  // right-click menu for that one chat (rename, delete).
+  showChatMenu: (id?: number) => void;
+  // Called when "Rename chat" is chosen from a menu: show that chat's rename box.
+  onChatRenameRequest: (callback: (chatId: number) => void) => () => void;
+  // Open one of the right panels, or close it if it is already the open one.
+  togglePanel: (panel: RightPanel) => void;
+  // Dragging an edge of the frame. `size` is where the edge is now, in pixels
+  // (the sidebar's width, the chat's height, or the panel's width).
+  startResize: (kind: ResizeKind) => void;
+  resize: (kind: ResizeKind, size: number) => void;
+  endResize: (kind: ResizeKind, size: number) => void;
+  // Called with the frame's current layout, including while it slides.
+  // Returns an unsubscribe function.
+  onLayout: (callback: (layout: FrameLayout) => void) => () => void;
   // Right-click menus. The app shows a native menu and performs the choice.
   showTabMenu: (id: number) => void;
   showSpaceMenu: (id: number) => void;

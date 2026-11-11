@@ -1,7 +1,7 @@
 // The preload script is the ONLY bridge between the UI page and the app.
 // Expose small, specific functions here -- never whole Electron modules.
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BrowserApi, UiState } from './types';
+import type { BrowserApi, FrameLayout, UiState } from './types';
 
 const browserApi: BrowserApi = {
   platform: process.platform,
@@ -18,13 +18,27 @@ const browserApi: BrowserApi = {
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
   hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
-  startSidebarDrag: () => ipcRenderer.send('sidebar:drag-start'),
-  dragSidebar: (width) => ipcRenderer.send('sidebar:drag', width),
-  endSidebarDrag: (width) => ipcRenderer.send('sidebar:drag-end', width),
+  toggleChat: () => ipcRenderer.send('chat:toggle'),
+  setViewMode: (mode) => ipcRenderer.send('view:set', mode),
+  newChat: () => ipcRenderer.send('chats:new'),
+  selectChat: (id) => ipcRenderer.send('chats:select', id),
+  renameChat: (id, title) => ipcRenderer.send('chats:rename', id, title),
+  deleteChat: (id) => ipcRenderer.send('chats:delete', id),
+  showChatMenu: (id) => ipcRenderer.send('chats:menu', id),
+  onChatRenameRequest: (callback) => {
+    const listener = (_event: unknown, chatId: number) => callback(chatId);
+    ipcRenderer.on('chats:begin-rename', listener);
+    return () => {
+      ipcRenderer.removeListener('chats:begin-rename', listener);
+    };
+  },
+  togglePanel: (panel) => ipcRenderer.send('panel:toggle', panel),
+  startResize: (kind) => ipcRenderer.send('resize:start', kind),
+  resize: (kind, size) => ipcRenderer.send('resize:move', kind, size),
+  endResize: (kind, size) => ipcRenderer.send('resize:end', kind, size),
 
   onLayout: (callback) => {
-    const listener = (_event: unknown, contentLeft: number) =>
-      callback(contentLeft);
+    const listener = (_event: unknown, layout: FrameLayout) => callback(layout);
     ipcRenderer.on('ui:layout', listener);
     return () => {
       ipcRenderer.removeListener('ui:layout', listener);
