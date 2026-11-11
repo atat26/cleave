@@ -1,4 +1,7 @@
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
+import type { ModelInfo } from './openrouter';
+
+export type { ModelInfo };
 
 // A tab as the UI sees it.
 export interface TabInfo {
@@ -18,6 +21,37 @@ export interface SpaceInfo {
   color: SpaceColor;
   collapsed: boolean;
 }
+
+// ---- The AI provider (OpenRouter) -------------------------------------------
+// The UI can save and remove an API key but never read it back: all it ever
+// learns is whether one is saved.
+
+export interface LlmStatus {
+  // Can a key be stored safely on this computer?
+  encryptionAvailable: boolean;
+  hasKey: boolean;
+  // The chosen model name, or null if none has been chosen.
+  model: string | null;
+}
+
+export type LlmResult =
+  | { ok: true; status: LlmStatus }
+  | { ok: false; error: string; status: LlmStatus };
+
+export type LlmTestResult =
+  | {
+      ok: true;
+      // The key's name on openrouter.ai, and its credit (US dollars; null = no limit).
+      label: string;
+      usage: number | null;
+      limit: number | null;
+      limitRemaining: number | null;
+    }
+  | { ok: false; error: string };
+
+export type LlmModelsResult =
+  | { ok: true; models: ModelInfo[] }
+  | { ok: false; error: string };
 
 // A conversation as the UI sees it (the messages themselves come later).
 export interface ChatInfo {
@@ -92,6 +126,13 @@ export interface BrowserApi {
   toggleChat: () => void;
   // Show the page alone (chat closed), both, or the chat alone (page hidden).
   setViewMode: (mode: ViewMode) => void;
+  // The AI provider (OpenRouter). The key goes in but never comes back out.
+  llmStatus: () => Promise<LlmStatus>;
+  llmSaveKey: (key: string) => Promise<LlmResult>;
+  llmRemoveKey: () => Promise<LlmStatus>;
+  llmTestConnection: () => Promise<LlmTestResult>;
+  llmListModels: (refresh?: boolean) => Promise<LlmModelsResult>;
+  llmSetModel: (model: string | null) => Promise<LlmResult>;
   // Managing conversations. They are independent of Spaces and tabs.
   newChat: () => void;
   selectChat: (id: number) => void;

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
+import { SettingsPanel } from './SettingsPanel';
 
 const TITLES: Record<RightPanelName, string> = {
   skills: 'Skills',
@@ -9,10 +10,10 @@ const TITLES: Record<RightPanelName, string> = {
   settings: 'Settings',
 };
 
-const PLACEHOLDERS: Record<RightPanelName, string> = {
+// Panels that have no content yet. (Settings has its own panel component.)
+const PLACEHOLDERS: Partial<Record<RightPanelName, string>> = {
   skills: 'Reusable skills you can run from here are coming in a later update.',
   extensions: 'Extensions are coming in a later update.',
-  settings: 'Your model settings and API key will go here in the next update.',
 };
 
 // The panel that opens to the left of the rail. It is a card on the frame, and
@@ -66,17 +67,29 @@ export function RightPanel({ panel }: { panel: RightPanelName }) {
             ×
           </button>
         </header>
-        <p
+        <div
           style={{
-            margin: 0,
-            padding: '0 16px',
-            color: '#5f6368',
-            fontSize: 13,
-            lineHeight: 1.5,
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '0 16px 16px',
           }}
         >
-          {PLACEHOLDERS[panel]}
-        </p>
+          {panel === 'settings' ? (
+            <SettingsPanel />
+          ) : (
+            <p
+              style={{
+                margin: 0,
+                color: '#5f6368',
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+            >
+              {PLACEHOLDERS[panel]}
+            </p>
+          )}
+        </div>
       </section>
       <ResizeHandle
         kind="panel"
