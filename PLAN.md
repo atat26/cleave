@@ -1,7 +1,7 @@
 # Build plan
 
 - [x] M1: Window, one tab, address bar, back/forward
-- [ ] M2: Multiple tabs plus a vertical tab list
+- [x] M2: Multiple tabs plus a vertical tab list
 - [ ] M3: Spaces (create, switch, rename), saved to disk
 - [ ] M4: Settings, provider adapter (OpenRouter, then OpenCode), streaming chat
 - [ ] M5: Read-only agent ("summarize these tabs"), no clicking yet
