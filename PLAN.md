@@ -15,6 +15,7 @@
 - [x] Tools step 1: a list of the assistant's tools with four approval levels (always allow, allow if safe, ask first, never allow), saved in tools.json; safety refusals can never be overridden; defaults match the old behaviour. No screen yet.
 - [x] Tools step 2: the Tools panel on the chat rail (a dropdown per tool, a warning before Always allow on tools that change things, Return to default per tool, Reset to defaults, saved in tools.json)
 - [x] Tools step 3: web search run by the app (Brave Search key in Settings > Web search; a Search the web tool under Looking and reading; each search approved on a card; results and page controls kept with the call so you can read them; earlier searches remembered so a follow-up can open a result without searching again; links show where they go)
+- [x] Chat Markdown, spinner and click fix: assistant replies render Markdown safely (headings, bold, lists, tables, code, links that open as new tabs; no HTML, no images); a spinner shows next to whatever the assistant is doing; clicks work on links below the fold
 - [ ] M7: Module system plus builder agent
 - [ ] M8: Daily-driver polish
 

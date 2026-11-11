@@ -37,9 +37,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 // The browser says an element is no longer there in a few ways.
 const isGone = (error: unknown) =>
   error instanceof Error &&
-  /no node|could not find node|node with given id|not found|detached/i.test(
-    error.message,
-  );
+  /could not find node|node with given id|detached/i.test(error.message);
 
 // Run an action, turning the browser's complaints into plain reasons.
 async function guarded(work: () => Promise<DoneResult>): Promise<DoneResult> {
@@ -204,18 +202,43 @@ async function objectFor(
   return object.objectId;
 }
 
+// How far the page is scrolled. The hit test below works in page coordinates (the
+// whole page from its top left), while clicks use the visible window, so the
+// scroll has to be added in between.
+async function scrollOffset(cdp: Cdp): Promise<{ x: number; y: number }> {
+  const metrics = await cdp.send('Page.getLayoutMetrics');
+  const viewport =
+    isRecord(metrics) && isRecord(metrics.cssVisualViewport)
+      ? metrics.cssVisualViewport
+      : {};
+  return {
+    x: typeof viewport.pageX === 'number' ? viewport.pageX : 0,
+    y: typeof viewport.pageY === 'number' ? viewport.pageY : 0,
+  };
+}
+
 // Is the thing at this spot the control itself (or inside it)? If something else
-// covers it, a click would land on that instead of what you approved.
+// covers it, a click would land on that instead of what you approved. `point` is
+// in page coordinates.
 async function reachable(
   cdp: Cdp,
   backendNodeId: number,
   point: { x: number; y: number },
 ): Promise<boolean> {
-  const hit = await cdp.send('DOM.getNodeForLocation', {
-    x: Math.round(point.x),
-    y: Math.round(point.y),
-    includeUserAgentShadowDOM: false,
-  });
+  let hit: unknown;
+  try {
+    hit = await cdp.send('DOM.getNodeForLocation', {
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+      includeUserAgentShadowDOM: false,
+    });
+  } catch (error) {
+    // Nothing at that spot at all: not something that can be clicked there.
+    if (error instanceof Error && /no node found/i.test(error.message)) {
+      return false;
+    }
+    throw error;
+  }
   const hitId =
     isRecord(hit) && typeof hit.backendNodeId === 'number'
       ? hit.backendNodeId
@@ -248,7 +271,9 @@ export function clickControl(
     await cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId });
     const point = await centerOf(cdp, backendNodeId);
     if (!point) return { ok: false, reason: 'gone' };
-    if (!(await reachable(cdp, backendNodeId, point))) {
+    const scrolled = await scrollOffset(cdp);
+    const onPage = { x: point.x + scrolled.x, y: point.y + scrolled.y };
+    if (!(await reachable(cdp, backendNodeId, onPage))) {
       return { ok: false, reason: 'blocked' };
     }
     await cdp.send('Input.dispatchMouseEvent', {

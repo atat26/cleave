@@ -257,3 +257,45 @@ test('garbage from a page never crashes an action', async () => {
   assert.equal((await typeIntoControl(page.cdp, 1, 'x')).ok, false);
   assert.equal((await clickControl(page.cdp, 1)).ok, false);
 });
+
+test('on a page that is scrolled, the covered-or-not check uses page coordinates while the click uses the window', async () => {
+  const hits: { x: unknown; y: unknown }[] = [];
+  const page = fakePage({
+    'DOM.getContentQuads': QUAD, // the control is at (60, 30) in the window
+    'Page.getLayoutMetrics': { cssVisualViewport: { pageX: 5, pageY: 2000 } },
+    'DOM.getNodeForLocation': (params: Record<string, unknown>) => {
+      hits.push({ x: params.x, y: params.y });
+      return { backendNodeId: 7 };
+    },
+  });
+  assert.deepEqual(await clickControl(page.cdp, 7), { ok: true });
+  // The check looked at page coordinates (window position + scroll)...
+  assert.deepEqual(hits, [{ x: 65, y: 2030 }]);
+  // ...but the click itself was at the position in the window.
+  const press = page.sent.find(
+    (s) =>
+      s.method === 'Input.dispatchMouseEvent' &&
+      s.params?.type === 'mousePressed',
+  );
+  assert.deepEqual([press?.params?.x, press?.params?.y], [60, 30]);
+});
+
+test('nothing at the spot is "blocked", not "gone"; only a vanished control is gone', async () => {
+  const empty = fakePage({
+    'DOM.getContentQuads': QUAD,
+    'DOM.getNodeForLocation': new Error('No node found at given location'),
+  });
+  assert.deepEqual(await clickControl(empty.cdp, 7), {
+    ok: false,
+    reason: 'blocked',
+  });
+  assert.ok(!empty.methods().includes('Input.dispatchMouseEvent'));
+
+  const gone = fakePage({
+    'DOM.getContentQuads': new Error('Could not find node with given id'),
+  });
+  assert.deepEqual(await clickControl(gone.cdp, 7), {
+    ok: false,
+    reason: 'gone',
+  });
+});
