@@ -7,7 +7,7 @@
 - [x] M4b: Settings panel, encrypted API key storage (Electron safeStorage, main process only), OpenRouter provider adapter with streaming parser, model picker, test connection
 - [x] M4c-1: Working chat: streaming replies with Stop and Retry, per-chat history, error messages, pinned models with a model chip, system prompt in Settings, cost line
 - [x] M4c-2: Link Spaces and tabs to a chat with `@` (pills in the message box) or "+ Add page"; link chips; links shown as tokens in sent messages (kept after a link is removed; closed tabs can be reopened, which updates every chat that used them); only titles and cleaned addresses reach the model (no query strings)
-- [ ] M5: Read-only agent ("summarize these tabs"), no clicking yet
+- [x] M5: Read-only agent: linked pages can be read by the assistant (read_page / list_linked_tabs tools, linked tabs only, 8 reads and 6 rounds per reply, pages treated as untrusted data, no acting or file tools), each read shown in the chat; models record whether they support tools and images, with a note when a model cannot read pages; dev startup watchdog reloads a page that fails to start
 - [ ] M5b: Web search tool for the agent (OpenRouter built-in web search first; optional own-key providers or a user-supplied SearXNG address later; results treated as untrusted)
 - [ ] M6: Acting agent with confirmations, step limit, stop button
 - [ ] M7: Module system plus builder agent

@@ -132,8 +132,8 @@ export function LinkChips({
             : undefined;
         const shared =
           link.kind === 'tab'
-            ? `Shared with the model: this title${link.address ? ' and this address' : ''}.`
-            : "Shared with the model: this Space's name and its tabs' titles and addresses.";
+            ? `The assistant gets this title${link.address ? ' and address' : ''}, and can read the page when you ask.`
+            : "The assistant gets this Space's name and its tabs' titles and addresses, and can read those pages when you ask.";
         const tip = [
           link.label,
           link.address,
@@ -195,7 +195,7 @@ export function LinkChips({
         );
       })}
       <span style={{ fontSize: 11, color: '#5f6368' }}>
-        Shares titles and addresses only.
+        The assistant can read these pages when you ask.
       </span>
     </div>
   );
@@ -272,7 +272,7 @@ export function AddPageButton({ onClick }: { onClick: () => void }) {
         // Keep the text box focused, so the list's arrow keys work.
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
-        title="Attach a tab or Space to the chat (shares its title and address only)"
+        title="Attach a tab or Space to the chat (the assistant can read it when you ask)"
         style={{
           ...chipStyle,
           padding: '3px 10px',

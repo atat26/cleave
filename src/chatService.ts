@@ -12,7 +12,9 @@
 //     into markup.
 import { clipboard, ipcMain, Menu } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { buildLinkedContext, snapshotLookup } from './chatLinks';
+import { createAgentTools } from './agentTools';
+import type { PageRead } from './agentTools';
+import { buildLinkedContext, linkedTabs, snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
 import type { RunContext } from './chatRunner';
@@ -54,6 +56,8 @@ export function createChatService(options: {
   getChats(): ChatsState;
   // The Spaces and tabs, for building what a chat's links tell the model.
   getWorkspace(): Workspace;
+  // Read a tab's text for the assistant (read-only; see pageReader.ts).
+  readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
   setChats(next: ChatsState): void;
@@ -97,13 +101,14 @@ export function createChatService(options: {
   const runner = createChatRunner({
     getState: options.getChats,
     setState: options.setChats,
-    stream: async function* ({ model, messages, signal }) {
+    stream: async function* ({ model, messages, tools, signal }) {
       const apiKey = llm?.getApiKey() ?? null;
       if (llm === null || apiKey === null) throw new ChatError('auth');
       yield* streamChat({
         apiKey,
         model,
         messages,
+        tools,
         signal,
         fetchImpl: llm.fetchImpl,
       });
@@ -147,12 +152,32 @@ export function createChatService(options: {
       chats.refreshRefs(options.getChats(), snapshotLookup(workspace)),
     );
     const refs = chats.findConversation(options.getChats(), chatId)?.refs ?? [];
+
+    // The assistant may read the linked pages if there are any to read and the
+    // model is not known to lack tool support. (An unknown model is tried: if it
+    // cannot, the provider says so and the chat shows the error.)
+    const canRead =
+      linkedTabs(refs, workspace).length > 0 &&
+      llm.getModelInfo(model)?.supportsTools !== false;
+    const tools = canRead
+      ? createAgentTools({
+          // Looked up again at each use, so a link removed mid-reply stops
+          // counting at once.
+          linkedTabs: () =>
+            linkedTabs(
+              chats.findConversation(options.getChats(), chatId)?.refs ?? [],
+              options.getWorkspace(),
+            ),
+          readPage: options.readPage,
+        })
+      : null;
     return {
       ok: true,
       context: {
         model,
         systemPrompt: settings.systemPrompt,
-        linked: buildLinkedContext(refs, workspace),
+        linked: buildLinkedContext(refs, workspace, canRead),
+        tools,
       },
     };
   }

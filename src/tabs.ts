@@ -28,6 +28,8 @@ import {
 } from './layout';
 import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
+import type { PageRead } from './agentTools';
+import { readPageText } from './pageReader';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
@@ -213,6 +215,23 @@ export async function createTabs(
       ready.add(contents);
       sendState();
     });
+    // Show problems in the app's own pages in the terminal, so a blank panel can
+    // be diagnosed (these pages are ours, not web content).
+    contents.on('console-message', (event) => {
+      if (event.level === 'error') {
+        console.error(
+          `[ui] ${event.message} (${event.sourceId}:${event.lineNumber})`,
+        );
+      }
+    });
+    contents.on('render-process-gone', (_event, details) => {
+      console.error(`[ui] page process gone: ${details.reason}`);
+    });
+    contents.on('did-fail-load', (_event, code, description, url) => {
+      console.error(
+        `[ui] page failed to load (${code} ${description}): ${url}`,
+      );
+    });
   };
 
   const sendToUi = (channel: string, ...args: unknown[]) => {
@@ -279,6 +298,16 @@ export async function createTabs(
         hasKey: llmContext?.hasKey() ?? false,
         model: llmContext?.getSettings().model ?? null,
         pinned: llmContext?.getSettings().pinned ?? [],
+        // The chat you are looking at may use its own model.
+        activeModelSupportsTools: (() => {
+          const model =
+            chatsModel.activeConversation(chats).model ??
+            llmContext?.getSettings().model ??
+            null;
+          return model === null
+            ? null
+            : (llmContext?.getModelInfo(model)?.supportsTools ?? null);
+        })(),
       },
       chatExpanded: state.settings.chatExpanded,
       rightPanel: state.settings.rightPanel,
@@ -594,12 +623,49 @@ export async function createTabs(
     sendState();
   };
 
+  // Read a tab's text for the assistant (read-only). A sleeping tab is woken up
+  // (hidden) first, and we wait for it to finish loading.
+  const readTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<PageRead> => {
+    const tab = model.findTab(state, tabId);
+    if (!tab) return { ok: false, reason: 'closed' };
+    const wasAsleep = !views.has(tabId);
+    const contents = ensureView(tab).webContents;
+    if (wasAsleep) sendState();
+    if (contents.isDestroyed()) return { ok: false, reason: 'closed' };
+    if (contents.isLoading()) {
+      const finished = await new Promise<boolean>((resolve) => {
+        const done = (value: boolean) => {
+          clearTimeout(timer);
+          contents.removeListener('did-stop-loading', onStop);
+          signal.removeEventListener('abort', onAbort);
+          resolve(value);
+        };
+        const onStop = () => done(true);
+        const onAbort = () => done(false);
+        const timer = setTimeout(() => done(false), 15_000);
+        contents.once('did-stop-loading', onStop);
+        signal.addEventListener('abort', onAbort);
+      });
+      if (!finished) return { ok: false, reason: 'timeout' };
+    }
+    try {
+      const page = await readPageText(contents);
+      return { ok: true, ...page };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
   // Talking to the model: sending messages and streaming replies into the chats.
   chatService = createChatService({
     win,
     llm: llm.catch(() => null),
     getChats: () => chats,
     getWorkspace: workspace,
+    readPage: readTab,
     // Every piece of a streaming reply lands here: save soon, but do not rebuild
     // the whole UI each time.
     setChats: (next) => {
@@ -800,9 +866,6 @@ export async function createTabs(
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
     },
-    // A UI page asks for the current state once it is listening for it (the
-    // state sent when the page finished loading can arrive too early).
-    'ui:ready': () => sendState(),
     'sidebar:hover': () => {
       if (!pinned() && drag === null) setHover(true);
     },
@@ -958,6 +1021,19 @@ export async function createTabs(
       if (isId(id)) popupMenu(spaceMenu(state, id, menuActions));
     },
   };
+  // A UI page says it is listening and asks for the current state. That, not
+  // the page's "finished loading" event (which can come before the page is
+  // listening, or long after), is what marks the page ready for messages.
+  const listening = new Set<Electron.WebContents>();
+  const onUiReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender === win.webContents || event.sender === sidebar) {
+      listening.add(event.sender);
+      ready.add(event.sender);
+      sendState();
+    }
+  };
+  ipcMain.on('ui:ready', onUiReady);
+
   const listeners = Object.entries(requests).map(([channel, handle]) => {
     const listener = (event: Electron.IpcMainEvent, ...args: unknown[]) => {
       if (event.sender === win.webContents || event.sender === sidebar) {
@@ -990,8 +1066,43 @@ export async function createTabs(
   // file takes a moment, so the main window's page may already have loaded.)
   watchUi(win.webContents);
   watchUi(sidebar);
-  if (!win.webContents.isLoading()) ready.add(win.webContents);
+  // The main window's page may have finished loading (and asked for its state)
+  // while the save files were being read, before anyone was listening for that
+  // request. Send it the state now so it is not left blank.
+  if (!win.webContents.isLoading()) {
+    ready.add(win.webContents);
+    sendState();
+  }
   void loadUi(sidebar, 'sidebar');
+
+  // While developing, the dev server sometimes rebuilds its bundled libraries just
+  // as the app starts, and a page that loads in that moment fails to start (it
+  // never asks for its state). If a page has not checked in after a few seconds,
+  // load it again (a few tries at most).
+  let reloadsLeft = 6;
+  const watchdog = setInterval(() => {
+    if (win.isDestroyed()) {
+      clearInterval(watchdog);
+      return;
+    }
+    const pages = [win.webContents, sidebar];
+    if (pages.every((page) => listening.has(page))) {
+      clearInterval(watchdog);
+      return;
+    }
+    for (const page of pages) {
+      if (
+        !listening.has(page) &&
+        !page.isDestroyed() &&
+        !page.isLoading() &&
+        reloadsLeft > 0
+      ) {
+        reloadsLeft--;
+        console.warn('[ui] a page did not start; loading it again');
+        page.reload();
+      }
+    }
+  }, 3000);
 
   // Save for sure when the window closes (a plain write might not finish).
   win.on('close', () => {
@@ -1005,6 +1116,8 @@ export async function createTabs(
     stopAnimation();
     stopWatching();
     for (const timer of startupTimers) clearTimeout(timer);
+    ipcMain.removeListener('ui:ready', onUiReady);
+    clearInterval(watchdog);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);
   });

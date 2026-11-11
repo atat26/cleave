@@ -129,9 +129,47 @@ const isAbort = (error: unknown) =>
 
 // ---- Streaming chat ---------------------------------------------------------
 
-export interface ChatMessageInput {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+// A tool the model may ask us to run (we only offer read-only ones), and a request
+// from the model to run one. `arguments` is the JSON text the model wrote.
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export type ChatMessageInput =
+  | { role: 'system' | 'user'; content: string }
+  // An assistant message may ask for tools to be run.
+  | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
+  // What a tool found, handed back to the model.
+  | { role: 'tool'; toolCallId: string; content: string };
+
+// The message in the shape OpenRouter wants.
+function toApiMessage(message: ChatMessageInput): Record<string, unknown> {
+  if (message.role === 'tool') {
+    return {
+      role: 'tool',
+      tool_call_id: message.toolCallId,
+      content: message.content,
+    };
+  }
+  if (message.role === 'assistant' && message.toolCalls?.length) {
+    return {
+      role: 'assistant',
+      content: message.content,
+      tool_calls: message.toolCalls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments },
+      })),
+    };
+  }
+  return { role: message.role, content: message.content };
 }
 
 export type StreamEvent =
@@ -146,7 +184,18 @@ export type StreamEvent =
       totalTokens: number | null;
       cost: number | null;
     }
-  | { type: 'finish'; reason: string | null };
+  | { type: 'finish'; reason: string | null }
+  // The model asked for tools to be run (all the calls of this reply, complete).
+  | { type: 'tool-calls'; calls: ToolCall[] }
+  // Inside this file only: a piece of a tool call as it streams in. streamChat
+  // gathers these and never passes them on.
+  | {
+      type: 'tool-call-delta';
+      index: number;
+      id: string | null;
+      name: string | null;
+      arguments: string;
+    };
 
 const num = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -222,6 +271,19 @@ export function interpretData(data: string): {
     if (delta && typeof delta.content === 'string' && delta.content !== '') {
       events.push({ type: 'text', text: delta.content });
     }
+    if (delta && Array.isArray(delta.tool_calls)) {
+      for (const part of delta.tool_calls) {
+        if (!isRecord(part)) continue;
+        const fn = isRecord(part.function) ? part.function : {};
+        events.push({
+          type: 'tool-call-delta',
+          index: typeof part.index === 'number' ? part.index : 0,
+          id: typeof part.id === 'string' ? part.id : null,
+          name: typeof fn.name === 'string' ? fn.name : null,
+          arguments: typeof fn.arguments === 'string' ? fn.arguments : '',
+        });
+      }
+    }
     if (typeof choice.finish_reason === 'string') {
       if (choice.finish_reason === 'error') {
         return { events, done: false, error: new ChatError('provider') };
@@ -248,6 +310,26 @@ const headers = (apiKey: string, json = false): Record<string, string> => ({
   ...(json ? { 'Content-Type': 'application/json' } : {}),
 });
 
+// At most this many tool calls in one reply, and this much text in a call's
+// arguments (a model that goes beyond is misbehaving).
+const MAX_TOOL_CALLS = 8;
+const MAX_TOOL_ARGUMENTS = 10_000;
+
+// Join the streamed pieces of tool calls into whole calls.
+function gatherToolCalls(
+  pieces: Map<number, { id: string; name: string; arguments: string }>,
+): ToolCall[] {
+  return [...pieces.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([, call]) => call.name !== '')
+    .slice(0, MAX_TOOL_CALLS)
+    .map(([index, call]) => ({
+      id: call.id || `call_${index}`,
+      name: call.name,
+      arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS),
+    }));
+}
+
 // Send a conversation and get the reply back piece by piece. Stops quietly (an
 // "AbortError") if `signal` is aborted: that is how the Stop button works, and
 // OpenRouter stops generating when the connection closes.
@@ -255,17 +337,35 @@ export async function* streamChat(options: {
   apiKey: string;
   model: string;
   messages: ChatMessageInput[];
+  // Tools the model may ask for (leave out for a plain chat).
+  tools?: ToolDefinition[];
   signal?: AbortSignal;
   fetchImpl: FetchLike;
 }): AsyncGenerator<StreamEvent> {
-  const { apiKey, model, messages, signal, fetchImpl } = options;
+  const { apiKey, model, messages, tools, signal, fetchImpl } = options;
 
   let response: Response;
   try {
     response = await fetchImpl(`${OPENROUTER_BASE}/chat/completions`, {
       method: 'POST',
       headers: headers(apiKey, true),
-      body: JSON.stringify({ model, messages, stream: true }),
+      body: JSON.stringify({
+        model,
+        messages: messages.map(toApiMessage),
+        stream: true,
+        ...(tools && tools.length > 0
+          ? {
+              tools: tools.map((tool) => ({
+                type: 'function',
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                },
+              })),
+            }
+          : {}),
+      }),
       signal,
     });
   } catch (error) {
@@ -278,9 +378,14 @@ export async function* streamChat(options: {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   const parser = createSseParser();
+  const pieces = new Map<
+    number,
+    { id: string; name: string; arguments: string }
+  >();
+  let ended = false;
 
   try {
-    for (;;) {
+    while (!ended) {
       let read: ReadableStreamReadResult<Uint8Array>;
       try {
         read = await reader.read();
@@ -297,12 +402,35 @@ export async function* streamChat(options: {
 
       for (const event of events) {
         const result = interpretData(event.data);
-        yield* result.events;
+        for (const item of result.events) {
+          if (item.type !== 'tool-call-delta') {
+            yield item;
+            continue;
+          }
+          const piece = pieces.get(item.index) ?? {
+            id: '',
+            name: '',
+            arguments: '',
+          };
+          if (item.id) piece.id = item.id;
+          if (item.name) piece.name += item.name;
+          // Cap as it grows, so a runaway call cannot fill memory.
+          piece.arguments = (piece.arguments + item.arguments).slice(
+            0,
+            MAX_TOOL_ARGUMENTS + 1,
+          );
+          pieces.set(item.index, piece);
+        }
         if (result.error) throw result.error;
-        if (result.done) return;
+        if (result.done) {
+          ended = true;
+          break;
+        }
       }
-      if (read.done) return;
+      if (read.done) ended = true;
     }
+    const calls = gatherToolCalls(pieces);
+    if (calls.length > 0) yield { type: 'tool-calls', calls };
   } finally {
     // Closing the connection also tells OpenRouter to stop generating.
     reader.cancel().catch(() => undefined);
@@ -365,6 +493,10 @@ export interface ModelInfo {
   // US dollars per million tokens (null if OpenRouter did not say).
   promptPerMillion: number | null;
   completionPerMillion: number | null;
+  // What the model can do, as OpenRouter lists it. null means the list did not
+  // say (that is not the same as "no": we only block on a clear "no").
+  supportsTools: boolean | null;
+  supportsImages: boolean | null;
 }
 
 const MAX_MODELS = 3000;
@@ -377,6 +509,11 @@ function perMillion(price: unknown): number | null {
   const perToken = Number(price);
   if (!Number.isFinite(perToken) || perToken < 0) return null;
   return perToken * 1_000_000;
+}
+
+// Does this list of words contain `word`? null if it is not a list at all.
+function listHas(list: unknown, word: string): boolean | null {
+  return Array.isArray(list) ? list.includes(word) : null;
 }
 
 // Read OpenRouter's model list defensively: anything odd is skipped.
@@ -402,6 +539,11 @@ export function parseModels(body: unknown): ModelInfo[] {
       contextLength: num(item.context_length),
       promptPerMillion: perMillion(pricing.prompt),
       completionPerMillion: perMillion(pricing.completion),
+      supportsTools: listHas(item.supported_parameters, 'tools'),
+      supportsImages: listHas(
+        isRecord(item.architecture) ? item.architecture.input_modalities : null,
+        'image',
+      ),
     });
   }
   return models.sort((a, b) => a.name.localeCompare(b.name));

@@ -637,3 +637,129 @@ test('only sane model names are accepted for saving', () => {
     assert.equal(isValidModelId(bad), false, String(bad));
   }
 });
+
+// ---- Tools ---------------------------------------------------------------------
+
+const toolPiece = (part: Record<string, unknown>) =>
+  `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [part] } }] })}\n\n`;
+
+test('tool calls arrive in pieces and come out whole, once, at the end', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const fetchImpl: FetchLike = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return streamResponse([
+      chunk('Let me look. '),
+      toolPiece({
+        index: 0,
+        id: 'call_a',
+        function: { name: 'read_page', arguments: '{"ta' },
+      }),
+      toolPiece({
+        index: 1,
+        id: 'call_b',
+        function: { name: 'list_linked_tabs' },
+      }),
+      toolPiece({ index: 0, function: { arguments: 'b":3}' } }),
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ]);
+  };
+  const events = await collect(
+    streamChat({
+      apiKey: KEY,
+      model: 'm',
+      messages: [
+        { role: 'user', content: 'Hi' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'x', name: 'read_page', arguments: '{}' }],
+        },
+        { role: 'tool', toolCallId: 'x', content: 'page text' },
+      ],
+      tools: [
+        { name: 'read_page', description: 'd', parameters: { type: 'object' } },
+      ],
+      fetchImpl,
+    }),
+  );
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ['text', 'finish', 'tool-calls'],
+  );
+  assert.deepEqual(events[2], {
+    type: 'tool-calls',
+    calls: [
+      { id: 'call_a', name: 'read_page', arguments: '{"tab":3}' },
+      { id: 'call_b', name: 'list_linked_tabs', arguments: '' },
+    ],
+  });
+  // The request carries the tools and the tool messages in OpenRouter's shape.
+  const body = bodies[0] as {
+    tools: { type: string; function: { name: string } }[];
+    messages: Record<string, unknown>[];
+  };
+  assert.equal(body.tools[0].function.name, 'read_page');
+  assert.deepEqual(body.messages[2], {
+    role: 'tool',
+    tool_call_id: 'x',
+    content: 'page text',
+  });
+  assert.equal((body.messages[1].tool_calls as { id: string }[])[0].id, 'x');
+});
+
+test('a plain chat sends no tools, and nameless or excess tool calls are dropped', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const fetchImpl: FetchLike = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    const many = Array.from({ length: 12 }, (_, i) =>
+      toolPiece({ index: i + 1, function: { name: `t${i}`, arguments: '{}' } }),
+    );
+    return streamResponse([
+      toolPiece({ index: 0, id: 'nameless' }),
+      ...many,
+      'data: [DONE]\n\n',
+    ]);
+  };
+  const events = await collect(
+    streamChat({ apiKey: KEY, model: 'm', messages: [], fetchImpl }),
+  );
+  assert.equal('tools' in bodies[0], false);
+  const calls = (events[0] as Extract<StreamEvent, { type: 'tool-calls' }>)
+    .calls;
+  assert.equal(calls.length, 8);
+  assert.ok(calls.every((c) => c.name !== ''));
+});
+
+test('parseModels records what a model can do, and null when the list does not say', () => {
+  const models = parseModels({
+    data: [
+      {
+        id: 'a/vision-tools',
+        name: 'A',
+        supported_parameters: ['tools', 'temperature'],
+        architecture: { input_modalities: ['text', 'image'] },
+      },
+      {
+        id: 'b/text-only',
+        name: 'B',
+        supported_parameters: ['temperature'],
+        architecture: { input_modalities: ['text'] },
+      },
+      { id: 'c/unknown', name: 'C' },
+    ],
+  });
+  const by = (id: string) => models.find((m) => m.id === id);
+  assert.deepEqual(
+    [by('a/vision-tools')?.supportsTools, by('a/vision-tools')?.supportsImages],
+    [true, true],
+  );
+  assert.deepEqual(
+    [by('b/text-only')?.supportsTools, by('b/text-only')?.supportsImages],
+    [false, false],
+  );
+  assert.deepEqual(
+    [by('c/unknown')?.supportsTools, by('c/unknown')?.supportsImages],
+    [null, null],
+  );
+});
