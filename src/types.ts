@@ -19,6 +19,8 @@ export interface TabInfo {
   loaded: boolean;
   // True while the assistant is working in this tab.
   working: boolean;
+  // Closed but kept as a link in its Space (no tab, shown on the overview).
+  closed: boolean;
 }
 
 // An artifact as the UI lists it (its text stays in the app until it is opened).
@@ -205,7 +207,12 @@ export interface BrowserApi {
   goForward: () => void;
   // New tab inside a Space, or ungrouped when spaceId is null.
   newTab: (spaceId: number | null) => void;
+  // Close a tab. In a Space the page is kept as a closed link on the overview.
   closeTab: (id: number) => void;
+  // Delete a tab for good, including a closed link.
+  removeTab: (id: number) => void;
+  // Open a closed link again.
+  reopenTab: (id: number) => void;
   selectTab: (id: number) => void;
   selectLead: (spaceId: number) => void;
   newSpace: () => void;
@@ -241,6 +248,8 @@ export interface BrowserApi {
   artifactRead: (id: number) => Promise<ArtifactDocument | null>;
   artifactWrite: (id: number, content: string) => Promise<boolean>;
   artifactRename: (id: number, title: string) => void;
+  // Make another artifact with the same text, in a Space (or none).
+  artifactCopy: (id: number, spaceId: number | null) => Promise<number | null>;
   artifactMove: (id: number, spaceId: number | null) => void;
   artifactDelete: (id: number) => void;
   // A link in a reply was clicked: open it as a new tab (web addresses only).

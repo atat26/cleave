@@ -86,7 +86,11 @@ function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
       <button
         type="button"
         aria-label={`Close ${labelFor(tab)}`}
-        title="Close tab (Ctrl+W)"
+        title={
+          tab.spaceId === null
+            ? 'Close tab (Ctrl+W)'
+            : 'Close tab (Ctrl+W). The page stays in its Space.'
+        }
         onClick={(event) => {
           event.stopPropagation(); // Don't also select this tab.
           window.browserApi.closeTab(tab.id);
@@ -372,7 +376,9 @@ function FullSidebar({
           <SpaceGroup
             key={space.id}
             space={space}
-            tabs={state.tabs.filter((tab) => tab.spaceId === space.id)}
+            tabs={state.tabs.filter(
+              (tab) => tab.spaceId === space.id && !tab.closed,
+            )}
             artifacts={state.artifactTabs.filter((a) => a.spaceId === space.id)}
             active={state.active}
             renameRequest={renameRequest}
@@ -544,7 +550,9 @@ function Strip({ state }: { state: UiState }) {
           <StripSpace
             key={space.id}
             space={space}
-            tabs={state.tabs.filter((tab) => tab.spaceId === space.id)}
+            tabs={state.tabs.filter(
+              (tab) => tab.spaceId === space.id && !tab.closed,
+            )}
             artifacts={state.artifactTabs.filter((a) => a.spaceId === space.id)}
             active={state.active}
           />

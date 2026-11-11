@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   buildLinkedContext,
   cleanLabel,
+  closedLinkedTabs,
   linkedTabs,
   MAX_SPACE_TABS,
   MAX_TAB_LINES,
@@ -352,4 +353,49 @@ test('a linked Space lists its artifacts, and titles stay on one line', () => {
 
 test('artifacts do not make pages readable', () => {
   assert.deepEqual(linkedTabs([artifactRef(1)], withArtifacts), []);
+});
+
+// ---- Closed-but-kept pages ----------------------------------------------------
+
+test('a closed page shows as a normal chip; the assistant is told its address but cannot read it as an open tab', () => {
+  const closedWorkspace: Workspace = {
+    spaces: [{ id: 10, name: 'Research' }],
+    tabs: [
+      { id: 1, title: 'Open one', url: 'https://a.example/x', spaceId: 10 },
+      {
+        id: 2,
+        title: 'Closed one',
+        url: 'https://b.example/y?token=SECRET',
+        spaceId: 10,
+        closed: true,
+      },
+    ],
+  };
+  assert.equal(resolveLink(tabRef(2), closedWorkspace).open, true);
+  assert.equal(resolveLink(tabRef(2), closedWorkspace).label, 'Closed one');
+  // Not readable as an open tab...
+  assert.deepEqual(
+    linkedTabs([tabRef(1), tabRef(2), spaceRef(10)], closedWorkspace).map(
+      (t) => t.id,
+    ),
+    [1],
+  );
+  // ...but its cleaned address is told to the assistant, so it does not search for it.
+  const direct = buildLinkedContext([tabRef(2)], closedWorkspace, true) ?? '';
+  assert.ok(direct.includes('Closed page: "Closed one" (https://b.example/y)'));
+  assert.ok(direct.includes('read_link'));
+  assert.ok(!direct.includes('SECRET'));
+  assert.ok(!direct.includes('tab 2'));
+  const space = buildLinkedContext([spaceRef(10)], closedWorkspace, true) ?? '';
+  assert.ok(space.includes('Open one'));
+  assert.ok(
+    space.includes('  - closed page: "Closed one" (https://b.example/y)'),
+  );
+  assert.ok(space.includes('with 1 tab:'));
+  // The full address counts as a known one for reading.
+  assert.deepEqual(
+    closedLinkedTabs([spaceRef(10)], closedWorkspace).map((t) => t.url),
+    ['https://b.example/y?token=SECRET'],
+  );
+  assert.deepEqual(closedLinkedTabs([tabRef(1)], closedWorkspace), []);
 });

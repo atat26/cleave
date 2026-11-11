@@ -122,6 +122,10 @@ export function App() {
           key={leadSpace.id}
           space={leadSpace}
           tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
+          artifacts={state.artifacts.filter((a) => a.spaceId === leadSpace.id)}
+          openArtifactIds={state.artifactTabs.map((a) => a.id)}
+          allArtifacts={state.artifacts}
+          spaces={state.spaces}
         />
       )}
       {chatVisible && (

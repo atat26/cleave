@@ -16,7 +16,12 @@ import { createAgentTools } from './agentTools';
 import type { ActionEnv, OutlineRead, PageRead } from './agentTools';
 import { readLinkText } from './linkReader';
 import type { OutlineElement } from './pageOutline';
-import { buildLinkedContext, linkedTabs, snapshotLookup } from './chatLinks';
+import {
+  buildLinkedContext,
+  closedLinkedTabs,
+  linkedTabs,
+  snapshotLookup,
+} from './chatLinks';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
 import type { RunContext } from './chatRunner';
@@ -127,6 +132,12 @@ export function createChatService(options: {
   // line is taken (a page's title could contain text that looks like an address).
   const rememberedAddresses = (chatId: number): string[] => {
     const found: string[] = [];
+    // Closed pages the chat links to are known addresses too.
+    const linkRefs =
+      chats.findConversation(options.getChats(), chatId)?.refs ?? [];
+    for (const tab of closedLinkedTabs(linkRefs, options.getWorkspace())) {
+      found.push(tab.url);
+    }
     const messages =
       chats.findConversation(options.getChats(), chatId)?.messages ?? [];
     for (const message of messages) {

@@ -10,6 +10,7 @@ export interface MenuActions {
   moveTab: (tabId: number, spaceId: number | null) => void;
   moveTabToNewSpace: (tabId: number) => void;
   closeTab: (tabId: number) => void;
+  removeTab: (tabId: number) => void;
   renameSpace: (spaceId: number) => void;
   setSpaceColor: (spaceId: number, color: SpaceColor) => void;
   setSpaceCollapsed: (spaceId: number, collapsed: boolean) => void;
@@ -67,8 +68,17 @@ export function tabMenu(
   }
   template.push(
     { type: 'separator' },
-    { label: 'Close tab', click: () => actions.closeTab(tabId) },
+    {
+      label: tab.spaceId === null ? 'Close tab' : 'Close tab (keep in Space)',
+      click: () => actions.closeTab(tabId),
+    },
   );
+  if (tab.spaceId !== null) {
+    template.push({
+      label: 'Delete tab',
+      click: () => actions.removeTab(tabId),
+    });
+  }
 
   return Menu.buildFromTemplate(template);
 }

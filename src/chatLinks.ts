@@ -18,6 +18,9 @@ export interface WorkspaceTab {
   title: string;
   url: string;
   spaceId: number | null;
+  // Closed but kept as a link in its Space: still shown on a chip, but the
+  // assistant is not told about it and cannot read it.
+  closed?: boolean;
 }
 export interface WorkspaceSpace {
   id: number;
@@ -188,6 +191,7 @@ export function linkedTabs(
     if (
       found.length < MAX_TAB_LINES &&
       !found.some((t) => t.id === tab.id) &&
+      !tab.closed &&
       sanitizeUrl(tab.url) !== null
     ) {
       found.push(tab);
@@ -203,6 +207,35 @@ export function linkedTabs(
         .filter((t) => t.spaceId === ref.id)
         .slice(0, MAX_SPACE_TABS)
         .forEach(add);
+    }
+  }
+  return found;
+}
+
+// The pages a chat links to that are closed (kept as links in their Space, with
+// no tab open): linked directly or through a linked Space. The assistant is told
+// their addresses, so it can read or open them instead of searching for them.
+export function closedLinkedTabs(
+  refs: ChatRef[],
+  workspace: Workspace,
+): WorkspaceTab[] {
+  const found: WorkspaceTab[] = [];
+  const add = (tab: WorkspaceTab) => {
+    if (
+      found.length < MAX_TAB_LINES &&
+      tab.closed &&
+      !found.some((t) => t.id === tab.id) &&
+      sanitizeUrl(tab.url) !== null
+    ) {
+      found.push(tab);
+    }
+  };
+  for (const ref of refs) {
+    if (ref.kind === 'tab') {
+      const tab = workspace.tabs.find((t) => t.id === ref.id);
+      if (tab) add(tab);
+    } else if (ref.kind === 'space') {
+      workspace.tabs.filter((t) => t.spaceId === ref.id).forEach(add);
     }
   }
   return found;
@@ -255,6 +288,7 @@ export function buildLinkedContext(
   const artifactLine = (a: WorkspaceArtifact, prefix: string) =>
     `${prefix}"${cleanLabel(a.title) || 'Untitled artifact'}" (${cleanLabel(a.kind, 20) || 'document'})`;
   let artifactCount = 0;
+  let closedCount = 0;
 
   for (const ref of refs) {
     if (ref.kind === 'artifact') {
@@ -267,13 +301,23 @@ export function buildLinkedContext(
     if (ref.kind === 'tab') {
       const tab = workspace.tabs.find((t) => t.id === ref.id);
       if (!tab) continue;
+      if (tab.closed) {
+        const closedLine = tabLine(tab.title, tab.url, 'Closed page: ');
+        if (closedLine) {
+          lines.push(closedLine);
+          closedCount++;
+        }
+        continue;
+      }
       const line = tabLine(tab.title, tab.url, 'Tab: ', tab.id);
       if (line) lines.push(line);
       continue;
     }
     const space = workspace.spaces.find((s) => s.id === ref.id);
     if (!space) continue;
-    const tabs = workspace.tabs.filter((t) => t.spaceId === space.id);
+    const tabs = workspace.tabs.filter(
+      (t) => t.spaceId === space.id && !t.closed,
+    );
     lines.push(
       `Space "${cleanLabel(space.name) || 'Space'}" with ${tabs.length} tab${tabs.length === 1 ? '' : 's'}:`,
     );
@@ -286,6 +330,14 @@ export function buildLinkedContext(
       shown++;
     }
     if (shown < tabs.length) lines.push(`  - and ${tabs.length - shown} more`);
+    for (const tab of workspace.tabs.filter(
+      (t) => t.spaceId === space.id && t.closed,
+    )) {
+      const closedLine = tabLine(tab.title, tab.url, '  - closed page: ');
+      if (!closedLine) break;
+      lines.push(closedLine);
+      closedCount++;
+    }
     const inSpace = (workspace.artifacts ?? []).filter(
       (a) => a.spaceId === space.id,
     );
@@ -310,5 +362,9 @@ export function buildLinkedContext(
     artifactCount > 0
       ? ' Artifacts are documents the user made inside this browser: you only have their titles and kinds here, not their contents.'
       : '';
-  return [intro + artifactNote, ...lines].join('\n');
+  const closedNote =
+    closedCount > 0
+      ? ' Closed pages are saved links with no tab open: to read one use read_link with its address, or open it with open_tab. Do not search the web for a page whose address you already have here.'
+      : '';
+  return [intro + artifactNote + closedNote, ...lines].join('\n');
 }

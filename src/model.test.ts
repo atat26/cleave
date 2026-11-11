@@ -20,13 +20,16 @@ import {
   addSpace,
   addTab,
   closeArtifactTab,
+  closeTab,
   defaultState,
   deleteSpace,
+  findClosedTabByAddress,
   moveTab,
   navOrder,
   openArtifactTab,
   parseState,
   reconcileArtifactTabs,
+  reopenTab,
   removeTab,
   renameSpace,
   setActive,
@@ -76,6 +79,7 @@ test('parseState drops non-web addresses from a tampered file', () => {
         title: 'x',
         favicon: null,
         spaceId: null,
+        closed: false,
       },
       {
         id: 2,
@@ -83,6 +87,7 @@ test('parseState drops non-web addresses from a tampered file', () => {
         title: 'x',
         favicon: null,
         spaceId: null,
+        closed: false,
       },
       {
         id: 3,
@@ -522,4 +527,107 @@ test('artifact tabs are saved and loaded, and bad ones are repaired', () => {
   assert.deepEqual(bad.artifactTabs, [{ artifactId: 5, spaceId: null }]);
   assert.notDeepEqual(bad.active, { kind: 'artifact', id: 77 });
   assert.deepEqual(parseState({}).artifactTabs, []);
+});
+
+// ---- Closed-but-kept pages ----------------------------------------------------
+
+test('closing a tab in a Space keeps it as a closed link; outside a Space it is removed', () => {
+  const { state, aId, freeId, spaceId } = build();
+  const closed = closeTab(setActive(state, { kind: 'tab', id: aId }), aId);
+  assert.equal(closed.tabs.find((t) => t.id === aId)?.closed, true);
+  assert.equal(closed.tabs.find((t) => t.id === aId)?.spaceId, spaceId);
+  // It is no longer something you can be on, and the selection moves.
+  assert.ok(!navOrder(closed).some((r) => r.kind === 'tab' && r.id === aId));
+  assert.notDeepEqual(closed.active, { kind: 'tab', id: aId });
+  assert.equal(setActive(closed, { kind: 'tab', id: aId }), closed);
+  // Closing it again changes nothing.
+  assert.equal(closeTab(closed, aId), closed);
+  // A page that is not in a Space is just removed.
+  assert.equal(
+    closeTab(state, freeId).tabs.some((t) => t.id === freeId),
+    false,
+  );
+});
+
+test('a closed link can be reopened, and can still be removed for good', () => {
+  const { state, aId } = build();
+  const closed = closeTab(state, aId);
+  const reopened = reopenTab(closed, aId);
+  assert.equal(reopened.tabs.find((t) => t.id === aId)?.closed, false);
+  assert.deepEqual(reopened.active, { kind: 'tab', id: aId });
+  const gone = removeTab(closed, aId);
+  assert.equal(
+    gone.tabs.some((t) => t.id === aId),
+    false,
+  );
+});
+
+test('a closed link stays in its Space through a save, is dropped from the list of tabs to visit, and cannot be active', () => {
+  const { state, aId } = build();
+  const closed = closeTab(state, aId);
+  const loaded = parseState(JSON.parse(JSON.stringify(closed)));
+  assert.equal(loaded.tabs.find((t) => t.id === aId)?.closed, true);
+  // A tampered file cannot make a closed tab the selected one.
+  const tampered = parseState({
+    ...JSON.parse(JSON.stringify(closed)),
+    active: { kind: 'tab', id: aId },
+  });
+  assert.notDeepEqual(tampered.active, { kind: 'tab', id: aId });
+  // A tab outside any Space cannot be closed-but-kept.
+  const odd = parseState({
+    ...JSON.parse(JSON.stringify(state)),
+    tabs: [
+      {
+        id: 50,
+        url: 'https://x.example',
+        title: '',
+        favicon: null,
+        spaceId: null,
+        closed: true,
+      },
+    ],
+  });
+  assert.equal(odd.tabs[0].closed, false);
+});
+
+test('moving a closed link out of every Space opens it; ungrouping a Space opens its closed links', () => {
+  const { state, aId, spaceId } = build();
+  const closed = closeTab(state, aId);
+  assert.equal(
+    moveTab(closed, aId, null).tabs.find((t) => t.id === aId)?.closed,
+    false,
+  );
+  const ungrouped = ungroupSpace(closed, spaceId);
+  assert.equal(ungrouped.tabs.find((t) => t.id === aId)?.closed, false);
+  assert.ok(navOrder(ungrouped).some((r) => r.kind === 'tab' && r.id === aId));
+  // Deleting the Space deletes its closed links too.
+  assert.equal(
+    deleteSpace(closed, spaceId).state.tabs.some((t) => t.id === aId),
+    false,
+  );
+});
+
+test('a closed link is found by the address the assistant was told (no query), and only closed ones', () => {
+  const { state, aId, spaceId } = build();
+  const withQuery = updateTab(state, aId, {
+    url: 'https://a.example/page?token=SECRET',
+  });
+  const closed = closeTab(withQuery, aId);
+  const found = findClosedTabByAddress(closed, 'https://a.example/page');
+  assert.equal(found?.id, aId);
+  assert.equal(found?.spaceId, spaceId);
+  assert.equal(
+    findClosedTabByAddress(closed, 'https://A.example/page/')?.id,
+    aId,
+  );
+  // An open page is not a closed link, and other addresses do not match.
+  assert.equal(
+    findClosedTabByAddress(withQuery, 'https://a.example/page'),
+    undefined,
+  );
+  assert.equal(
+    findClosedTabByAddress(closed, 'https://a.example/other'),
+    undefined,
+  );
+  assert.equal(findClosedTabByAddress(closed, 'not an address'), undefined);
 });

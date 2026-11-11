@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { ARTIFACT_KINDS } from './artifacts';
+import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
-import type { SpaceInfo, TabInfo } from './types';
+import type { ArtifactInfo, SpaceInfo, TabInfo } from './types';
 
 function hostOf(url: string): string {
   try {
@@ -12,17 +15,147 @@ function hostOf(url: string): string {
   }
 }
 
-// A Space's Lead tab: an overview of the tabs in it. (A whiteboard comes later.)
-// It is drawn by our own UI page, in the area where a web page would normally be.
+const KIND_WORDS: Record<ArtifactKind, string> = {
+  markdown: 'Markdown',
+  text: 'Plain text',
+  html: 'HTML',
+  code: 'Code',
+};
+
+const smallButton: CSSProperties = {
+  border: '1px solid #d0d0d0',
+  background: '#ffffff',
+  borderRadius: 14,
+  fontSize: 12,
+  padding: '3px 10px',
+  cursor: 'pointer',
+  color: '#202124',
+};
+
+const field: CSSProperties = {
+  border: '1px solid #d0d0d0',
+  borderRadius: 8,
+  fontSize: 13,
+  padding: '5px 8px',
+  background: '#ffffff',
+};
+
+const sectionTitle: CSSProperties = {
+  margin: '0 0 10px',
+  fontSize: 13,
+  fontWeight: 600,
+  color: '#5f6368',
+};
+
+const grid: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+  gap: 12,
+  marginBottom: 24,
+};
+
+// One item on the overview: a card you click to open, with its own buttons.
+function Card({
+  color,
+  icon,
+  title,
+  subtitle,
+  open,
+  onOpen,
+  onContextMenu,
+  children,
+}: {
+  color: string;
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  // Open as a tab right now. Closed ones are drawn lighter.
+  open: boolean;
+  onOpen: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      onClick={onOpen}
+      onContextMenu={onContextMenu}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: 12,
+        border: '1px solid #d0d0d0',
+        borderTop: `3px solid ${color}`,
+        borderRadius: 8,
+        cursor: 'pointer',
+        opacity: open ? 1 : 0.7,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {icon}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {title}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: '#5f6368',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {subtitle}
+          </div>
+        </div>
+      </div>
+      <div
+        style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+        // Buttons here must not also open the card.
+        onClick={(event) => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// A Space's Lead tab: an overview of the web pages and artifacts in it. Each can
+// be opened or closed (a closed one stays here), and removed for good. It is
+// drawn by our own UI page, in the area where a web page would normally be.
 export function LeadView({
   space,
   tabs,
+  artifacts,
+  openArtifactIds,
+  allArtifacts,
+  spaces,
 }: {
   space: SpaceInfo;
+  // Every page in the Space, open or closed.
   tabs: TabInfo[];
+  // The artifacts in this Space.
+  artifacts: ArtifactInfo[];
+  // Which artifacts are open as tabs.
+  openArtifactIds: number[];
+  // Every artifact, for "Add existing".
+  allArtifacts: ArtifactInfo[];
+  spaces: SpaceInfo[];
 }) {
   const color = SPACE_COLOR_HEX[space.color];
   const [editing, setEditing] = useState(false);
+  // The two small forms under the header.
+  const [form, setForm] = useState<'menu' | 'new' | 'existing' | null>(null);
+  const [kind, setKind] = useState<ArtifactKind>('markdown');
 
   const finishRename = (value: string) => {
     setEditing(false);
@@ -30,6 +163,19 @@ export function LeadView({
       window.browserApi.renameSpace(space.id, value);
     }
   };
+
+  const createHere = async () => {
+    const id = await window.browserApi.artifactCreate(kind, '', space.id);
+    setForm(null);
+    if (id !== null) window.browserApi.artifactOpen(id);
+  };
+
+  const others = allArtifacts.filter((a) => a.spaceId !== space.id);
+  const spaceName = (id: number | null) =>
+    id === null
+      ? 'No space'
+      : (spaces.find((s) => s.id === id)?.name ?? 'No space');
+  const openCount = tabs.filter((t) => !t.closed).length;
 
   return (
     <main
@@ -58,6 +204,7 @@ export function LeadView({
           alignItems: 'center',
           gap: 12,
           marginBottom: 20,
+          flexWrap: 'wrap',
         }}
       >
         <span
@@ -104,95 +251,300 @@ export function LeadView({
           </>
         )}
         <span style={{ color: '#5f6368', fontSize: 14 }}>
-          {tabs.length} {tabs.length === 1 ? 'tab' : 'tabs'}
+          {tabs.length} {tabs.length === 1 ? 'page' : 'pages'} ({openCount}{' '}
+          open) · {artifacts.length}{' '}
+          {artifacts.length === 1 ? 'artifact' : 'artifacts'}
         </span>
         <button
           type="button"
-          onClick={() => window.browserApi.newTab(space.id)}
-          style={{ marginLeft: 'auto', padding: '6px 12px', cursor: 'pointer' }}
+          aria-label="Add to this Space"
+          aria-expanded={form !== null}
+          title="Add a page or an artifact"
+          onClick={() => setForm(form === null ? 'menu' : null)}
+          style={{
+            ...smallButton,
+            marginLeft: 'auto',
+            padding: '6px 16px',
+            fontWeight: 600,
+          }}
         >
-          + New tab here
+          +
         </button>
       </div>
 
-      {tabs.length === 0 ? (
-        <p style={{ color: '#5f6368' }}>
-          No tabs in this Space yet. Use “+ New tab here”, or Ctrl+T while you
-          are in this Space.
-        </p>
-      ) : (
+      {form === 'menu' && (
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 20,
+            padding: 10,
+            background: '#f6f8fc',
+            borderRadius: 10,
           }}
         >
+          <button
+            type="button"
+            onClick={() => {
+              setForm(null);
+              window.browserApi.newTab(space.id);
+            }}
+            style={smallButton}
+          >
+            New page
+          </button>
+          <button
+            type="button"
+            onClick={() => setForm('new')}
+            style={smallButton}
+          >
+            New artifact
+          </button>
+          <button
+            type="button"
+            onClick={() => setForm('existing')}
+            style={smallButton}
+          >
+            Existing artifact
+          </button>
+          <button
+            type="button"
+            onClick={() => setForm(null)}
+            style={{ ...smallButton, marginLeft: 'auto' }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {form === 'new' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 20,
+            padding: 10,
+            background: '#f6f8fc',
+            borderRadius: 10,
+          }}
+        >
+          <label style={{ fontSize: 12, color: '#5f6368' }}>
+            Type{' '}
+            <select
+              aria-label="Type"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as ArtifactKind)}
+              style={field}
+            >
+              {ARTIFACT_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_WORDS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => void createHere()}
+            style={{
+              ...smallButton,
+              background: '#1a73e8',
+              color: '#ffffff',
+              borderColor: '#1a73e8',
+            }}
+          >
+            Create here
+          </button>
+          <button
+            type="button"
+            onClick={() => setForm(null)}
+            style={smallButton}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {form === 'existing' && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: 10,
+            background: '#f6f8fc',
+            borderRadius: 10,
+          }}
+        >
+          {others.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#5f6368' }}>
+              Every artifact is already in this Space.
+            </div>
+          ) : (
+            others.map((a) => (
+              <div
+                key={a.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 0',
+                }}
+              >
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 13,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {a.title}{' '}
+                  <span style={{ color: '#5f6368', fontSize: 12 }}>
+                    · {spaceName(a.spaceId)}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  title="It leaves its current Space and moves here"
+                  onClick={() => window.browserApi.artifactMove(a.id, space.id)}
+                  style={smallButton}
+                >
+                  Move here
+                </button>
+                <button
+                  type="button"
+                  title="Make a copy of it in this Space"
+                  onClick={() =>
+                    void window.browserApi.artifactCopy(a.id, space.id)
+                  }
+                  style={smallButton}
+                >
+                  Copy here
+                </button>
+              </div>
+            ))
+          )}
+          <div style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={() => setForm(null)}
+              style={smallButton}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      <h2 style={sectionTitle}>Web pages</h2>
+      {tabs.length === 0 ? (
+        <p style={{ color: '#5f6368', marginTop: 0, marginBottom: 24 }}>
+          No pages in this Space yet. Use the +, or Ctrl+T while you are in this
+          Space.
+        </p>
+      ) : (
+        <div style={grid}>
           {tabs.map((tab) => (
-            <div
+            <Card
               key={tab.id}
-              onClick={() => window.browserApi.selectTab(tab.id)}
+              color={color}
+              icon={<Favicon tab={tab} />}
+              title={labelFor(tab)}
+              subtitle={`${hostOf(tab.url)} · ${
+                tab.closed ? 'closed' : tab.loaded ? 'open' : 'open, sleeping'
+              }`}
+              open={!tab.closed}
+              onOpen={() => window.browserApi.selectTab(tab.id)}
               onContextMenu={(event) => {
                 event.preventDefault();
                 window.browserApi.showTabMenu(tab.id);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: 12,
-                border: '1px solid #d0d0d0',
-                borderTop: `3px solid ${color}`,
-                borderRadius: 8,
-                cursor: 'pointer',
-                opacity: tab.loaded ? 1 : 0.7,
-              }}
             >
-              <Favicon tab={tab} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
+              {tab.closed ? (
+                <button
+                  type="button"
+                  style={smallButton}
+                  onClick={() => window.browserApi.reopenTab(tab.id)}
                 >
-                  {labelFor(tab)}
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: '#5f6368',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
+                  Open
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  title="Close the tab but keep the page here"
+                  style={smallButton}
+                  onClick={() => window.browserApi.closeTab(tab.id)}
                 >
-                  {hostOf(tab.url)}
-                  {tab.loaded ? '' : ' · sleeping'}
-                </div>
-              </div>
+                  Close
+                </button>
+              )}
               <button
                 type="button"
-                aria-label={`Close ${labelFor(tab)}`}
-                title="Close tab"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  window.browserApi.closeTab(tab.id);
-                }}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: 16,
-                }}
+                title="Delete this page from the Space for good"
+                aria-label={`Delete ${labelFor(tab)}`}
+                style={{ ...smallButton, color: '#b3261e' }}
+                onClick={() => window.browserApi.removeTab(tab.id)}
               >
-                ×
+                Delete
               </button>
-            </div>
+            </Card>
           ))}
+        </div>
+      )}
+
+      <h2 style={sectionTitle}>Artifacts</h2>
+      {artifacts.length === 0 ? (
+        <p style={{ color: '#5f6368', marginTop: 0 }}>
+          No artifacts in this Space yet. Use the + to make one or add one you
+          have.
+        </p>
+      ) : (
+        <div style={grid}>
+          {artifacts.map((a) => {
+            const open = openArtifactIds.includes(a.id);
+            return (
+              <Card
+                key={a.id}
+                color={color}
+                icon={<span style={{ fontSize: 16 }}>📄</span>}
+                title={a.title}
+                subtitle={`${KIND_WORDS[a.kind]} · ${open ? 'open' : 'closed'}`}
+                open={open}
+                onOpen={() => window.browserApi.artifactOpen(a.id)}
+              >
+                {open && (
+                  <button
+                    type="button"
+                    title="Close the tab but keep the artifact here"
+                    style={smallButton}
+                    onClick={() => window.browserApi.artifactClose(a.id)}
+                  >
+                    Close
+                  </button>
+                )}
+                <button
+                  type="button"
+                  title="Keep the artifact, but take it out of this Space"
+                  style={smallButton}
+                  onClick={() => window.browserApi.artifactMove(a.id, null)}
+                >
+                  Take out
+                </button>
+                <button
+                  type="button"
+                  title="Delete the artifact for good"
+                  aria-label={`Delete ${a.title}`}
+                  style={{ ...smallButton, color: '#b3261e' }}
+                  onClick={() => window.browserApi.artifactDelete(a.id)}
+                >
+                  Delete
+                </button>
+              </Card>
+            );
+          })}
         </div>
       )}
     </main>

@@ -427,6 +427,7 @@ export function pickerItems(
   for (const tab of only === 'artifact' ? [] : tabs) {
     if (
       tab.id === active?.id ||
+      tab.closed ||
       linked('tab', tab.id) ||
       !matches(labelFor(tab))
     )

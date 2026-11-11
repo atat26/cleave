@@ -22,6 +22,9 @@ export interface SavedTab {
   favicon: string | null;
   // The Space this tab belongs to, or null for an ungrouped tab.
   spaceId: number | null;
+  // Closed but kept: the page is saved as a link in its Space (shown on the
+  // Space's overview) with no tab open. Only a tab in a Space can be like this.
+  closed: boolean;
 }
 
 // An artifact that is open as a tab. The artifact itself (its text) lives in
@@ -228,6 +231,10 @@ export function parseState(raw: unknown): SavedState {
           isId(item.spaceId) && spaceIds.has(item.spaceId)
             ? item.spaceId
             : null,
+        closed:
+          item.closed === true &&
+          isId(item.spaceId) &&
+          spaceIds.has(item.spaceId),
       });
     }
   }
@@ -281,7 +288,11 @@ export function parseState(raw: unknown): SavedState {
   }
 
   const active = isRecord(raw.active) ? raw.active : null;
-  if (active?.kind === 'tab' && isId(active.id) && tabIds.has(active.id)) {
+  if (
+    active?.kind === 'tab' &&
+    isId(active.id) &&
+    state.tabs.some((t) => t.id === active.id && !t.closed)
+  ) {
     state.active = { kind: 'tab', id: active.id };
   } else if (
     active?.kind === 'lead' &&
@@ -323,13 +334,17 @@ export function navOrder(state: SavedState): ActiveRef[] {
     }
   };
   for (const tab of state.tabs) {
-    if (tab.spaceId === null) order.push({ kind: 'tab', id: tab.id });
+    if (tab.spaceId === null && !tab.closed) {
+      order.push({ kind: 'tab', id: tab.id });
+    }
   }
   artifactsIn(null);
   for (const space of state.spaces) {
     order.push({ kind: 'lead', spaceId: space.id });
     for (const tab of state.tabs) {
-      if (tab.spaceId === space.id) order.push({ kind: 'tab', id: tab.id });
+      if (tab.spaceId === space.id && !tab.closed) {
+        order.push({ kind: 'tab', id: tab.id });
+      }
     }
     artifactsIn(space.id);
   }
@@ -380,6 +395,7 @@ export function addTab(
     title: '',
     favicon: null,
     spaceId,
+    closed: false,
   };
   return {
     id,
@@ -436,10 +452,63 @@ export function removeTab(state: SavedState, id: number): SavedState {
   };
 }
 
+// Close a tab. In a Space the page is kept as a closed link there (reopen it from
+// the Space's overview); outside a Space it is simply removed.
+export function closeTab(state: SavedState, id: number): SavedState {
+  const tab = findTab(state, id);
+  if (!tab) return state;
+  if (tab.spaceId === null) return removeTab(state, id);
+  if (tab.closed) return state;
+  const before = navOrder(state);
+  const next: SavedState = {
+    ...state,
+    tabs: state.tabs.map((t) => (t.id === id ? { ...t, closed: true } : t)),
+  };
+  return {
+    ...next,
+    active: sameRef(state.active, { kind: 'tab', id })
+      ? pickNeighbor(before, state.active, navOrder(next))
+      : state.active,
+  };
+}
+
+// The closed link (kept page in a Space) for an address, if there is one. The
+// assistant is only told addresses without their query part, so the match is on
+// the address up to that part; an exact match is preferred.
+export function findClosedTabByAddress(
+  state: SavedState,
+  address: string,
+): SavedTab | undefined {
+  const bare = (value: string): string | null => {
+    try {
+      const url = new URL(value);
+      const path = url.pathname.replace(/\/+$/, '');
+      return `${url.protocol}//${url.host.toLowerCase()}${path}`;
+    } catch {
+      return null;
+    }
+  };
+  const wanted = bare(address);
+  if (wanted === null) return undefined;
+  const closed = state.tabs.filter((t) => t.closed && bare(t.url) === wanted);
+  return closed.find((t) => t.url === address) ?? closed[0];
+}
+
+// Open a closed link again as a tab, and select it.
+export function reopenTab(state: SavedState, id: number): SavedState {
+  const tab = findTab(state, id);
+  if (!tab) return state;
+  return {
+    ...state,
+    tabs: state.tabs.map((t) => (t.id === id ? { ...t, closed: false } : t)),
+    active: { kind: 'tab', id },
+  };
+}
+
 export function setActive(state: SavedState, ref: ActiveRef): SavedState {
   const exists =
     ref.kind === 'tab'
-      ? findTab(state, ref.id) !== undefined
+      ? findTab(state, ref.id)?.closed === false
       : ref.kind === 'artifact'
         ? state.artifactTabs.some((t) => t.artifactId === ref.id)
         : findSpace(state, ref.spaceId);
@@ -581,7 +650,11 @@ export function moveTab(
   if (spaceId !== null && !findSpace(state, spaceId)) return state;
   return {
     ...state,
-    tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, spaceId } : t)),
+    tabs: state.tabs.map((t) =>
+      t.id === tabId
+        ? { ...t, spaceId, closed: spaceId === null ? false : t.closed }
+        : t,
+    ),
   };
 }
 
@@ -592,8 +665,9 @@ export function ungroupSpace(state: SavedState, id: number): SavedState {
   const next: SavedState = {
     ...state,
     spaces: state.spaces.filter((s) => s.id !== id),
+    // Closed links become ordinary tabs again, so nothing is lost.
     tabs: state.tabs.map((t) =>
-      t.spaceId === id ? { ...t, spaceId: null } : t,
+      t.spaceId === id ? { ...t, spaceId: null, closed: false } : t,
     ),
     artifactTabs: state.artifactTabs.map((t) =>
       t.spaceId === id ? { ...t, spaceId: null } : t,

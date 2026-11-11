@@ -11,6 +11,8 @@ const browserApi: BrowserApi = {
   goForward: () => ipcRenderer.send('tab:forward'),
   newTab: (spaceId) => ipcRenderer.send('tab:new', spaceId),
   closeTab: (id) => ipcRenderer.send('tab:close', id),
+  removeTab: (id) => ipcRenderer.send('tab:remove', id),
+  reopenTab: (id) => ipcRenderer.send('tab:reopen', id),
   selectTab: (id) => ipcRenderer.send('tab:select', id),
   selectLead: (spaceId) => ipcRenderer.send('lead:select', spaceId),
   newSpace: () => ipcRenderer.send('space:new'),
@@ -34,6 +36,8 @@ const browserApi: BrowserApi = {
   artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
   artifactWrite: (id, content) =>
     ipcRenderer.invoke('artifact:write', id, content),
+  artifactCopy: (id, spaceId) =>
+    ipcRenderer.invoke('artifact:copy', id, spaceId),
   artifactRename: (id, title) => ipcRenderer.send('artifact:rename', id, title),
   artifactMove: (id, spaceId) => ipcRenderer.send('artifact:move', id, spaceId),
   artifactDelete: (id) => ipcRenderer.send('artifact:delete', id),

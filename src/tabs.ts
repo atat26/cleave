@@ -148,6 +148,7 @@ export async function createTabs(
       title: t.title,
       url: t.url,
       spaceId: t.spaceId,
+      closed: t.closed,
     })),
     spaces: state.spaces.map((s) => ({ id: s.id, name: s.name })),
     artifacts: artifacts.artifacts.map((a) => ({
@@ -344,6 +345,7 @@ export async function createTabs(
         spaceId: tab.spaceId,
         loaded: views.has(tab.id),
         working: working.has(tab.id),
+        closed: tab.closed,
       })),
       active: state.active,
       canGoBack: history?.canGoBack() ?? false,
@@ -620,11 +622,27 @@ export async function createTabs(
       ? model.addTab(next, { url: NEW_TAB_URL }).state
       : next;
 
+  // Close a tab. In a Space the page stays as a closed link on the overview.
   const closeTab = (id: number) => {
-    if (!model.findTab(state, id)) return;
+    const tab = model.findTab(state, id);
+    if (!tab || tab.closed) return;
     syncLinkSnapshots(); // So a chat's link to this tab remembers its latest name.
     destroyView(id);
+    commitAndShow(withSomethingActive(model.closeTab(state, id)));
+  };
+
+  // Delete a tab for good (including a closed link).
+  const removeTab = (id: number) => {
+    if (!model.findTab(state, id)) return;
+    syncLinkSnapshots();
+    destroyView(id);
     commitAndShow(withSomethingActive(model.removeTab(state, id)));
+  };
+
+  // Open a closed link again and show it.
+  const reopenTab = (id: number) => {
+    if (!model.findTab(state, id)) return;
+    commitAndShow(revealPage(model.reopenTab(state, id)));
   };
 
   // Ask a yes/no question in a native dialog (default answer: cancel). While it
@@ -766,7 +784,7 @@ export async function createTabs(
     | { ok: false; reason: 'closed' | 'timeout' }
   > => {
     const tab = model.findTab(state, tabId);
-    if (!tab) return { ok: false, reason: 'closed' };
+    if (!tab || tab.closed) return { ok: false, reason: 'closed' };
     const wasAsleep = !views.has(tabId);
     const contents = ensureView(tab).webContents;
     if (wasAsleep) sendState();
@@ -857,7 +875,7 @@ export async function createTabs(
   // keyboard stays in the chat, not in the page.
   const focusTab = (tabId: number) => {
     const active = state.active;
-    if (!model.findTab(state, tabId)) return;
+    if (model.findTab(state, tabId)?.closed !== false) return;
     if (!(active?.kind === 'tab' && active.id === tabId && pageIsShown())) {
       select({ kind: 'tab', id: tabId });
     }
@@ -936,17 +954,26 @@ export async function createTabs(
     },
     // A new tab for the assistant, shown straight away (it is about to act in it).
     openTab: async (url, signal) => {
-      const created = model.addTab(state, {
-        url,
-        spaceId: currentSpaceId(),
-      });
-      commitAndShow(revealPage(created.state));
+      // A page kept in a Space comes back in that same Space, not as a new tab.
+      const kept = model.findClosedTabByAddress(state, url);
+      let tabId: number;
+      if (kept) {
+        commitAndShow(revealPage(model.reopenTab(state, kept.id)));
+        tabId = kept.id;
+      } else {
+        const created = model.addTab(state, {
+          url,
+          spaceId: currentSpaceId(),
+        });
+        commitAndShow(revealPage(created.state));
+        tabId = created.id;
+      }
       win.webContents.focus();
-      const ready = await prepareTab(created.id, signal);
+      const ready = await prepareTab(tabId, signal);
       if (!ready.ok) return { ok: false, reason: 'timeout' };
       return {
         ok: true,
-        tabId: created.id,
+        tabId,
         url: ready.contents.getURL(),
         title: ready.contents.getTitle(),
       };
@@ -979,7 +1006,7 @@ export async function createTabs(
     search: search.catch(() => null),
     linkTab: (chatId, tabId) => {
       const tab = model.findTab(state, tabId);
-      if (!tab) return;
+      if (!tab || tab.closed) return;
       commitChats(
         chatsModel.addRef(chats, chatId, {
           kind: 'tab',
@@ -1053,6 +1080,7 @@ export async function createTabs(
       commit(model.moveTab(created.state, tabId, created.id));
     },
     closeTab,
+    removeTab,
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
       if (!pinned()) setHover(true);
@@ -1176,8 +1204,16 @@ export async function createTabs(
     'tab:close': (id) => {
       if (isId(id)) closeTab(id);
     },
+    'tab:remove': (id) => {
+      if (isId(id)) removeTab(id);
+    },
+    'tab:reopen': (id) => {
+      if (isId(id)) reopenTab(id);
+    },
     'tab:select': (id) => {
-      if (isId(id)) select({ kind: 'tab', id });
+      if (!isId(id)) return;
+      if (model.findTab(state, id)?.closed) reopenTab(id);
+      else select({ kind: 'tab', id });
     },
     'lead:select': (spaceId) => {
       if (isId(spaceId)) select({ kind: 'lead', spaceId });
@@ -1359,7 +1395,9 @@ export async function createTabs(
     // Clicking a link chip jumps to that tab, or to that Space's overview.
     'chats:open-link': (kind, id) => {
       if (!isLinkKind(kind) || !isId(id)) return;
-      if (kind === 'tab' && model.findTab(state, id)) {
+      if (kind === 'tab' && model.findTab(state, id)?.closed) {
+        reopenTab(id); // A closed link in a Space opens again.
+      } else if (kind === 'tab' && model.findTab(state, id)) {
         select({ kind: 'tab', id });
       } else if (kind === 'space' && model.findSpace(state, id)) {
         select({ kind: 'lead', spaceId: id });
@@ -1482,6 +1520,27 @@ export async function createTabs(
     commitArtifacts(result.state);
     return true;
   });
+  ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!isId(id)) return null;
+    if (spaceId !== null && !(isId(spaceId) && model.findSpace(state, spaceId)))
+      return null;
+    const original = artifactsModel.findArtifact(artifacts, id);
+    if (!original) return null;
+    const result = artifactsModel.createArtifact(
+      artifacts,
+      {
+        kind: original.kind,
+        title: `${original.title} (copy)`,
+        content: original.content,
+        spaceId: spaceId as number | null,
+      },
+      Date.now(),
+    );
+    if (!result.ok) return null;
+    commitArtifacts(result.state);
+    return result.artifact.id;
+  });
   ipcMain.handle(
     'artifact:create',
     (event, kind: unknown, title: unknown, spaceId: unknown) => {
@@ -1591,6 +1650,7 @@ export async function createTabs(
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
     ipcMain.removeHandler('artifact:create');
+    ipcMain.removeHandler('artifact:copy');
     ipcMain.removeHandler('artifact:read');
     ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
