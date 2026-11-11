@@ -12,13 +12,18 @@
 import { app, ipcMain, net, safeStorage } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'node:path';
+import { DEFAULT_SYSTEM_PROMPT } from './chatContext';
 import { ChatError, checkKey, isValidModelId, listModels } from './openrouter';
 import type { FetchLike, ModelInfo } from './openrouter';
 import {
   defaultProviderSettings,
+  MAX_PINNED,
   parseProviderSettings,
+  togglePinned,
   withModel,
+  withSystemPrompt,
 } from './providerSettings';
+import type { ProviderSettings } from './providerSettings';
 import { createSecretStore } from './secrets';
 import type { SecretCrypto } from './secrets';
 import { loadJson, saveJson } from './storage';
@@ -44,6 +49,7 @@ const SAVE_ERRORS = {
   failed: "Couldn't save the key. Try again.",
 } as const;
 
+const MAX_PINNED_TEXT = String(MAX_PINNED);
 const REQUEST_TIMEOUT_MS = 20_000;
 const MODEL_CACHE_MS = 10 * 60_000;
 
@@ -69,7 +75,19 @@ async function withTimeout<T>(
   }
 }
 
-export async function registerLlm(win: BrowserWindow): Promise<void> {
+// What the chat needs from this file, for the main process only: the saved key
+// (read back at the moment of a call, never kept anywhere else), the settings, and
+// the network call. The user interface never gets any of this.
+export interface LlmContext {
+  getApiKey(): string | null;
+  hasKey(): boolean;
+  getSettings(): ProviderSettings;
+  fetchImpl: FetchLike;
+  // Called whenever the key, model, pins or system prompt change.
+  onChange(listener: () => void): void;
+}
+
+export async function registerLlm(win: BrowserWindow): Promise<LlmContext> {
   const dir = app.getPath('userData');
   const secrets = await createSecretStore(
     path.join(dir, 'secrets.json'),
@@ -81,16 +99,33 @@ export async function registerLlm(win: BrowserWindow): Promise<void> {
     parseProviderSettings,
     defaultProviderSettings,
   );
-  if (win.isDestroyed()) return;
 
   // Electron's own network stack, so system proxy settings are respected.
   const fetchImpl: FetchLike = (url, init) => net.fetch(url, init);
+
+  const listeners: (() => void)[] = [];
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
 
   const status = (): LlmStatus => ({
     encryptionAvailable: secrets.encryptionAvailable(),
     hasKey: secrets.has('openrouter'),
     model: settings.model,
+    pinned: settings.pinned,
+    systemPrompt: settings.systemPrompt,
+    defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
   });
+
+  const context: LlmContext = {
+    getApiKey: () => secrets.get('openrouter'),
+    hasKey: () => secrets.has('openrouter'),
+    getSettings: () => settings,
+    fetchImpl,
+    onChange: (listener) => {
+      listeners.push(listener);
+    },
+  };
 
   let modelCache: { at: number; models: ModelInfo[] } | null = null;
 
@@ -101,6 +136,7 @@ export async function registerLlm(win: BrowserWindow): Promise<void> {
       const result = await secrets.set('openrouter', key);
       if (result.ok) {
         modelCache = null; // A different key may see a different model list.
+        notify();
         return { ok: true, status: status() };
       }
       return { ok: false, error: SAVE_ERRORS[result.reason], status: status() };
@@ -109,6 +145,7 @@ export async function registerLlm(win: BrowserWindow): Promise<void> {
     'llm:remove-key': async (): Promise<LlmStatus> => {
       await secrets.remove('openrouter');
       modelCache = null;
+      notify();
       return status();
     },
 
@@ -154,18 +191,53 @@ export async function registerLlm(win: BrowserWindow): Promise<void> {
       }
       settings = withModel(settings, model);
       await saveJson(settingsFile, settings);
+      notify();
+      return { ok: true, status: status() };
+    },
+
+    // Pin a model (a quick choice in the chat), or unpin it.
+    'llm:toggle-pin': async (model): Promise<LlmResult> => {
+      const next = togglePinned(settings, model);
+      if (next === settings) {
+        return {
+          ok: false,
+          error: isValidModelId(model)
+            ? `You can pin up to ${MAX_PINNED_TEXT} models. Unpin one first.`
+            : 'That model name has characters that are not allowed.',
+          status: status(),
+        };
+      }
+      settings = next;
+      await saveJson(settingsFile, settings);
+      notify();
+      return { ok: true, status: status() };
+    },
+
+    // Set your system prompt (null or blank goes back to the default).
+    'llm:set-system-prompt': async (text): Promise<LlmResult> => {
+      if (text !== null && typeof text !== 'string') {
+        return { ok: false, error: 'That is not text.', status: status() };
+      }
+      settings = withSystemPrompt(settings, text);
+      await saveJson(settingsFile, settings);
+      notify();
       return { ok: true, status: status() };
     },
   };
 
-  for (const [channel, handle] of Object.entries(handlers)) {
-    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
-      // Only the window's own UI page may ask.
-      if (event.sender !== win.webContents) throw new Error('Not allowed.');
-      return handle(...args);
+  if (!win.isDestroyed()) {
+    for (const [channel, handle] of Object.entries(handlers)) {
+      ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+        // Only the window's own UI page may ask.
+        if (event.sender !== win.webContents) throw new Error('Not allowed.');
+        return handle(...args);
+      });
+    }
+    win.on('closed', () => {
+      for (const channel of Object.keys(handlers))
+        ipcMain.removeHandler(channel);
     });
   }
-  win.on('closed', () => {
-    for (const channel of Object.keys(handlers)) ipcMain.removeHandler(channel);
-  });
+
+  return context;
 }

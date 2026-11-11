@@ -44,6 +44,10 @@ const MESSAGES: Record<ChatErrorKind, string> = {
   unknown: 'Something went wrong talking to OpenRouter.',
 };
 
+// The plain-language text for a kind of failure (written here, never from the
+// server). The chat uses this to show a message that failed.
+export const errorMessage = (kind: ChatErrorKind): string => MESSAGES[kind];
+
 // An error whose message is safe to show to the user.
 export class ChatError extends Error {
   readonly kind: ChatErrorKind;

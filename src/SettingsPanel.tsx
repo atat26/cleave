@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { MAX_SYSTEM_PROMPT } from './providerSettings';
 import type { LlmStatus, LlmTestResult, ModelInfo } from './types';
 
 // The Settings panel's contents: the AI provider's API key, a "test connection"
@@ -52,6 +53,16 @@ const contextSize = (tokens: number | null) =>
 // How many matches to draw at once (the list has hundreds of models).
 const MAX_SHOWN = 60;
 
+// "128k context · $2.50 in / $10.00 out per 1M tokens"
+function detailOf(m: ModelInfo): string {
+  return [
+    contextSize(m.contextLength),
+    `${price(m.promptPerMillion)} in / ${price(m.completionPerMillion)} out per 1M tokens`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function describeTest(result: LlmTestResult): string {
   if (!result.ok) return result.error;
   const spent = result.usage === null ? '' : ` ${dollars(result.usage)} used.`;
@@ -90,8 +101,16 @@ export function SettingsPanel() {
   const [customModel, setCustomModel] = useState('');
   const [modelMessage, setModelMessage] = useState('');
 
+  // ---- System prompt ----
+  // What is in the box (null until the settings have loaded).
+  const [promptText, setPromptText] = useState<string | null>(null);
+  const [promptMessage, setPromptMessage] = useState('');
+
   useEffect(() => {
-    void window.browserApi.llmStatus().then(setStatus);
+    void window.browserApi.llmStatus().then((loaded) => {
+      setStatus(loaded);
+      setPromptText(loaded.systemPrompt ?? loaded.defaultSystemPrompt);
+    });
   }, []);
 
   const loadModels = useCallback(async (refresh: boolean) => {
@@ -145,6 +164,34 @@ export function SettingsPanel() {
     setModelMessage(result.ok ? '' : result.error);
     if (result.ok) setCustomModel('');
   };
+
+  const togglePin = async (id: string) => {
+    const result = await window.browserApi.llmTogglePin(id);
+    setStatus(result.status);
+    setModelMessage(result.ok ? '' : result.error);
+  };
+
+  const shownPrompt = status?.systemPrompt ?? status?.defaultSystemPrompt ?? '';
+  const promptChanged = promptText !== null && promptText !== shownPrompt;
+
+  const applyPrompt = async (text: string | null, done: string) => {
+    const result = await window.browserApi.llmSetSystemPrompt(text);
+    setStatus(result.status);
+    setPromptText(
+      result.status.systemPrompt ?? result.status.defaultSystemPrompt,
+    );
+    setPromptMessage(result.ok ? done : result.error);
+  };
+  // Saving the default text exactly as it is just means "use the default".
+  const savePrompt = () =>
+    applyPrompt(
+      promptText !== null &&
+        promptText.trim() === status?.defaultSystemPrompt.trim()
+        ? null
+        : promptText,
+      'Saved.',
+    );
+  const resetPrompt = () => applyPrompt(null, 'Back to the default.');
 
   const shown = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -242,12 +289,46 @@ export function SettingsPanel() {
       <p style={{ ...note, color: '#202124', fontSize: 13 }}>
         {status.model ? (
           <>
-            Using <strong>{status.model}</strong>
+            Default for new chats: <strong>{status.model}</strong>
           </>
         ) : (
-          'No model chosen yet.'
+          'No default model chosen yet.'
         )}
       </p>
+      <p style={note}>
+        Pin models with ☆ to switch between them quickly in the chat. Each chat
+        remembers its own model.
+      </p>
+
+      {status.pinned.length > 0 && (
+        <>
+          <p style={{ ...note, fontWeight: 600, color: '#202124' }}>Pinned</p>
+          <div
+            style={{
+              border: '1px solid #e0e0e0',
+              borderRadius: 8,
+              overflow: 'hidden',
+            }}
+          >
+            {status.pinned.map((id) => {
+              const known = models.find((m) => m.id === id);
+              return (
+                <ModelRow
+                  key={id}
+                  id={id}
+                  name={known?.name ?? id}
+                  detail={known ? detailOf(known) : ''}
+                  selected={id === status.model}
+                  pinned
+                  onChoose={() => void chooseModel(id)}
+                  onTogglePin={() => void togglePin(id)}
+                />
+              );
+            })}
+          </div>
+        </>
+      )}
+
       <input
         type="search"
         value={query}
@@ -275,34 +356,16 @@ export function SettingsPanel() {
             }}
           >
             {shown.list.map((m) => (
-              <button
+              <ModelRow
                 key={m.id}
-                type="button"
-                onClick={() => void chooseModel(m.id)}
-                title={m.id}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '8px 10px',
-                  border: 'none',
-                  borderBottom: '1px solid #f0f0f0',
-                  background: m.id === status.model ? '#e8f0fe' : 'transparent',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>{m.name}</div>
-                <div style={{ fontSize: 11, color: '#5f6368' }}>{m.id}</div>
-                <div style={{ fontSize: 11, color: '#5f6368' }}>
-                  {[
-                    contextSize(m.contextLength),
-                    `${price(m.promptPerMillion)} in / ${price(m.completionPerMillion)} out per 1M tokens`,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </div>
-              </button>
+                id={m.id}
+                name={m.name}
+                detail={detailOf(m)}
+                selected={m.id === status.model}
+                pinned={status.pinned.includes(m.id)}
+                onChoose={() => void chooseModel(m.id)}
+                onTogglePin={() => void togglePin(m.id)}
+              />
             ))}
             {shown.list.length === 0 && (
               <p style={{ ...note, padding: '8px 10px' }}>
@@ -352,6 +415,135 @@ export function SettingsPanel() {
           {modelMessage}
         </p>
       )}
+
+      <h3 style={heading}>System prompt</h3>
+      <p style={note}>
+        Instructions the model follows in every chat.{' '}
+        {status.systemPrompt === null
+          ? 'You are using the default.'
+          : 'You are using your own.'}
+      </p>
+      <textarea
+        value={promptText ?? ''}
+        onChange={(e) => {
+          setPromptText(e.target.value);
+          setPromptMessage('');
+        }}
+        rows={7}
+        maxLength={MAX_SYSTEM_PROMPT}
+        aria-label="System prompt"
+        spellCheck
+        style={{
+          ...field,
+          height: 'auto',
+          padding: 10,
+          resize: 'vertical',
+          lineHeight: 1.4,
+          fontFamily: 'inherit',
+        }}
+      />
+      <div
+        style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}
+      >
+        <button
+          type="button"
+          onClick={() => void savePrompt()}
+          disabled={!promptChanged}
+          style={button}
+        >
+          Save prompt
+        </button>
+        <button
+          type="button"
+          onClick={() => void resetPrompt()}
+          disabled={status.systemPrompt === null && !promptChanged}
+          style={button}
+        >
+          Reset to default
+        </button>
+        <span style={note}>
+          {(promptText ?? '').length} / {MAX_SYSTEM_PROMPT}
+        </span>
+      </div>
+      {promptMessage && (
+        <p style={{ ...note, color: '#188038' }} role="status">
+          {promptMessage}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// One model in a list: click it to make it the default for new chats; the star
+// pins it (a quick choice in the chat) or unpins it.
+function ModelRow({
+  id,
+  name,
+  detail,
+  selected,
+  pinned,
+  onChoose,
+  onTogglePin,
+}: {
+  id: string;
+  name: string;
+  detail: string;
+  selected: boolean;
+  pinned: boolean;
+  onChoose: () => void;
+  onTogglePin: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        borderBottom: '1px solid #f0f0f0',
+        background: selected ? '#e8f0fe' : 'transparent',
+      }}
+    >
+      <button
+        type="button"
+        onClick={onChoose}
+        title={`Use ${id} as the default model`}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'left',
+          padding: '8px 10px',
+          border: 'none',
+          background: 'transparent',
+          cursor: 'pointer',
+          fontSize: 13,
+        }}
+      >
+        <div style={{ fontWeight: 600 }}>{name}</div>
+        <div
+          style={{ fontSize: 11, color: '#5f6368', overflowWrap: 'anywhere' }}
+        >
+          {id}
+        </div>
+        {detail && (
+          <div style={{ fontSize: 11, color: '#5f6368' }}>{detail}</div>
+        )}
+      </button>
+      <button
+        type="button"
+        aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
+        aria-pressed={pinned}
+        title={pinned ? 'Unpin' : 'Pin (a quick choice in the chat)'}
+        onClick={onTogglePin}
+        style={{
+          border: 'none',
+          background: 'transparent',
+          fontSize: 17,
+          padding: '0 12px',
+          cursor: 'pointer',
+          color: pinned ? '#f9ab00' : '#9aa0a6',
+        }}
+      >
+        {pinned ? '★' : '☆'}
+      </button>
     </div>
   );
 }

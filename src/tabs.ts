@@ -28,10 +28,13 @@ import {
 } from './layout';
 import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
+import { createChatService } from './chatService';
+import type { ChatService } from './chatService';
 import { chatMenu, chatRowMenu, spaceMenu, tabMenu } from './menus';
 import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
+import type { LlmContext } from './llm';
 import { createSaver, loadChats, loadState } from './storage';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
@@ -60,7 +63,10 @@ const clamp = (min: number, max: number, value: number) =>
 //   1. the window's own UI page (toolbar, and a Space's overview)
 //   2. the web page views
 //   3. the sidebar view, on top, so it can slide open over a web page
-export async function createTabs(win: BrowserWindow): Promise<void> {
+export async function createTabs(
+  win: BrowserWindow,
+  llm: Promise<LlmContext>,
+): Promise<void> {
   const file = path.join(app.getPath('userData'), 'spaces.json');
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
@@ -75,6 +81,11 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   const views = new Map<number, WebContentsView>();
   const saver = createSaver(file, () => state);
   const chatsSaver = createSaver(chatsFile, () => chats);
+
+  // The AI connection (key, model, pins, system prompt) and the chat service that
+  // talks to the model. Both are set up a little later than the window.
+  let llmContext: LlmContext | null = null;
+  let chatService: ChatService | null = null;
 
   // The sidebar is open without being pinned because the mouse is on it.
   let hover = false;
@@ -204,6 +215,7 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     const id = activeTabId();
     const history =
       id === null ? undefined : views.get(id)?.webContents.navigationHistory;
+    const generating = chatService?.runningChats() ?? [];
     const ui: UiState = {
       spaces: state.spaces.map(({ id, name, color, collapsed }) => ({
         id,
@@ -230,8 +242,15 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
           id: c.id,
           title: c.title,
           messageCount: c.messages.length,
+          model: c.model,
+          generating: generating.includes(c.id),
         })),
         activeId: chats.activeId,
+      },
+      llm: {
+        hasKey: llmContext?.hasKey() ?? false,
+        model: llmContext?.getSettings().model ?? null,
+        pinned: llmContext?.getSettings().pinned ?? [],
       },
       chatExpanded: state.settings.chatExpanded,
       rightPanel: state.settings.rightPanel,
@@ -537,6 +556,37 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     sendState();
   };
 
+  // Open the Settings panel (e.g. from the chat when a key or model is missing).
+  const openSettings = () => {
+    state = model.setRightPanel(state, 'settings');
+    saver.schedule();
+    applyLayout(true);
+    sendState();
+  };
+
+  // Talking to the model: sending messages and streaming replies into the chats.
+  chatService = createChatService({
+    win,
+    llm: llm.catch(() => null),
+    getChats: () => chats,
+    // Every piece of a streaming reply lands here: save soon, but do not rebuild
+    // the whole UI each time.
+    setChats: (next) => {
+      chats = next;
+      chatsSaver.schedule();
+    },
+    onMeta: sendState,
+    openSettings,
+    popupMenu: (menu) => popupMenu(menu),
+  });
+  llm
+    .then((context) => {
+      llmContext = context;
+      context.onChange(sendState); // The chat follows key and model changes.
+      sendState();
+    })
+    .catch(() => undefined);
+
   const deleteChat = async (id: number) => {
     const chat = chatsModel.findConversation(chats, id);
     if (!chat) return;
@@ -552,6 +602,8 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     ) {
       return;
     }
+    // A reply still being written must stop before its chat goes.
+    chatService?.stop(id);
     // The chat may have changed while the dialog was open.
     commitChats(chatsModel.deleteConversation(chats, id));
   };
@@ -724,6 +776,9 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       if (!model.VIEW_MODES.includes(mode as model.ViewMode)) return;
       commitAndShow(model.setViewMode(state, mode as model.ViewMode));
     },
+    'panel:open': (panel) => {
+      if (panel === 'settings') openSettings();
+    },
     'panel:toggle': (panel) => {
       if (!model.RIGHT_PANELS.includes(panel as model.RightPanel)) return;
       const open = state.settings.rightPanel === panel;
@@ -855,6 +910,9 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
 
   // Save for sure when the window closes (a plain write might not finish).
   win.on('close', () => {
+    // Stop any reply still being written. (A reply cut off like this is saved as
+    // it stands and marked "stopped" the next time the app starts.)
+    chatService?.dispose();
     saver.flushSync();
     chatsSaver.flushSync();
   });

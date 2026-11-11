@@ -117,6 +117,7 @@ export function App() {
           full={chatFull}
           viewMode={state.viewMode}
           chats={state.chats}
+          llm={state.llm}
           renameRequest={chatRenameRequest}
           onRenameHandled={clearChatRenameRequest}
         />
