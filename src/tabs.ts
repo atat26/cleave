@@ -28,8 +28,9 @@ import {
 } from './layout';
 import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
-import type { PageRead } from './agentTools';
-import { readPageText } from './pageReader';
+import type { OutlineRead, PageRead } from './agentTools';
+import { buildOutline } from './pageOutline';
+import { readAccessibilityTree, readPageText } from './pageReader';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
@@ -623,12 +624,15 @@ export async function createTabs(
     sendState();
   };
 
-  // Read a tab's text for the assistant (read-only). A sleeping tab is woken up
-  // (hidden) first, and we wait for it to finish loading.
-  const readTab = async (
+  // Get a tab ready for the assistant to look at (read-only). A sleeping tab is
+  // woken up (hidden) first, and we wait for it to finish loading.
+  const prepareTab = async (
     tabId: number,
     signal: AbortSignal,
-  ): Promise<PageRead> => {
+  ): Promise<
+    | { ok: true; contents: Electron.WebContents }
+    | { ok: false; reason: 'closed' | 'timeout' }
+  > => {
     const tab = model.findTab(state, tabId);
     if (!tab) return { ok: false, reason: 'closed' };
     const wasAsleep = !views.has(tabId);
@@ -651,9 +655,42 @@ export async function createTabs(
       });
       if (!finished) return { ok: false, reason: 'timeout' };
     }
+    return { ok: true, contents };
+  };
+
+  // The text of a tab.
+  const readTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<PageRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
     try {
-      const page = await readPageText(contents);
+      const page = await readPageText(ready.contents);
       return { ok: true, ...page };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
+  // The outline of a tab: its controls, as a numbered list.
+  const outlineTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<OutlineRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const nodes = await readAccessibilityTree(ready.contents);
+      const outline = buildOutline(nodes);
+      return {
+        ok: true,
+        title: ready.contents.getTitle(),
+        url: ready.contents.getURL(),
+        lines: outline.lines,
+        count: outline.elements.length,
+        truncated: outline.truncated,
+      };
     } catch {
       return { ok: false, reason: 'unavailable' };
     }
@@ -666,6 +703,7 @@ export async function createTabs(
     getChats: () => chats,
     getWorkspace: workspace,
     readPage: readTab,
+    outlinePage: outlineTab,
     // Every piece of a streaming reply lands here: save soon, but do not rebuild
     // the whole UI each time.
     setChats: (next) => {

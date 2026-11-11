@@ -13,7 +13,7 @@
 import { clipboard, ipcMain, Menu } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { createAgentTools } from './agentTools';
-import type { PageRead } from './agentTools';
+import type { OutlineRead, PageRead } from './agentTools';
 import { buildLinkedContext, linkedTabs, snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
@@ -58,6 +58,8 @@ export function createChatService(options: {
   getWorkspace(): Workspace;
   // Read a tab's text for the assistant (read-only; see pageReader.ts).
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
+  // Look at a tab's controls (the numbered outline).
+  outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
   setChats(next: ChatsState): void;
@@ -169,6 +171,7 @@ export function createChatService(options: {
               options.getWorkspace(),
             ),
           readPage: options.readPage,
+          outlinePage: options.outlinePage,
         })
       : null;
     return {

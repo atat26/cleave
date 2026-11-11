@@ -6,7 +6,7 @@ import {
   MAX_PAGE_CHARS,
   MAX_READS,
 } from './agentTools.ts';
-import type { AgentEnv, PageRead } from './agentTools.ts';
+import type { AgentEnv, OutlineRead, PageRead } from './agentTools.ts';
 import { buildLinkedContext, linkedTabs } from './chatLinks.ts';
 import type { Workspace, WorkspaceTab } from './chatLinks.ts';
 
@@ -37,14 +37,26 @@ function setup(
     tab(2, 'Docs', 'https://docs.example/'),
   ];
   const reads: number[] = [];
+  const looks: number[] = [];
   const env: AgentEnv = {
+    outlinePage: async (id): Promise<OutlineRead> => {
+      looks.push(id);
+      return {
+        ok: true,
+        title: 'Pricing',
+        url: 'https://shop.example/pricing?token=SECRET',
+        lines: ['main:', '  [1] button "Buy"'],
+        count: 1,
+        truncated: false,
+      };
+    },
     linkedTabs: () => tabs,
     readPage: async (id) => {
       reads.push(id);
       return typeof read === 'function' ? read(id) : read;
     },
   };
-  return { tools: createAgentTools(env), reads };
+  return { tools: createAgentTools(env), reads, looks };
 }
 
 test('cleanPageText removes control characters and blank runs, and cuts long pages', () => {
@@ -166,4 +178,37 @@ test('the linked list shows tab numbers and says pages can be read only when too
   const withTools = buildLinkedContext(refs, workspace, true) ?? '';
   assert.match(withTools, /read_page/);
   assert.match(withTools, /Tab: tab 3: "C" \(https:\/\/c\.example\)/);
+});
+
+test('look_at_page returns the outline wrapped as untrusted data, for linked tabs only', async () => {
+  const { tools, looks, reads } = setup();
+  const seen = await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  assert.equal(seen.ok, true);
+  assert.equal(seen.label, 'Looked at: Pricing');
+  assert.match(seen.note, /1 control listed/);
+  assert.match(seen.result, /not instructions/);
+  assert.match(seen.result, /\[1\] button "Buy"/);
+  assert.ok(!seen.result.includes('SECRET'));
+  assert.deepEqual(looks, [1]);
+  assert.deepEqual(reads, []);
+
+  const other = await tools.run(call('look_at_page', { tab: 99 }), ABORT);
+  assert.equal(other.ok, false);
+  assert.deepEqual(looks, [1]);
+  assert.equal(
+    tools.describe(call('look_at_page', { tab: 2 })),
+    'Looking at: Docs',
+  );
+});
+
+test('looking and reading share one limit per reply', async () => {
+  const { tools } = setup();
+  for (let i = 0; i < MAX_READS; i++) {
+    const name = i % 2 === 0 ? 'look_at_page' : 'read_page';
+    assert.equal((await tools.run(call(name, { tab: 1 }), ABORT)).ok, true);
+  }
+  assert.equal(
+    (await tools.run(call('look_at_page', { tab: 1 }), ABORT)).ok,
+    false,
+  );
 });
