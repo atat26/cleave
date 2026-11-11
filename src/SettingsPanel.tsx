@@ -148,11 +148,14 @@ function BackBar({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-// "128k context · $2.50 in / $10.00 out per 1M tokens"
+// "128k context · $2.50 in / $10.00 out per 1M tokens · reads pages · sees images"
+// (what a model can do is shown only when the model list says so)
 function detailOf(m: ModelInfo): string {
   return [
     contextSize(m.contextLength),
     `${price(m.promptPerMillion)} in / ${price(m.completionPerMillion)} out per 1M tokens`,
+    m.supportsTools === true ? 'reads pages' : '',
+    m.supportsImages === true ? 'sees images' : '',
   ]
     .filter(Boolean)
     .join(' · ');

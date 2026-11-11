@@ -42,6 +42,17 @@ export interface ChatMessage {
   // their own copy of the name and address, so they stay in an old message even
   // after the link is removed from the chat (a closed tab can be reopened).
   mentions: Mention[];
+  // For a reply: what the assistant did while writing it (the pages it read),
+  // shown above the answer. Only the answer is kept as the conversation; the
+  // page text itself is never saved.
+  steps: ToolStep[];
+}
+
+export interface ToolStep {
+  id: number;
+  // A line written by the app, such as: Read: Page title.
+  label: string;
+  status: 'running' | 'ok' | 'error';
 }
 
 export interface Mention extends ChatRef {
@@ -89,6 +100,8 @@ const AUTO_TITLE_CHARS = 40;
 const MAX_MESSAGES = 2000;
 const MAX_CONTENT = 100_000;
 const MAX_REASONING = 50_000;
+const MAX_STEPS = 50;
+const MAX_STEP_LABEL = 300;
 const MAX_REFS = 50;
 const MAX_REF_TITLE = 200;
 // The most Spaces and tabs you can link to one chat.
@@ -182,6 +195,22 @@ function parseMentions(raw: unknown): Mention[] {
   return out;
 }
 
+function parseSteps(raw: unknown): ToolStep[] {
+  const out: ToolStep[] = [];
+  if (!Array.isArray(raw)) return out;
+  for (const r of raw) {
+    if (out.length >= MAX_STEPS) break;
+    if (!isRecord(r) || !isId(r.id) || typeof r.label !== 'string') continue;
+    out.push({
+      id: r.id,
+      label: r.label.slice(0, MAX_STEP_LABEL),
+      // A step still "running" when the app closed did not finish.
+      status: r.status === 'ok' ? 'ok' : 'error',
+    });
+  }
+  return out;
+}
+
 export function parseChats(raw: unknown, now = Date.now()): ChatsState {
   if (!isRecord(raw) || !Array.isArray(raw.conversations)) {
     return defaultChats(now);
@@ -232,6 +261,7 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
           usage,
           errorKind: ERROR_KINDS.find((k) => k === m.errorKind) ?? null,
           mentions: parseMentions(m.mentions),
+          steps: parseSteps(m.steps),
         });
       }
     }
@@ -455,6 +485,7 @@ export function addUserMessage(
     // Links added since they were last shown (for example with the "Add page"
     // button) are attached to this message too, with no "@name" in the text.
     mentions: parseMentions(inline.concat(attached)),
+    steps: [],
   };
   const firstMessage = !chat.messages.some((m) => m.role === 'user');
   const next = update({ ...state, nextId: id + 1 }, chatId, (c) => ({
@@ -490,6 +521,7 @@ export function startAssistantMessage(
     usage: null,
     errorKind: null,
     mentions: [],
+    steps: [],
   };
   return {
     id,
@@ -549,9 +581,63 @@ export function finishMessage(
       usage: result.usage ?? m.usage,
       errorKind:
         result.status === 'error' ? (result.errorKind ?? 'unknown') : null,
+      // Nothing is still running once the reply is over (for example Stop).
+      steps: m.steps.map((step) =>
+        step.status === 'running' ? { ...step, status: 'error' } : step,
+      ),
     }),
     now,
   );
+}
+
+// Record that the assistant started something (such as reading a page).
+export function addStep(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  label: string,
+): { state: ChatsState; stepId: number } | null {
+  const message = findMessage(state, chatId, messageId);
+  if (!message || message.steps.length >= MAX_STEPS) return null;
+  const stepId = message.steps.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+  return {
+    stepId,
+    state: updateMessage(state, chatId, messageId, (m) => ({
+      ...m,
+      steps: [
+        ...m.steps,
+        {
+          id: stepId,
+          label: label.slice(0, MAX_STEP_LABEL),
+          status: 'running',
+        },
+      ],
+    })),
+  };
+}
+
+// Record how a step ended, optionally with its final wording.
+export function finishStep(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  stepId: number,
+  ok: boolean,
+  label?: string,
+): ChatsState {
+  return updateMessage(state, chatId, messageId, (m) => ({
+    ...m,
+    steps: m.steps.map((s) =>
+      s.id === stepId
+        ? {
+            ...s,
+            status: ok ? 'ok' : 'error',
+            label:
+              label === undefined ? s.label : label.slice(0, MAX_STEP_LABEL),
+          }
+        : s,
+    ),
+  }));
 }
 
 // ---------------------------------------------------------------------------

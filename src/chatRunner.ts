@@ -8,8 +8,18 @@
 import { buildMessages } from './chatContext.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
+import type { AgentTools } from './agentTools.ts';
 import { ChatError } from './openrouter.ts';
-import type { ChatMessageInput, StreamEvent } from './openrouter.ts';
+import type {
+  ChatMessageInput,
+  StreamEvent,
+  ToolCall,
+  ToolDefinition,
+} from './openrouter.ts';
+
+// How many times the assistant may stop to use tools within one reply. After that
+// it is asked to answer with what it has.
+export const MAX_TOOL_ROUNDS = 6;
 
 export interface RunnerDeps {
   getState(): ChatsState;
@@ -18,6 +28,7 @@ export interface RunnerDeps {
   stream(options: {
     model: string;
     messages: ChatMessageInput[];
+    tools?: ToolDefinition[];
     signal: AbortSignal;
   }): AsyncIterable<StreamEvent>;
   now(): number;
@@ -34,6 +45,8 @@ export interface RunContext {
   systemPrompt: string | null;
   // What the chat has linked (titles and addresses), already cleaned; or null.
   linked?: string | null;
+  // The read-only tools the assistant may use (null or left out: a plain chat).
+  tools?: AgentTools | null;
 }
 
 export type StartResult =
@@ -58,34 +71,119 @@ export function createChatRunner(deps: RunnerDeps) {
 
     const history =
       chats.findConversation(deps.getState(), chatId)?.messages ?? [];
-    const messages = buildMessages({
+    let conversation: ChatMessageInput[] = buildMessages({
       systemPrompt: context.systemPrompt,
       linkedContext: context.linked ?? null,
       history,
     });
+    const tools = context.tools ?? null;
 
-    let usage: chats.MessageUsage | null = null;
+    // Tokens and cost, added up over every request of this reply.
+    let tokens: number | null = null;
+    let cost: number | null = null;
     let result: Parameters<typeof chats.finishMessage>[3] = { status: 'done' };
+    const changed = () => deps.onMessage(chatId, replyId);
     try {
-      for await (const event of deps.stream({
-        model: context.model,
-        messages,
-        signal: controller.signal,
-      })) {
-        if (event.type === 'text') {
-          deps.setState(
-            chats.appendToMessage(deps.getState(), chatId, replyId, event.text),
-          );
-          deps.onMessage(chatId, replyId);
-        } else if (event.type === 'reasoning') {
-          deps.setState(
-            chats.appendReasoning(deps.getState(), chatId, replyId, event.text),
-          );
-          deps.onMessage(chatId, replyId);
-        } else if (event.type === 'usage') {
-          usage = { totalTokens: event.totalTokens, cost: event.cost };
+      for (let round = 0; ; round++) {
+        // Once the tool rounds are used up the model is asked to just answer.
+        const useTools = tools !== null && round < MAX_TOOL_ROUNDS;
+        let calls: ToolCall[] = [];
+        let roundText = '';
+        for await (const event of deps.stream({
+          model: context.model,
+          messages: conversation,
+          tools: useTools ? tools.definitions : undefined,
+          signal: controller.signal,
+        })) {
+          if (event.type === 'text') {
+            // Text after a tool round starts a new paragraph.
+            const current = chats.findMessage(deps.getState(), chatId, replyId);
+            const gap =
+              roundText === '' && round > 0 && current && current.content !== ''
+                ? '\n\n'
+                : '';
+            roundText += event.text;
+            deps.setState(
+              chats.appendToMessage(
+                deps.getState(),
+                chatId,
+                replyId,
+                gap + event.text,
+              ),
+            );
+            changed();
+          } else if (event.type === 'reasoning') {
+            deps.setState(
+              chats.appendReasoning(
+                deps.getState(),
+                chatId,
+                replyId,
+                event.text,
+              ),
+            );
+            changed();
+          } else if (event.type === 'usage') {
+            if (event.totalTokens !== null) {
+              tokens = (tokens ?? 0) + event.totalTokens;
+            }
+            if (event.cost !== null) cost = (cost ?? 0) + event.cost;
+          } else if (event.type === 'tool-calls') {
+            calls = event.calls;
+          }
+          // Stop pressed: stop reading even if the stream does not notice.
+          if (controller.signal.aborted) break;
         }
-        // Stop pressed: stop reading even if the stream does not notice.
+        if (controller.signal.aborted) break;
+        if (!useTools || calls.length === 0) break;
+
+        // The model asked for tools: run each one, show it as a step, and hand
+        // what it found back to the model.
+        conversation = [
+          ...conversation,
+          { role: 'assistant', content: roundText, toolCalls: calls },
+        ];
+        for (const call of calls) {
+          if (controller.signal.aborted) break;
+          const added = chats.addStep(
+            deps.getState(),
+            chatId,
+            replyId,
+            tools.describe(call),
+          );
+          if (added) {
+            deps.setState(added.state);
+            changed();
+          }
+          let outcome: { label: string; ok: boolean; result: string };
+          try {
+            outcome = await tools.run(call, controller.signal);
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            outcome = {
+              label: 'A tool failed',
+              ok: false,
+              result: 'The tool failed. Answer with what you already have.',
+            };
+          }
+          if (added) {
+            deps.setState(
+              chats.finishStep(
+                deps.getState(),
+                chatId,
+                replyId,
+                added.stepId,
+                outcome.ok,
+                outcome.label,
+              ),
+            );
+            changed();
+          }
+          conversation.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content: outcome.result,
+          });
+        }
         if (controller.signal.aborted) break;
       }
       result = controller.signal.aborted
@@ -108,7 +206,13 @@ export function createChatRunner(deps: RunnerDeps) {
           deps.getState(),
           chatId,
           replyId,
-          { ...result, usage },
+          {
+            ...result,
+            usage:
+              tokens === null && cost === null
+                ? null
+                : { totalTokens: tokens, cost },
+          },
           deps.now(),
         ),
       );

@@ -83,6 +83,9 @@ export interface LlmContext {
   hasKey(): boolean;
   getSettings(): ProviderSettings;
   fetchImpl: FetchLike;
+  // What a model can do, from the model list (undefined until the list has been
+  // loaded, or for a model not in it: both mean "not known").
+  getModelInfo(id: string): ModelInfo | undefined;
   // Called whenever the key, model, pins or system prompt change.
   onChange(listener: () => void): void;
 }
@@ -122,6 +125,7 @@ export async function registerLlm(win: BrowserWindow): Promise<LlmContext> {
     hasKey: () => secrets.has('openrouter'),
     getSettings: () => settings,
     fetchImpl,
+    getModelInfo: (id) => modelCache?.models.find((m) => m.id === id),
     onChange: (listener) => {
       listeners.push(listener);
     },
@@ -237,6 +241,20 @@ export async function registerLlm(win: BrowserWindow): Promise<LlmContext> {
       for (const channel of Object.keys(handlers))
         ipcMain.removeHandler(channel);
     });
+  }
+
+  // Load the model list in the background, so the chat knows what the chosen
+  // model can do (for example, whether it can use tools). Failure is fine: the
+  // answer is then "not known", which never blocks anything.
+  if (secrets.has('openrouter')) {
+    void withTimeout((signal) =>
+      listModels(secrets.get('openrouter'), fetchImpl, signal),
+    )
+      .then((models) => {
+        modelCache = { at: Date.now(), models };
+        notify();
+      })
+      .catch(() => undefined);
   }
 
   return context;

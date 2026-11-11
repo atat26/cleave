@@ -322,6 +322,29 @@ function MessageView({
   return (
     <div style={{ margin: '10px 0' }}>
       <ThinkingBlock message={message} />
+      {message.steps.length > 0 && (
+        <div style={{ margin: '0 0 6px', display: 'grid', gap: 2 }}>
+          {message.steps.map((step) => (
+            <div key={step.id} style={{ ...muted, display: 'flex', gap: 6 }}>
+              <span aria-hidden="true">
+                {step.status === 'running'
+                  ? '…'
+                  : step.status === 'ok'
+                    ? '✓'
+                    : '✕'}
+              </span>
+              <span
+                style={{
+                  color: step.status === 'error' ? '#b3261e' : undefined,
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {step.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {message.content !== '' ? (
         <div style={text}>
           {message.content}

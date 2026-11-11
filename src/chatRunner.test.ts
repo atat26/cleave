@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_SYSTEM_PROMPT } from './chatContext.ts';
-import { createChatRunner } from './chatRunner.ts';
+import { createChatRunner, MAX_TOOL_ROUNDS } from './chatRunner.ts';
 import type { RunContext } from './chatRunner.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
 import { ChatError } from './openrouter.ts';
-import type { ChatMessageInput, StreamEvent } from './openrouter.ts';
+import type { AgentTools, ToolOutcome } from './agentTools.ts';
+import type {
+  ChatMessageInput,
+  StreamEvent,
+  ToolDefinition,
+} from './openrouter.ts';
 
 const NOW = 1_700_000_000_000;
 const CONTEXT: RunContext = { model: 'openai/gpt-4o', systemPrompt: null };
@@ -22,13 +27,18 @@ const usage = (tokens: number, cost: number): StreamEvent => ({
 type StreamFn = (options: {
   model: string;
   messages: ChatMessageInput[];
+  tools?: ToolDefinition[];
   signal: AbortSignal;
 }) => AsyncIterable<StreamEvent>;
 
 // A runner wired to an in-memory chat state and a fake model.
 function setup(stream: StreamFn) {
   let state: ChatsState = chats.defaultChats(NOW);
-  const calls: { model: string; messages: ChatMessageInput[] }[] = [];
+  const calls: {
+    model: string;
+    messages: ChatMessageInput[];
+    tools?: ToolDefinition[];
+  }[] = [];
   const changes: string[] = [];
   const runner = createChatRunner({
     getState: () => state,
@@ -36,7 +46,11 @@ function setup(stream: StreamFn) {
       state = next;
     },
     stream: (options) => {
-      calls.push({ model: options.model, messages: options.messages });
+      calls.push({
+        model: options.model,
+        messages: options.messages,
+        tools: options.tools,
+      });
       return stream(options);
     },
     now: () => NOW,
@@ -366,4 +380,153 @@ test('the app is told about every change, and when generating starts and stops',
   assert.equal(t.changes.filter((c) => c === 'running').length, 2); // started, stopped
   assert.ok(t.changes.filter((c) => c.startsWith('m')).length >= 4); // user, reply, 2 pieces...
   assert.equal(t.changes[t.changes.length - 1], 'running'); // the last thing is "stopped"
+});
+
+// ---- Tools ---------------------------------------------------------------------
+
+const call = (id: string, tab: number): StreamEvent => ({
+  type: 'tool-calls',
+  calls: [{ id, name: 'read_page', arguments: JSON.stringify({ tab }) }],
+});
+
+// Fake tools: each run is recorded; `run` decides what happens.
+function fakeTools(
+  run: (signal: AbortSignal) => Promise<ToolOutcome> = async () => ({
+    label: 'Read: Example',
+    ok: true,
+    result: 'PAGE TEXT',
+  }),
+) {
+  const runs: string[] = [];
+  const tools: AgentTools = {
+    definitions: [
+      { name: 'read_page', description: 'd', parameters: { type: 'object' } },
+    ],
+    describe: () => 'Reading: Example',
+    run: async (c, signal) => {
+      runs.push(c.id);
+      return run(signal);
+    },
+  };
+  return { tools, runs };
+}
+
+// A model that answers each request from a list of scripted replies.
+const scripted = (...replies: StreamEvent[][]): StreamFn => {
+  let i = 0;
+  return async function* () {
+    for (const event of replies[Math.min(i++, replies.length - 1)]) yield event;
+  };
+};
+
+test('the assistant can ask for a page, get it, and then answer', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(
+    scripted(
+      [text('Let me look.'), usage(10, 0.01), call('c1', 3)],
+      [text('It says hello.'), usage(20, 0.02)],
+    ),
+  );
+  const started = t.runner.send(t.chatId, 'What is on tab 3?', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+
+  assert.deepEqual(runs, ['c1']);
+  const reply = t.chat.messages[1];
+  assert.equal(reply.content, 'Let me look.\n\nIt says hello.');
+  assert.equal(reply.status, 'done');
+  assert.deepEqual(
+    reply.steps.map((s) => [s.label, s.status]),
+    [['Read: Example', 'ok']],
+  );
+  // Tokens and cost are added up over both requests.
+  assert.equal(reply.usage?.totalTokens, 30);
+  assert.ok(Math.abs((reply.usage?.cost ?? 0) - 0.03) < 1e-9);
+
+  // The first request offered the tools; the second carried the page back.
+  assert.equal(t.calls[0].tools?.[0].name, 'read_page');
+  const second = t.calls[1].messages;
+  const assistant = second[second.length - 2];
+  const tool = second[second.length - 1];
+  assert.equal(assistant.role, 'assistant');
+  assert.equal(
+    assistant.role === 'assistant' && assistant.toolCalls?.[0].id,
+    'c1',
+  );
+  assert.deepEqual(tool, {
+    role: 'tool',
+    toolCallId: 'c1',
+    content: 'PAGE TEXT',
+  });
+  // Only the answer is kept as history: no page text is saved in the chat.
+  assert.ok(!JSON.stringify(t.chat).includes('PAGE TEXT'));
+});
+
+test('a chat without tools sends none and never loops', async () => {
+  const t = setup(scripted([text('Hi'), call('c1', 3)]));
+  const started = t.runner.send(t.chatId, 'Hello', CONTEXT);
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(t.calls.length, 1);
+  assert.equal(t.calls[0].tools, undefined);
+  assert.equal(t.chat.messages[1].content, 'Hi');
+  assert.deepEqual(t.chat.messages[1].steps, []);
+});
+
+test('after the tool rounds are used up, the model is asked to answer without tools', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(scripted([call('again', 1)])); // always asks for another page
+  const started = t.runner.send(t.chatId, 'Keep reading', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(runs.length, MAX_TOOL_ROUNDS);
+  assert.equal(t.calls.length, MAX_TOOL_ROUNDS + 1);
+  assert.equal(t.calls[MAX_TOOL_ROUNDS].tools, undefined);
+  assert.equal(t.chat.messages[1].status, 'done');
+});
+
+test('Stop while a page is being read ends the reply and marks the step', async () => {
+  const { tools } = fakeTools(
+    (signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () =>
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+        );
+      }),
+  );
+  const t = setup(scripted([text('Reading…'), call('c1', 3)]));
+  const started = t.runner.send(t.chatId, 'Read it', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  // Let the first request finish and the tool start, then press Stop.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  t.runner.stop(t.chatId);
+  await started.done;
+  const reply = t.chat.messages[1];
+  assert.equal(reply.status, 'stopped');
+  assert.equal(reply.steps[0].status, 'error');
+  assert.equal(t.calls.length, 1);
+});
+
+test('a tool that fails is reported to the model and the reply carries on', async () => {
+  const { tools } = fakeTools(async () => {
+    throw new Error('boom');
+  });
+  const t = setup(
+    scripted([call('c1', 3)], [text('Sorry, I could not read it.')]),
+  );
+  const started = t.runner.send(t.chatId, 'Read it', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  const reply = t.chat.messages[1];
+  assert.equal(reply.status, 'done');
+  assert.equal(reply.content, 'Sorry, I could not read it.');
+  assert.equal(reply.steps[0].status, 'error');
+  const last = t.calls[1].messages[t.calls[1].messages.length - 1];
+  assert.equal(last.role, 'tool');
 });

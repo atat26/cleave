@@ -336,6 +336,21 @@ export function ChatComposer({
           </button>
         </div>
       )}
+      {refs.length > 0 && llm.activeModelSupportsTools === false && (
+        <div
+          style={{
+            margin: '0 0 6px',
+            padding: '6px 10px',
+            background: '#fef7e0',
+            borderRadius: 8,
+            fontSize: 12,
+            color: '#5f6368',
+          }}
+        >
+          This model can't read pages, so it only sees the titles and addresses
+          of your linked tabs. Pick another model to let it read them.
+        </div>
+      )}
       {notice && (
         <div
           role="alert"

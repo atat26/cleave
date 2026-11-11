@@ -47,6 +47,9 @@ export interface LlmInfo {
   // The default model for new chats.
   model: string | null;
   pinned: string[];
+  // Can the model of the chat you are looking at use tools (read pages)? null
+  // when that is not known.
+  activeModelSupportsTools: boolean | null;
 }
 
 // The answer to "send this message" (or "retry"). On success the reply streams in
