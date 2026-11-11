@@ -3,9 +3,11 @@ import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
 import { SettingsPanel } from './SettingsPanel';
+import { ToolsPanel } from './ToolsPanel';
 
 const TITLES: Record<RightPanelName, string> = {
   skills: 'Skills',
+  tools: 'Tools',
   extensions: 'Extensions',
   settings: 'Settings',
 };
@@ -77,6 +79,8 @@ export function RightPanel({ panel }: { panel: RightPanelName }) {
         >
           {panel === 'settings' ? (
             <SettingsPanel />
+          ) : panel === 'tools' ? (
+            <ToolsPanel />
           ) : (
             <p
               style={{

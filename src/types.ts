@@ -1,4 +1,6 @@
 import type { ChatMessage, ChatRef, MessagePart } from './chats';
+import type { ApprovalLevel } from './toolPolicy';
+import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 
@@ -164,6 +166,11 @@ export interface BrowserApi {
   renameSpace: (id: number, name: string) => void;
   // The mouse rested on the sidebar's icon strip: please open it. (Closing is
   // decided by the app, by watching how far the mouse has moved away.)
+  // The Tools panel: every tool with its level, change one level, or put them all
+  // back to the defaults. Each answers with the updated list.
+  toolsList: () => Promise<ToolRow[]>;
+  toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
+  toolsReset: () => Promise<ToolRow[]>;
   // Ask the app to send the current state (call once listening for it).
   uiReady: () => void;
   hoverSidebar: () => void;

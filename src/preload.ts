@@ -17,6 +17,9 @@ const browserApi: BrowserApi = {
   setSpaceCollapsed: (id, collapsed) =>
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
+  toolsList: () => ipcRenderer.invoke('tools:list'),
+  toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
+  toolsReset: () => ipcRenderer.invoke('tools:reset'),
   uiReady: () => ipcRenderer.send('ui:ready'),
   hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
   toggleChat: () => ipcRenderer.send('chat:toggle'),

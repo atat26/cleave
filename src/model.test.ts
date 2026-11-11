@@ -313,22 +313,22 @@ test('chat and right-panel settings have defaults, clamps and validation', () =>
 test('rail buttons follow the view: chat ones with the chat, web ones with the page', () => {
   // Skills belongs to the chat, Extensions to the web page, Settings to both.
   assert.deepEqual(
-    (['skills', 'extensions', 'settings'] as const).map((p) =>
+    (['skills', 'tools', 'extensions', 'settings'] as const).map((p) =>
       isPanelRelevant(p, 'both'),
     ),
-    [true, true, true],
+    [true, true, true, true],
   );
   assert.deepEqual(
-    (['skills', 'extensions', 'settings'] as const).map((p) =>
+    (['skills', 'tools', 'extensions', 'settings'] as const).map((p) =>
       isPanelRelevant(p, 'chat'),
     ),
-    [true, false, true],
+    [true, true, false, true],
   );
   assert.deepEqual(
-    (['skills', 'extensions', 'settings'] as const).map((p) =>
+    (['skills', 'tools', 'extensions', 'settings'] as const).map((p) =>
       isPanelRelevant(p, 'page'),
     ),
-    [false, true, true],
+    [false, false, true, true],
   );
 });
 
