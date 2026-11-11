@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
 import { SIDEBAR_WIDTH, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
@@ -21,6 +22,14 @@ export function LeadView({
   tabs: TabInfo[];
 }) {
   const color = SPACE_COLOR_HEX[space.color];
+  const [editing, setEditing] = useState(false);
+
+  const finishRename = (value: string) => {
+    setEditing(false);
+    if (value.trim() !== '' && value !== space.name) {
+      window.browserApi.renameSpace(space.id, value);
+    }
+  };
 
   return (
     <main
@@ -47,7 +56,46 @@ export function LeadView({
         <span
           style={{ width: 14, height: 14, borderRadius: 7, background: color }}
         />
-        <h1 style={{ margin: 0, fontSize: 22 }}>{space.name}</h1>
+        {editing ? (
+          <input
+            autoFocus
+            defaultValue={space.name}
+            maxLength={60}
+            aria-label="Space name"
+            onFocus={(e) => e.target.select()}
+            onBlur={(e) => finishRename(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') finishRename(e.currentTarget.value);
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            style={{ fontSize: 22, fontWeight: 600, minWidth: 0, width: 280 }}
+          />
+        ) : (
+          <>
+            <h1
+              onClick={() => setEditing(true)}
+              title="Click to rename"
+              style={{ margin: 0, fontSize: 22, cursor: 'text' }}
+            >
+              {space.name}
+            </h1>
+            <button
+              type="button"
+              aria-label="Rename Space"
+              title="Rename Space"
+              onClick={() => setEditing(true)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: 16,
+                color: '#5f6368',
+              }}
+            >
+              ✎
+            </button>
+          </>
+        )}
         <span style={{ color: '#5f6368', fontSize: 14 }}>
           {tabs.length} {tabs.length === 1 ? 'tab' : 'tabs'}
         </span>

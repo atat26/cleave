@@ -35,6 +35,7 @@ export function App() {
       />
       {leadSpace && (
         <LeadView
+          key={leadSpace.id}
           space={leadSpace}
           tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
         />
