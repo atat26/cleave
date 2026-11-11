@@ -1,6 +1,6 @@
 # Build plan
 
-- [ ] M1: Window, one tab, address bar, back/forward
+- [x] M1: Window, one tab, address bar, back/forward
 - [ ] M2: Multiple tabs plus a vertical tab list
 - [ ] M3: Spaces (create, switch, rename), saved to disk
 - [ ] M4: Settings, provider adapter (OpenRouter, then OpenCode), streaming chat

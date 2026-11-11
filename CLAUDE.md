@@ -7,7 +7,9 @@ Windows + PowerShell. I'm new to app development: explain plans in plain English
 ## Commands
 
 `npm start` | `npm run check` | `npm run test:e2e`
-(Add `check` and `test:e2e` scripts when the scaffold exists.)
+(`check` = typecheck + oxlint/oxfmt. `test:e2e` is still to be added.)
+In PowerShell use `npm.cmd` instead of `npm` (script execution is disabled on this machine).
+If Electron's binary is missing after `npm install`, run `node node_modules\electron\install.js`.
 
 ## Rules
 
