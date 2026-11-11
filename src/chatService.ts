@@ -13,7 +13,7 @@
 import { clipboard, ipcMain, Menu } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { createAgentTools } from './agentTools';
-import type { OutlineRead, PageRead } from './agentTools';
+import type { ActionEnv, OutlineRead, PageRead } from './agentTools';
 import { buildLinkedContext, linkedTabs, snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
@@ -60,6 +60,11 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // Doing things in a tab (click, type, ...). Every one is approved by you first.
+  actions: ActionEnv;
+  // Link a tab to a chat (used for tabs the assistant opens).
+  linkTab(chatId: number, tabId: number): void;
+
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
   setChats(next: ChatsState): void;
@@ -100,9 +105,39 @@ export function createChatService(options: {
 
   // ---- The runner ---------------------------------------------------------------
 
+  // ---- Asking you to approve what the assistant wants to do ----------------------
+
+  // Waiting approvals: the chat, reply and call each one is for.
+  const pending = new Map<
+    string,
+    (decision: 'allow' | 'allow-rest' | 'deny') => void
+  >();
+  const key = (chatId: number, messageId: number, partId: number) =>
+    `${chatId}:${messageId}:${partId}`;
+
+  // The runner has put the question in the chat (the call is marked "waiting");
+  // now wait for your answer. Stop (or anything that aborts) counts as "no".
+  const confirm = (
+    request: { chatId: number; messageId: number; partId: number },
+    signal: AbortSignal,
+  ) =>
+    new Promise<'allow' | 'allow-rest' | 'deny'>((resolve) => {
+      const id = key(request.chatId, request.messageId, request.partId);
+      const finish = (decision: 'allow' | 'allow-rest' | 'deny') => {
+        pending.delete(id);
+        signal.removeEventListener('abort', onAbort);
+        resolve(decision);
+      };
+      const onAbort = () => finish('deny');
+      pending.set(id, finish);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort);
+    });
+
   const runner = createChatRunner({
     getState: options.getChats,
     setState: options.setChats,
+    confirm,
     stream: async function* ({ model, messages, tools, signal }) {
       const apiKey = llm?.getApiKey() ?? null;
       if (llm === null || apiKey === null) throw new ChatError('auth');
@@ -155,12 +190,12 @@ export function createChatService(options: {
     );
     const refs = chats.findConversation(options.getChats(), chatId)?.refs ?? [];
 
-    // The assistant may read the linked pages if there are any to read and the
-    // model is not known to lack tool support. (An unknown model is tried: if it
+    // The assistant may use its tools unless the model is known to lack tool
+    // support. (An unknown model is tried: if it
     // cannot, the provider says so and the chat shows the error.)
-    const canRead =
-      linkedTabs(refs, workspace).length > 0 &&
-      llm.getModelInfo(model)?.supportsTools !== false;
+    // The tools are there even when nothing is linked: the assistant can always
+    // open a new tab (which is then linked to the chat).
+    const canRead = llm.getModelInfo(model)?.supportsTools !== false;
     const tools = canRead
       ? createAgentTools({
           // Looked up again at each use, so a link removed mid-reply stops
@@ -172,6 +207,13 @@ export function createChatService(options: {
             ),
           readPage: options.readPage,
           outlinePage: options.outlinePage,
+          ...options.actions,
+          // A tab the assistant opens is linked to this chat, so it can use it.
+          openTab: async (url, signal) => {
+            const opened = await options.actions.openTab(url, signal);
+            if (opened.ok) options.linkTab(chatId, opened.tabId);
+            return opened;
+          },
         })
       : null;
     return {
@@ -255,15 +297,93 @@ export function createChatService(options: {
     },
   );
 
-  ipcMain.handle('chat:retry', (event, chatId: unknown): ChatSendResult => {
-    if (!fromUi(event)) throw new Error('Not allowed.');
-    if (!isId(chatId)) return invalid;
-    const prepared = contextFor(chatId);
-    if (!prepared.ok) return prepared;
-    const started = runner.retry(chatId, prepared.context);
-    if (started.ok) void started.done;
-    return answer(started);
-  });
+  // Tell the screen to load a chat's messages again (some were removed).
+  const resetChat = (chatId: number) => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('chat:reset', chatId);
+    }
+  };
+
+  ipcMain.handle(
+    'chat:retry',
+    (event, chatId: unknown, messageId: unknown): ChatSendResult => {
+      if (!fromUi(event)) throw new Error('Not allowed.');
+      if (!isId(chatId)) return invalid;
+      if (messageId !== undefined && !isId(messageId)) return invalid;
+      const prepared = contextFor(chatId);
+      if (!prepared.ok) return prepared;
+
+      // Only your newest message can be retried (its reply is replaced). An older
+      // one can be branched into a new chat instead.
+      if (messageId !== undefined) {
+        const messages =
+          chats.findConversation(options.getChats(), chatId)?.messages ?? [];
+        const newest = [...messages].reverse().find((m) => m.role === 'user');
+        if (!newest || newest.id !== messageId) {
+          return {
+            ok: false,
+            kind: 'nothing-to-retry',
+            error:
+              'Only your newest message can be retried. Branch an older one instead.',
+          };
+        }
+      }
+
+      const started = runner.retry(chatId, prepared.context, messageId);
+      if (started.ok) {
+        resetChat(chatId);
+        void started.done;
+      }
+      return answer(started);
+    },
+  );
+
+  // Start a new chat from an earlier message of yours (that message and its
+  // reply are copied; nothing is sent to the model). The chat it came from is
+  // left exactly as it was.
+  ipcMain.handle(
+    'chat:branch',
+    (event, chatId: unknown, messageId: unknown): ChatSendResult => {
+      if (!fromUi(event)) throw new Error('Not allowed.');
+      if (!isId(chatId) || !isId(messageId)) return invalid;
+      const branched = chats.branchConversation(
+        options.getChats(),
+        chatId,
+        messageId,
+        Date.now(),
+      );
+      if (!branched) {
+        return {
+          ok: false,
+          kind: 'nothing-to-retry',
+          error: 'That message cannot be branched.',
+        };
+      }
+      options.setChats(branched.state);
+      options.onMeta(); // Switch to the new chat.
+      return { ok: true };
+    },
+  );
+
+  // Your answer to an approval card. Only for a question that is really waiting.
+  const onDecide = (
+    event: Electron.IpcMainEvent,
+    chatId: unknown,
+    messageId: unknown,
+    partId: unknown,
+    decision: unknown,
+  ) => {
+    if (
+      !fromUi(event) ||
+      !isId(chatId) ||
+      !isId(messageId) ||
+      !isId(partId) ||
+      (decision !== 'allow' && decision !== 'allow-rest' && decision !== 'deny')
+    ) {
+      return;
+    }
+    pending.get(key(chatId, messageId, partId))?.(decision);
+  };
 
   const onStop = (event: Electron.IpcMainEvent, chatId: unknown) => {
     if (fromUi(event) && isId(chatId)) runner.stop(chatId);
@@ -315,6 +435,7 @@ export function createChatService(options: {
   };
 
   ipcMain.on('chat:stop', onStop);
+  ipcMain.on('chat:decide', onDecide);
   ipcMain.on('chat:copy', onCopy);
   ipcMain.on('chat:model-menu', onModelMenu);
 
@@ -335,7 +456,9 @@ export function createChatService(options: {
       ipcMain.removeHandler('chat:messages');
       ipcMain.removeHandler('chat:send');
       ipcMain.removeHandler('chat:retry');
+      ipcMain.removeHandler('chat:branch');
       ipcMain.removeListener('chat:stop', onStop);
+      ipcMain.removeListener('chat:decide', onDecide);
       ipcMain.removeListener('chat:copy', onCopy);
       ipcMain.removeListener('chat:model-menu', onModelMenu);
     },

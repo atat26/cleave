@@ -116,7 +116,12 @@ export function ChatBar({
           </div>
         )}
         {full && (
-          <MessageList chatId={chats.activeId} tabs={tabs} spaces={spaces} />
+          <MessageList
+            chatId={chats.activeId}
+            generating={chat?.generating ?? false}
+            tabs={tabs}
+            spaces={spaces}
+          />
         )}
         {chat && (
           <ChatComposer

@@ -132,8 +132,8 @@ export function LinkChips({
             : undefined;
         const shared =
           link.kind === 'tab'
-            ? `The assistant gets this title${link.address ? ' and address' : ''}, and can read the page when you ask.`
-            : "The assistant gets this Space's name and its tabs' titles and addresses, and can read those pages when you ask.";
+            ? `The assistant gets this title${link.address ? ' and address' : ''}, can read the page, and can act on it (click, type) only with your approval.`
+            : "The assistant gets this Space's name and its tabs' titles and addresses, can read those pages, and can act on them only with your approval.";
         const tip = [
           link.label,
           link.address,
@@ -195,7 +195,7 @@ export function LinkChips({
         );
       })}
       <span style={{ fontSize: 11, color: '#5f6368' }}>
-        The assistant can read these pages when you ask.
+        The assistant can read these pages, and act on them with your approval.
       </span>
     </div>
   );
@@ -272,7 +272,7 @@ export function AddPageButton({ onClick }: { onClick: () => void }) {
         // Keep the text box focused, so the list's arrow keys work.
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
-        title="Attach a tab or Space to the chat (the assistant can read it when you ask)"
+        title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
         style={{
           ...chipStyle,
           padding: '3px 10px',

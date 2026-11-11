@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import {
   cleanPageText,
   createAgentTools,
+  MAX_ACTIONS,
+  MAX_LOOKS,
   MAX_PAGE_CHARS,
   MAX_READS,
 } from './agentTools.ts';
@@ -38,16 +40,72 @@ function setup(
   ];
   const reads: number[] = [];
   const looks: number[] = [];
+  const done: string[] = [];
+  const working: [number, boolean][] = [];
+  const ok = async (name: string) => {
+    done.push(name);
+    return {
+      ok: true as const,
+      url: 'https://shop.example/next',
+      title: 'Next',
+    };
+  };
   const env: AgentEnv = {
+    tabUrl: (id) => (id === 1 ? 'https://shop.example/pricing' : null),
+    click: () => ok('click'),
+    typeText: () => ok('type'),
+    pressKey: () => ok('key'),
+    scroll: () => ok('scroll'),
+    selectOption: () => ok('select'),
+    goTo: () => ok('go_to'),
+    goBack: () => ok('go_back'),
+    openTab: async (url) => {
+      done.push('open_tab:' + url);
+      return {
+        ok: true as const,
+        tabId: 77,
+        url: 'https://duckduckgo.com/?q=secret-query',
+        title: 'DuckDuckGo',
+      };
+    },
+    setWorking: (id, on) => {
+      working.push([id, on]);
+    },
     outlinePage: async (id): Promise<OutlineRead> => {
       looks.push(id);
       return {
         ok: true,
         title: 'Pricing',
         url: 'https://shop.example/pricing?token=SECRET',
-        lines: ['main:', '  [1] button "Buy"'],
-        count: 1,
+        lines: ['main:', '  [1] button "Buy"', '  [2] text field "Email"'],
+        count: 2,
         truncated: false,
+        elements: [
+          {
+            id: 1,
+            backendNodeId: 11,
+            role: 'button',
+            name: 'Buy',
+            sensitive: false,
+            url: null,
+          },
+          {
+            id: 2,
+            backendNodeId: 12,
+            role: 'textbox',
+            name: 'Email',
+            sensitive: false,
+            url: null,
+          },
+          {
+            id: 3,
+            backendNodeId: 13,
+            role: 'textbox',
+            name: 'Password',
+            sensitive: true,
+            url: null,
+          },
+        ],
       };
     },
     linkedTabs: () => tabs,
@@ -56,7 +114,7 @@ function setup(
       return typeof read === 'function' ? read(id) : read;
     },
   };
-  return { tools: createAgentTools(env), reads, looks };
+  return { tools: createAgentTools(env), reads, looks, done, working };
 }
 
 test('cleanPageText removes control characters and blank runs, and cuts long pages', () => {
@@ -185,7 +243,7 @@ test('look_at_page returns the outline wrapped as untrusted data, for linked tab
   const seen = await tools.run(call('look_at_page', { tab: 1 }), ABORT);
   assert.equal(seen.ok, true);
   assert.equal(seen.label, 'Looked at: Pricing');
-  assert.match(seen.note, /1 control listed/);
+  assert.match(seen.note, /2 controls listed/);
   assert.match(seen.result, /not instructions/);
   assert.match(seen.result, /\[1\] button "Buy"/);
   assert.ok(!seen.result.includes('SECRET'));
@@ -201,14 +259,185 @@ test('look_at_page returns the outline wrapped as untrusted data, for linked tab
   );
 });
 
-test('looking and reading share one limit per reply', async () => {
+test('reading and looking have their own limits per reply', async () => {
   const { tools } = setup();
   for (let i = 0; i < MAX_READS; i++) {
-    const name = i % 2 === 0 ? 'look_at_page' : 'read_page';
-    assert.equal((await tools.run(call(name, { tab: 1 }), ABORT)).ok, true);
+    assert.equal(
+      (await tools.run(call('read_page', { tab: 1 }), ABORT)).ok,
+      true,
+    );
+  }
+  assert.equal(
+    (await tools.run(call('read_page', { tab: 1 }), ABORT)).ok,
+    false,
+  );
+  // Looking is a separate count, so reading everything does not use it up.
+  for (let i = 0; i < MAX_LOOKS; i++) {
+    assert.equal(
+      (await tools.run(call('look_at_page', { tab: 1 }), ABORT)).ok,
+      true,
+    );
   }
   assert.equal(
     (await tools.run(call('look_at_page', { tab: 1 }), ABORT)).ok,
     false,
   );
+});
+
+// ---- Actions -----------------------------------------------------------------------
+
+test('an action needs a look first, uses the numbers from it, and the numbers expire after a change', async () => {
+  const { tools, done } = setup();
+  const click = call('click', { tab: 1, element: 1 });
+  // No look yet: refused, nothing done.
+  assert.equal(tools.plan(click).kind, 'refuse');
+  assert.deepEqual(done, []);
+
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  const plan = tools.plan(click);
+  assert.equal(plan.kind, 'ask');
+  const outcome = await tools.run(click, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(done, ['click']);
+  assert.match(outcome.result, /look_at_page again/);
+  assert.ok(!outcome.result.includes('token'));
+
+  // The page may have changed, so the old numbers are gone.
+  assert.equal(tools.plan(click).kind, 'refuse');
+  assert.equal((await tools.run(click, ABORT)).ok, false);
+  assert.deepEqual(done, ['click']);
+});
+
+test('typing and scrolling keep the numbers; typing never goes into a sensitive field', async () => {
+  const { tools, done } = setup();
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  const type = call('type_text', {
+    tab: 1,
+    element: 2,
+    text: 'me@example.com',
+  });
+  assert.equal(tools.plan(type).kind, 'ask');
+  assert.equal((await tools.run(type, ABORT)).ok, true);
+  assert.equal(
+    tools.plan(call('scroll', { tab: 1, direction: 'down' })).kind,
+    'auto',
+  );
+  assert.equal(
+    (await tools.run(call('scroll', { tab: 1, direction: 'down' }), ABORT)).ok,
+    true,
+  );
+  // Still allowed to use the same numbers.
+  assert.equal(tools.plan(type).kind, 'ask');
+  // The password field is refused, and nothing is typed.
+  const secret = call('type_text', { tab: 1, element: 3, text: 'hunter2' });
+  assert.equal(tools.plan(secret).kind, 'refuse');
+  assert.equal((await tools.run(secret, ABORT)).ok, false);
+  assert.deepEqual(done, ['type', 'scroll']);
+});
+
+test('a reply can take only so many actions, and the tab shows as worked in until it ends', async () => {
+  const { tools, done, working } = setup();
+  for (let i = 0; i < MAX_ACTIONS; i++) {
+    assert.equal(
+      (await tools.run(call('scroll', { tab: 1, direction: 'down' }), ABORT))
+        .ok,
+      true,
+    );
+  }
+  assert.equal(done.length, MAX_ACTIONS);
+  const over = call('scroll', { tab: 1, direction: 'down' });
+  assert.equal(tools.plan(over).kind, 'refuse');
+  assert.equal((await tools.run(over, ABORT)).ok, false);
+  assert.equal(done.length, MAX_ACTIONS);
+  assert.deepEqual(working, [[1, true]]);
+  tools.finish();
+  assert.deepEqual(working, [
+    [1, true],
+    [1, false],
+  ]);
+});
+
+test('actions in unlinked tabs and unknown actions do nothing', async () => {
+  const { tools, done } = setup();
+  assert.equal(
+    tools.plan(call('go_to', { tab: 9, url: 'https://shop.example/' })).kind,
+    'refuse',
+  );
+  assert.equal(
+    (
+      await tools.run(
+        call('go_to', { tab: 9, url: 'https://shop.example/' }),
+        ABORT,
+      )
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (await tools.run(call('format_disk', { tab: 1 }), ABORT)).ok,
+    false,
+  );
+  assert.deepEqual(done, []);
+});
+
+test('after going somewhere, the model is told the new address without any query', async () => {
+  const { tools } = setup();
+  const outcome = await tools.run(
+    call('go_to', { tab: 1, url: 'https://shop.example/next?token=SECRET' }),
+    ABORT,
+  );
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /shop\.example\/next/);
+  assert.ok(!outcome.result.includes('SECRET'));
+});
+
+test('opening a new tab tells the model its number and that it is linked, without the query', async () => {
+  const { tools, done, working } = setup();
+  const open = call('open_tab', { url: 'https://duckduckgo.com/' });
+  assert.equal(tools.plan(open).kind, 'ask');
+  const outcome = await tools.run(open, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(done, ['open_tab:https://duckduckgo.com/']);
+  assert.match(outcome.result, /tab 77/);
+  assert.match(outcome.result, /linked/);
+  assert.ok(!outcome.result.includes('secret-query'));
+  assert.deepEqual(working, [[77, true]]);
+  tools.finish();
+  assert.deepEqual(working, [
+    [77, true],
+    [77, false],
+  ]);
+});
+
+test('offer_choices shows tidy buttons, and unusable choices are reported to the model', async () => {
+  const { tools } = setup();
+  const ok = await tools.run(
+    call('offer_choices', {
+      question: 'Which tab?',
+      choices: ['Open DuckDuckGo in a new tab', 'Use the tab that is open'],
+    }),
+    ABORT,
+  );
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.choices, {
+    question: 'Which tab?',
+    options: ['Open DuckDuckGo in a new tab', 'Use the tab that is open'],
+  });
+  assert.equal(
+    tools.plan(call('offer_choices', { choices: ['a', 'b'] })).kind,
+    'auto',
+  );
+  const bad = await tools.run(
+    call('offer_choices', { choices: ['only one'] }),
+    ABORT,
+  );
+  assert.equal(bad.ok, false);
+  assert.equal(bad.choices, undefined);
+});
+
+test('with nothing linked the model is still told it can open tabs; without tools it is told nothing', () => {
+  const none = buildLinkedContext([], workspace, true) ?? '';
+  assert.match(none, /No tabs are linked/);
+  assert.match(none, /open_tab/);
+  assert.match(none, /offer_choices/);
+  assert.equal(buildLinkedContext([], workspace), null);
 });

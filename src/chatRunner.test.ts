@@ -40,7 +40,23 @@ function setup(stream: StreamFn) {
     tools?: ToolDefinition[];
   }[] = [];
   const changes: string[] = [];
+  // What the user answers when asked to approve something (a test can change it).
+  const asked: { text: string; risky: boolean; statusWhenAsked: string }[] = [];
+  let decide: (
+    signal: AbortSignal,
+  ) => Promise<'allow' | 'allow-rest' | 'deny'> = async () => 'allow';
   const runner = createChatRunner({
+    confirm: async (request, signal) => {
+      const part = chats
+        .findMessage(state, request.chatId, request.messageId)
+        ?.parts.find((p) => p.type === 'tool' && p.id === request.partId);
+      asked.push({
+        text: request.text,
+        risky: request.risky,
+        statusWhenAsked: part && part.type === 'tool' ? part.status : '',
+      });
+      return decide(signal);
+    },
     getState: () => state,
     setState: (next) => {
       state = next;
@@ -61,6 +77,10 @@ function setup(stream: StreamFn) {
     runner,
     calls,
     changes,
+    asked,
+    answerWith(next: typeof decide) {
+      decide = next;
+    },
     // Start another chat (the new one becomes the active one).
     addChat() {
       const created = chats.newConversation(state, NOW);
@@ -399,17 +419,45 @@ function fakeTools(
   }),
 ) {
   const runs: string[] = [];
+  let finished = 0;
+  // What each call needs: read_page just goes ahead; `click` asks; `buy` asks as
+  // risky; `forbidden` is refused.
   const tools: AgentTools = {
     definitions: [
       { name: 'read_page', description: 'd', parameters: { type: 'object' } },
     ],
-    describe: () => 'Reading: Example',
+    describe: (c) =>
+      c.name === 'read_page' ? 'Reading: Example' : `Doing ${c.name}`,
+    plan: (c) =>
+      c.name === 'click'
+        ? {
+            kind: 'ask',
+            text: 'Click the button "Go" on shop.example',
+            risky: false,
+          }
+        : c.name === 'buy'
+          ? {
+              kind: 'ask',
+              text: 'Click the button "Place order" on shop.example',
+              risky: true,
+            }
+          : c.name === 'forbidden'
+            ? {
+                kind: 'refuse',
+                label: 'Not allowed',
+                note: 'Refused.',
+                result: 'No.',
+              }
+            : { kind: 'auto' },
     run: async (c, signal) => {
       runs.push(c.id);
       return run(signal);
     },
+    finish: () => {
+      finished++;
+    },
   };
-  return { tools, runs };
+  return { tools, runs, finishedCount: () => finished };
 }
 
 const toolParts = (message: chats.ChatMessage) =>
@@ -576,4 +624,228 @@ test('a reply keeps what happened in order, and each tool call keeps exactly wha
   assert.equal(reply.content, 'One moment. \n\nIt says hello. Done.');
   assert.equal(reply.reasoning, 'I should look. Tab 3 it is.Now I know. ');
   assert.ok(!JSON.stringify(t.chat).includes('PAGE TEXT'));
+});
+
+// ---- Asking before acting ----------------------------------------------------------
+
+const act = (id: string, name: string): StreamEvent => ({
+  type: 'tool-calls',
+  calls: [{ id, name, arguments: '{}' }],
+});
+
+test('something that needs approval waits, is marked waiting, and runs only after Allow', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(scripted([act('a1', 'click')], [text('Done.')]));
+  const started = t.runner.send(t.chatId, 'Click go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(runs, ['a1']);
+  // The question was asked with the call marked as waiting, in the app's words.
+  assert.deepEqual(t.asked, [
+    {
+      text: 'Click the button "Go" on shop.example',
+      risky: false,
+      statusWhenAsked: 'waiting',
+    },
+  ]);
+  const part = toolParts(t.chat.messages[1])[0];
+  assert.equal(part.status, 'ok');
+  assert.equal(part.ask, 'Click the button "Go" on shop.example');
+  assert.equal(part.outcome.length > 0, true);
+});
+
+test('saying no does not run it, tells the model not to retry, and the reply carries on', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(scripted([act('a1', 'click')], [text('Okay, I stopped.')]));
+  t.answerWith(async () => 'deny');
+  const started = t.runner.send(t.chatId, 'Click go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(runs, []);
+  const reply = t.chat.messages[1];
+  assert.equal(reply.status, 'done');
+  assert.equal(toolParts(reply)[0].status, 'declined');
+  const last = t.calls[1].messages[t.calls[1].messages.length - 1];
+  assert.equal(last.role, 'tool');
+  assert.match(last.content, /did not allow this/);
+  assert.equal(reply.content, 'Okay, I stopped.');
+});
+
+test('Allow the rest skips later questions, except for the kinds that always ask', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(
+    scripted(
+      [act('a1', 'click')],
+      [act('a2', 'click')],
+      [act('a3', 'buy')],
+      [act('a4', 'click')],
+      [text('Finished.')],
+    ),
+  );
+  t.answerWith(async () => 'allow-rest');
+  const started = t.runner.send(t.chatId, 'Do things', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(runs, ['a1', 'a2', 'a3', 'a4']);
+  // Asked for the first click, and for the risky one; not for the other clicks.
+  assert.deepEqual(
+    t.asked.map((a) => a.text),
+    [
+      'Click the button "Go" on shop.example',
+      'Click the button "Place order" on shop.example',
+    ],
+  );
+});
+
+test('a risky action asks every time, and "Allow the rest" on it does not switch asking off', async () => {
+  const { tools } = fakeTools();
+  const t = setup(
+    scripted([act('a1', 'buy')], [act('a2', 'click')], [text('Done.')]),
+  );
+  t.answerWith(async () => 'allow-rest');
+  const started = t.runner.send(t.chatId, 'Buy it', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(
+    t.asked.map((a) => a.risky),
+    [true, false],
+  );
+});
+
+test('Stop while waiting for an answer ends the reply and nothing runs', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(scripted([act('a1', 'click')]));
+  t.answerWith(
+    (signal) =>
+      new Promise((resolve) =>
+        signal.addEventListener('abort', () => resolve('deny')),
+      ),
+  );
+  const started = t.runner.send(t.chatId, 'Click go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(t.chat.messages[1].status, 'streaming');
+  assert.equal(toolParts(t.chat.messages[1])[0].status, 'waiting');
+  t.runner.stop(t.chatId);
+  await started.done;
+  assert.deepEqual(runs, []);
+  const reply = t.chat.messages[1];
+  assert.equal(reply.status, 'stopped');
+  assert.equal(toolParts(reply)[0].status, 'error'); // never ran
+});
+
+test('a refused action is shown and reported to the model without asking or running', async () => {
+  const { tools, runs } = fakeTools();
+  const t = setup(scripted([act('a1', 'forbidden')], [text('I cannot.')]));
+  const started = t.runner.send(t.chatId, 'Do it', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(runs, []);
+  assert.deepEqual(t.asked, []);
+  const part = toolParts(t.chat.messages[1])[0];
+  assert.equal(part.status, 'error');
+  assert.equal(part.label, 'Not allowed');
+  const last = t.calls[1].messages[t.calls[1].messages.length - 1];
+  assert.deepEqual(last, { role: 'tool', toolCallId: 'a1', content: 'No.' });
+});
+
+test('the tools are told when a reply ends, however it ends', async () => {
+  const done = fakeTools();
+  const ok = setup(scripted([text('Hi')]));
+  const started = ok.runner.send(ok.chatId, 'Hello', {
+    ...CONTEXT,
+    tools: done.tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(done.finishedCount(), 1);
+
+  const failing = fakeTools();
+  const bad = setup(
+    // eslint-disable-next-line require-yield
+    async function* () {
+      throw new ChatError('network');
+    },
+  );
+  const failed = bad.runner.send(bad.chatId, 'Hello', {
+    ...CONTEXT,
+    tools: failing.tools,
+  });
+  assert.ok(failed.ok);
+  await failed.done;
+  assert.equal(failing.finishedCount(), 1);
+});
+
+test('choices the assistant offers are put in the reply right after the call', async () => {
+  const tools = fakeTools().tools;
+  const offering: AgentTools = {
+    ...tools,
+    plan: () => ({ kind: 'auto' }),
+    run: async () => ({
+      label: 'Offered choices',
+      ok: true,
+      note: 'Showed 2 buttons.',
+      result: 'shown',
+      choices: { question: 'Which?', options: ['A', 'B'] },
+    }),
+  };
+  const t = setup(
+    scripted(
+      [text('Two options. '), act('o1', 'offer_choices')],
+      [text('Tell me which.')],
+    ),
+  );
+  const started = t.runner.send(t.chatId, 'Help', {
+    ...CONTEXT,
+    tools: offering,
+  });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(
+    t.chat.messages[1].parts.map((p) => p.type),
+    ['text', 'tool', 'choices', 'text'],
+  );
+});
+
+test('retrying an earlier message removes what came after it and writes a new reply', async () => {
+  const t = setup(
+    scripted(
+      [text('First answer')],
+      [text('Second answer')],
+      [text('Fresh answer')],
+    ),
+  );
+  const one = t.runner.send(t.chatId, 'first', CONTEXT);
+  assert.ok(one.ok);
+  await one.done;
+  const two = t.runner.send(t.chatId, 'second', CONTEXT);
+  assert.ok(two.ok);
+  await two.done;
+  const firstUser = t.chat.messages[0];
+  assert.equal(t.chat.messages.length, 4);
+
+  const again = t.runner.retry(t.chatId, CONTEXT, firstUser.id);
+  assert.ok(again.ok);
+  await again.done;
+  assert.deepEqual(
+    t.chat.messages.map((m) => [m.role, m.content]),
+    [
+      ['user', 'first'],
+      ['assistant', 'Fresh answer'],
+    ],
+  );
+  // The model was asked again with only the first prompt in the conversation.
+  const lastCall = t.calls[t.calls.length - 1].messages;
+  assert.deepEqual(
+    lastCall.filter((m) => m.role !== 'system').map((m) => m.content),
+    ['first'],
+  );
+
+  // An id that is not one of your messages cannot be retried.
+  const bad = t.runner.retry(t.chatId, CONTEXT, t.chat.messages[1].id);
+  assert.deepEqual(bad, { ok: false, reason: 'nothing-to-retry' });
+  assert.deepEqual(t.runner.retry(t.chatId, CONTEXT, 9999), {
+    ok: false,
+    reason: 'nothing-to-retry',
+  });
 });

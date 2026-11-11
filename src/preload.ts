@@ -33,8 +33,20 @@ const browserApi: BrowserApi = {
   chatMessages: (chatId) => ipcRenderer.invoke('chat:messages', chatId),
   chatSend: (chatId, text, mentions) =>
     ipcRenderer.invoke('chat:send', chatId, text, mentions),
-  chatRetry: (chatId) => ipcRenderer.invoke('chat:retry', chatId),
+  chatRetry: (chatId, messageId) =>
+    ipcRenderer.invoke('chat:retry', chatId, messageId),
+  chatBranch: (chatId, messageId) =>
+    ipcRenderer.invoke('chat:branch', chatId, messageId),
+  onChatReset: (callback) => {
+    const listener = (_event: unknown, chatId: number) => callback(chatId);
+    ipcRenderer.on('chat:reset', listener);
+    return () => {
+      ipcRenderer.removeListener('chat:reset', listener);
+    };
+  },
   chatStop: (chatId) => ipcRenderer.send('chat:stop', chatId),
+  chatDecide: (chatId, messageId, partId, decision) =>
+    ipcRenderer.send('chat:decide', chatId, messageId, partId, decision),
   chatCopy: (text) => ipcRenderer.send('chat:copy', text),
   chatLink: (chatId, kind, id) =>
     ipcRenderer.send('chats:link', chatId, kind, id),

@@ -19,7 +19,7 @@ import type {
 
 // How many times the assistant may stop to use tools within one reply. After that
 // it is asked to answer with what it has.
-export const MAX_TOOL_ROUNDS = 6;
+export const MAX_TOOL_ROUNDS = 30;
 
 export interface RunnerDeps {
   getState(): ChatsState;
@@ -37,6 +37,18 @@ export interface RunnerDeps {
   onMessage(chatId: number, messageId: number): void;
   // A chat started or stopped generating.
   onRunningChange(): void;
+  // Ask you to approve something the assistant wants to do, and wait for your
+  // answer. Must give up (answer "deny") when `signal` is aborted.
+  confirm(
+    request: {
+      chatId: number;
+      messageId: number;
+      partId: number;
+      text: string;
+      risky: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<'allow' | 'allow-rest' | 'deny'>;
 }
 
 // What the model should be, and your system prompt.
@@ -83,6 +95,9 @@ export function createChatRunner(deps: RunnerDeps) {
     let cost: number | null = null;
     let result: Parameters<typeof chats.finishMessage>[3] = { status: 'done' };
     const changed = () => deps.onMessage(chatId, replyId);
+    // Set when you choose "Allow the rest of this reply": from then on, things
+    // that are not marked risky go ahead without asking again.
+    let allowRest = false;
     try {
       for (let round = 0; ; round++) {
         // Once the tool rounds are used up the model is asked to just answer.
@@ -145,16 +160,96 @@ export function createChatRunner(deps: RunnerDeps) {
         ];
         for (const call of calls) {
           if (controller.signal.aborted) break;
+          const plan = tools.plan(call);
+          // Asking you first, unless you already allowed the rest of this reply
+          // and this one is not a kind that always asks.
+          const mustAsk = plan.kind === 'ask' && !(allowRest && !plan.risky);
           const added = chats.addToolPart(deps.getState(), chatId, replyId, {
             callId: call.id,
             name: call.name,
             arguments: call.arguments,
-            label: tools.describe(call),
+            label: plan.kind === 'refuse' ? plan.label : tools.describe(call),
+            ask: mustAsk && plan.kind === 'ask' ? plan.text : undefined,
+            risky: plan.kind === 'ask' ? plan.risky : false,
           });
           if (added) {
             deps.setState(added.state);
             changed();
           }
+
+          // Refused outright: say so, do nothing.
+          if (plan.kind === 'refuse') {
+            if (added) {
+              deps.setState(
+                chats.finishToolPart(
+                  deps.getState(),
+                  chatId,
+                  replyId,
+                  added.partId,
+                  { ok: false, label: plan.label, outcome: plan.note },
+                ),
+              );
+              changed();
+            }
+            conversation.push({
+              role: 'tool',
+              toolCallId: call.id,
+              content: plan.result,
+            });
+            continue;
+          }
+
+          if (mustAsk && plan.kind === 'ask' && added) {
+            const decision = await deps.confirm(
+              {
+                chatId,
+                messageId: replyId,
+                partId: added.partId,
+                text: plan.text,
+                risky: plan.risky,
+              },
+              controller.signal,
+            );
+            if (controller.signal.aborted) break;
+            if (decision === 'deny') {
+              deps.setState(
+                chats.finishToolPart(
+                  deps.getState(),
+                  chatId,
+                  replyId,
+                  added.partId,
+                  {
+                    ok: false,
+                    declined: true,
+                    outcome: 'You did not allow this.',
+                  },
+                ),
+              );
+              changed();
+              conversation.push({
+                role: 'tool',
+                toolCallId: call.id,
+                content:
+                  'The user did not allow this. Do not try it again. Tell the user briefly what you were trying to do, then use offer_choices to give them a few ways to continue (for example another approach, or doing it themselves).',
+              });
+              continue;
+            }
+            if (decision === 'allow-rest' && !plan.risky) allowRest = true;
+            deps.setState(
+              chats.setToolStatus(
+                deps.getState(),
+                chatId,
+                replyId,
+                added.partId,
+                'running',
+                decision === 'allow-rest'
+                  ? 'You allowed the rest of this reply.'
+                  : 'You allowed this.',
+              ),
+            );
+            changed();
+          }
+
           let outcome: ToolOutcome;
           try {
             outcome = await tools.run(call, controller.signal);
@@ -177,6 +272,17 @@ export function createChatRunner(deps: RunnerDeps) {
                 { ok: outcome.ok, label: outcome.label, outcome: outcome.note },
               ),
             );
+            // Buttons the assistant offered go in the reply right after this.
+            if (outcome.choices) {
+              deps.setState(
+                chats.addChoicesPart(
+                  deps.getState(),
+                  chatId,
+                  replyId,
+                  outcome.choices,
+                ),
+              );
+            }
             changed();
           }
           conversation.push({
@@ -202,6 +308,7 @@ export function createChatRunner(deps: RunnerDeps) {
         result = { status: 'error', errorKind: 'unknown' };
       }
     } finally {
+      tools?.finish();
       deps.setState(
         chats.finishMessage(
           deps.getState(),
@@ -268,13 +375,25 @@ export function createChatRunner(deps: RunnerDeps) {
 
     // Try again after a failed or stopped reply: remove it, and ask again from
     // your last message.
-    retry(chatId: number, context: RunContext): StartResult {
+    // With `fromMessageId`, retry from that earlier message of yours, even if
+    // it went fine: everything after it is removed and the reply is written again.
+    retry(
+      chatId: number,
+      context: RunContext,
+      fromMessageId?: number,
+    ): StartResult {
       if (running.has(chatId)) return { ok: false, reason: 'busy' };
       const chat = chats.findConversation(deps.getState(), chatId);
       if (!chat) return { ok: false, reason: 'unknown-chat' };
       const last = chat.messages[chat.messages.length - 1];
       let state = deps.getState();
-      if (
+      if (fromMessageId !== undefined) {
+        const from = chat.messages.find((m) => m.id === fromMessageId);
+        if (!from || from.role !== 'user') {
+          return { ok: false, reason: 'nothing-to-retry' };
+        }
+        state = chats.truncateAfter(state, chatId, fromMessageId);
+      } else if (
         last?.role === 'assistant' &&
         (last.status === 'error' || last.status === 'stopped')
       ) {

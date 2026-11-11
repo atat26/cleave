@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   screen,
+  session,
   WebContentsView,
 } from 'electron';
 import path from 'node:path';
@@ -28,9 +29,22 @@ import {
 } from './layout';
 import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
-import type { OutlineRead, PageRead } from './agentTools';
+import type {
+  ActionEnv,
+  ActionResult,
+  OutlineRead,
+  PageRead,
+} from './agentTools';
+import {
+  chooseOption,
+  clickControl,
+  pressKey as pressKeyInPage,
+  scrollPage,
+  typeIntoControl,
+} from './pageActions';
+import type { Cdp, DoneResult } from './pageActions';
 import { buildOutline } from './pageOutline';
-import { readAccessibilityTree, readPageText } from './pageReader';
+import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
@@ -276,6 +290,7 @@ export async function createTabs(
         favicon: tab.favicon,
         spaceId: tab.spaceId,
         loaded: views.has(tab.id),
+        working: working.has(tab.id),
       })),
       active: state.active,
       canGoBack: history?.canGoBack() ?? false,
@@ -624,6 +639,31 @@ export async function createTabs(
     sendState();
   };
 
+  // Wait until a page has finished loading (true), or the time runs out or Stop
+  // is pressed (false). Returns at once if it is not loading.
+  const waitForLoad = (
+    contents: Electron.WebContents,
+    signal: AbortSignal,
+    limitMs: number,
+  ) =>
+    new Promise<boolean>((resolve) => {
+      if (!contents.isLoading()) {
+        resolve(true);
+        return;
+      }
+      const done = (value: boolean) => {
+        clearTimeout(timer);
+        contents.removeListener('did-stop-loading', onStop);
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      };
+      const onStop = () => done(true);
+      const onAbort = () => done(false);
+      const timer = setTimeout(() => done(false), limitMs);
+      contents.once('did-stop-loading', onStop);
+      signal.addEventListener('abort', onAbort);
+    });
+
   // Get a tab ready for the assistant to look at (read-only). A sleeping tab is
   // woken up (hidden) first, and we wait for it to finish loading.
   const prepareTab = async (
@@ -639,21 +679,8 @@ export async function createTabs(
     const contents = ensureView(tab).webContents;
     if (wasAsleep) sendState();
     if (contents.isDestroyed()) return { ok: false, reason: 'closed' };
-    if (contents.isLoading()) {
-      const finished = await new Promise<boolean>((resolve) => {
-        const done = (value: boolean) => {
-          clearTimeout(timer);
-          contents.removeListener('did-stop-loading', onStop);
-          signal.removeEventListener('abort', onAbort);
-          resolve(value);
-        };
-        const onStop = () => done(true);
-        const onAbort = () => done(false);
-        const timer = setTimeout(() => done(false), 15_000);
-        contents.once('did-stop-loading', onStop);
-        signal.addEventListener('abort', onAbort);
-      });
-      if (!finished) return { ok: false, reason: 'timeout' };
+    if (!(await waitForLoad(contents, signal, 15_000))) {
+      return { ok: false, reason: 'timeout' };
     }
     return { ok: true, contents };
   };
@@ -681,8 +708,8 @@ export async function createTabs(
     const ready = await prepareTab(tabId, signal);
     if (!ready.ok) return ready;
     try {
-      const nodes = await readAccessibilityTree(ready.contents);
-      const outline = buildOutline(nodes);
+      const { nodes, sensitive } = await readAccessibilityTree(ready.contents);
+      const outline = buildOutline(nodes, sensitive);
       return {
         ok: true,
         title: ready.contents.getTitle(),
@@ -690,10 +717,149 @@ export async function createTabs(
         lines: outline.lines,
         count: outline.elements.length,
         truncated: outline.truncated,
+        elements: outline.elements,
       };
     } catch {
       return { ok: false, reason: 'unavailable' };
     }
+  };
+
+  // ---- Acting in a tab for the assistant ------------------------------------------
+  // (Whether an action may happen at all, and your approval, are decided before
+  // anything here runs: see agentActions.ts and chatRunner.ts.)
+
+  // Tabs the assistant is working in right now (shown with a marker, and no
+  // downloads are allowed from them).
+  const working = new Set<number>();
+  const setWorking = (tabId: number, on: boolean) => {
+    if (on) working.add(tabId);
+    else working.delete(tabId);
+    sendState();
+  };
+  session.defaultSession.on('will-download', (event, _item, contents) => {
+    const tabId = [...views].find(([, v]) => v.webContents === contents)?.[0];
+    if (tabId !== undefined && working.has(tabId)) event.preventDefault();
+  });
+
+  const pause = (ms: number, signal: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(done, ms);
+      function done() {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', done);
+        resolve();
+      }
+      signal.addEventListener('abort', done);
+    });
+
+  // After an action, give the page a moment to react, then wait while it loads.
+  const settle = async (
+    contents: Electron.WebContents,
+    signal: AbortSignal,
+  ) => {
+    await pause(500, signal);
+    if (!contents.isDestroyed()) await waitForLoad(contents, signal, 10_000);
+  };
+
+  // Show the tab the assistant is acting in, so you can see what it does. The
+  // keyboard stays in the chat, not in the page.
+  const focusTab = (tabId: number) => {
+    const active = state.active;
+    if (!model.findTab(state, tabId)) return;
+    if (!(active?.kind === 'tab' && active.id === tabId && pageIsShown())) {
+      select({ kind: 'tab', id: tabId });
+    }
+    win.webContents.focus();
+  };
+
+  const finished = (contents: Electron.WebContents): ActionResult => ({
+    ok: true,
+    url: contents.getURL(),
+    title: contents.getTitle(),
+  });
+
+  // Do something in a tab's page through the debugger, then let it settle.
+  const actOn = async (
+    tabId: number,
+    signal: AbortSignal,
+    work: (cdp: Cdp) => Promise<DoneResult>,
+  ): Promise<ActionResult> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    focusTab(tabId);
+    let done: DoneResult;
+    try {
+      done = await withCdp(ready.contents, 15_000, async (cdp) => {
+        // Act as if the page has the keyboard, even though the chat does.
+        await cdp
+          .send('Emulation.setFocusEmulationEnabled', { enabled: true })
+          .catch(() => undefined);
+        return work(cdp);
+      });
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+    if (!done.ok) return done;
+    await settle(ready.contents, signal);
+    return finished(ready.contents);
+  };
+
+  const actionEnv: ActionEnv = {
+    tabUrl: (tabId) => model.findTab(state, tabId)?.url ?? null,
+    click: (tabId, control, signal) =>
+      actOn(tabId, signal, (cdp) => clickControl(cdp, control.backendNodeId)),
+    typeText: (tabId, control, text, signal) =>
+      actOn(tabId, signal, (cdp) =>
+        typeIntoControl(cdp, control.backendNodeId, text),
+      ),
+    pressKey: (tabId, key, signal) =>
+      actOn(tabId, signal, (cdp) => pressKeyInPage(cdp, key)),
+    scroll: (tabId, direction, signal) =>
+      actOn(tabId, signal, (cdp) => scrollPage(cdp, direction)),
+    selectOption: (tabId, control, option, signal) =>
+      actOn(tabId, signal, (cdp) =>
+        chooseOption(cdp, control.backendNodeId, option),
+      ),
+    goTo: async (tabId, url, signal) => {
+      const ready = await prepareTab(tabId, signal);
+      if (!ready.ok) return ready;
+      focusTab(tabId);
+      // A redirect can cancel the first load; the page still ends up somewhere.
+      void ready.contents.loadURL(url).catch(() => undefined);
+      await pause(300, signal);
+      if (!(await waitForLoad(ready.contents, signal, 15_000))) {
+        return { ok: false, reason: 'timeout' };
+      }
+      return finished(ready.contents);
+    },
+    goBack: async (tabId, signal) => {
+      const ready = await prepareTab(tabId, signal);
+      if (!ready.ok) return ready;
+      focusTab(tabId);
+      const history = ready.contents.navigationHistory;
+      if (!history.canGoBack()) return { ok: false, reason: 'blocked' };
+      history.goBack();
+      await settle(ready.contents, signal);
+      return finished(ready.contents);
+    },
+    // A new tab for the assistant, shown straight away (it is about to act in it).
+    openTab: async (url, signal) => {
+      const created = model.addTab(state, {
+        url,
+        spaceId: currentSpaceId(),
+      });
+      commitAndShow(revealPage(created.state));
+      win.webContents.focus();
+      const ready = await prepareTab(created.id, signal);
+      if (!ready.ok) return { ok: false, reason: 'timeout' };
+      return {
+        ok: true,
+        tabId: created.id,
+        url: ready.contents.getURL(),
+        title: ready.contents.getTitle(),
+      };
+    },
+    setWorking,
   };
 
   // Talking to the model: sending messages and streaming replies into the chats.
@@ -704,6 +870,19 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    actions: actionEnv,
+    linkTab: (chatId, tabId) => {
+      const tab = model.findTab(state, tabId);
+      if (!tab) return;
+      commitChats(
+        chatsModel.addRef(chats, chatId, {
+          kind: 'tab',
+          id: tabId,
+          title: tab.title,
+          url: tab.url,
+        }),
+      );
+    },
     // Every piece of a streaming reply lands here: save soon, but do not rebuild
     // the whole UI each time.
     setChats: (next) => {

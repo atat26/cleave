@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   activeConversation,
+  addChoicesPart,
   addRef,
   addUserMessage,
   appendReasoning,
@@ -23,6 +24,8 @@ import {
   retargetEverywhere,
   retargetRef,
   setActiveConversation,
+  branchConversation,
+  truncateAfter,
   setConversationModel,
   startAssistantMessage,
 } from './chats.ts';
@@ -827,4 +830,92 @@ test('replies saved before parts existed are converted, and parts survive a save
     'error',
   );
   assert.equal(again.content, 'AB'); // rebuilt from the parts
+});
+
+test('choices are kept in place in a reply, tidied, and survive a save and load', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'hi', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = appendToMessage(reply.state, chatId, reply.id, 'Which one?');
+  state = addChoicesPart(state, chatId, reply.id, {
+    question: 'Pick',
+    options: ['One', 'Two'],
+  });
+  const message = findMessage(state, chatId, reply.id)!;
+  assert.deepEqual(
+    message.parts.map((p) => p.type),
+    ['text', 'choices'],
+  );
+  const again = parseChats(JSON.parse(JSON.stringify(state)), NOW);
+  const loaded = again.conversations[0].messages[1];
+  assert.deepEqual(loaded.parts[1], {
+    type: 'choices',
+    question: 'Pick',
+    options: ['One', 'Two'],
+  });
+  // Fewer than two usable options are dropped when loading.
+  const saved = JSON.parse(JSON.stringify(state));
+  saved.conversations[0].messages[1].parts[1].options = ['Only'];
+  const dropped = parseChats(saved, NOW).conversations[0].messages[1];
+  assert.deepEqual(
+    dropped.parts.map((p) => p.type),
+    ['text'],
+  );
+});
+
+test('truncateAfter keeps a message and removes everything after it', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  const first = addUserMessage(state, chatId, 'one', NOW, [])!;
+  state = first.state;
+  state = addUserMessage(state, chatId, 'two', NOW, [])!.state;
+  state = addUserMessage(state, chatId, 'three', NOW, [])!.state;
+  const cut = truncateAfter(state, chatId, first.id);
+  assert.deepEqual(
+    cut.conversations[0].messages.map((m) => m.content),
+    ['one'],
+  );
+  // Nothing to remove, or an unknown message: the same state comes back.
+  assert.equal(truncateAfter(cut, chatId, first.id), cut);
+  assert.equal(truncateAfter(state, chatId, 9999), state);
+});
+
+test('branching copies a message and its reply into a new active chat and leaves the original alone', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = renameConversation(state, chatId, 'Pandas');
+  state = addRef(state, chatId, link('tab', 1, 'Zoo', 'https://zoo.example/'));
+  const first = addUserMessage(state, chatId, 'one', NOW, [])!;
+  state = first.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = appendToMessage(reply.state, chatId, reply.id, 'answer one');
+  state = finishMessage(state, chatId, reply.id, { status: 'done' });
+  state = addUserMessage(state, chatId, 'two', NOW, [])!.state;
+
+  const branched = branchConversation(state, chatId, first.id, NOW + 5)!;
+  assert.ok(branched);
+  const [original, copy] = branched.state.conversations;
+  // The original is untouched.
+  assert.equal(original.messages.length, 3);
+  assert.equal(original.title, 'Pandas');
+  // The copy ends after the chosen message and its reply, keeps the links, and
+  // is now active.
+  assert.deepEqual(
+    copy.messages.map((m) => m.content),
+    ['one', 'answer one'],
+  );
+  assert.equal(copy.title, 'Pandas (branch)');
+  assert.deepEqual(
+    copy.refs.map((r) => r.id),
+    [1],
+  );
+  assert.equal(branched.state.activeId, copy.id);
+  assert.notEqual(copy.id, original.id);
+  assert.equal(branched.state.nextId, copy.id + 1);
+
+  // Only one of your own messages can be branched from.
+  assert.equal(branchConversation(state, chatId, reply.id, NOW), null);
+  assert.equal(branchConversation(state, chatId, 9999, NOW), null);
+  assert.equal(branchConversation(state, 9999, first.id, NOW), null);
 });

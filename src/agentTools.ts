@@ -1,20 +1,37 @@
-// The tools the assistant may use in M5: look at the list of linked tabs, and read
-// the text of a linked page. Both are READ-ONLY: nothing here clicks, types,
-// navigates or changes anything, and there are no file tools.
+// The tools the assistant may use: look at the list of linked tabs, read a page's
+// text, look at a page's controls (all read-only), and act on a page (click, type,
+// press keys, scroll, choose, go to an address; see agentActions.ts for those
+// rules). There are no file tools, and no way to reach anything outside the
+// linked tabs.
 //
 // Rules this file keeps:
-//   - Only tabs the chat has linked (or tabs inside a linked Space) can be read.
-//   - At most MAX_READS pages per reply, and each page is cut to MAX_PAGE_CHARS.
+//   - Only tabs the chat has linked (or tabs inside a linked Space) can be used.
+//   - At most MAX_READS pages read, MAX_LOOKS looks and MAX_ACTIONS actions per
+//     reply, and each page's text is cut to MAX_PAGE_CHARS.
 //   - Page text is written by strangers, so it is handed to the model clearly
 //     marked as untrusted data, never as instructions.
 //   - The app, not the page or the model, writes the lines shown to you.
 // Pure code: reading a page is passed in (see pageReader.ts), so this is testable.
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
+import {
+  ACTION_DEFINITIONS,
+  CHANGES_PAGE,
+  isActionName,
+  MAX_ACTIONS,
+  planAction,
+  shownAddress,
+} from './agentActions.ts';
+import type { ActionName, Plan } from './agentActions.ts';
+import { parseChoices } from './agentChoices.ts';
+import type { Choices } from './agentChoices.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
+import type { OutlineElement } from './pageOutline.ts';
 
 export const MAX_PAGE_CHARS = 20_000;
 export const MAX_READS = 8;
+export const MAX_LOOKS = 20;
+export { MAX_ACTIONS };
 
 export type PageRead =
   | { ok: true; title: string; url: string; text: string }
@@ -29,10 +46,72 @@ export type OutlineRead =
       lines: string[];
       count: number;
       truncated: boolean;
+      // The numbered controls, kept so the numbers can be used to act.
+      elements: OutlineElement[];
     }
   | { ok: false; reason: 'closed' | 'unavailable' | 'timeout' };
 
-export interface AgentEnv {
+// How an action in a page went.
+export type ActionResult =
+  | { ok: true; url: string; title: string }
+  | {
+      ok: false;
+      reason:
+        | 'closed'
+        | 'timeout'
+        | 'unavailable'
+        | 'gone'
+        | 'sensitive'
+        | 'not-editable'
+        | 'no-option'
+        | 'blocked';
+    };
+
+// How opening a new tab went.
+export type OpenTabResult =
+  | { ok: true; tabId: number; url: string; title: string }
+  | { ok: false; reason: 'timeout' | 'unavailable' | 'blocked' };
+
+// Doing things in a page. Each is told which tab; the app checks and does it.
+export interface ActionEnv {
+  // The address of a tab right now, or null if it is closed.
+  tabUrl(tabId: number): string | null;
+  click(
+    tabId: number,
+    control: OutlineElement,
+    signal: AbortSignal,
+  ): Promise<ActionResult>;
+  typeText(
+    tabId: number,
+    control: OutlineElement,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<ActionResult>;
+  pressKey(
+    tabId: number,
+    key: string,
+    signal: AbortSignal,
+  ): Promise<ActionResult>;
+  scroll(
+    tabId: number,
+    direction: 'up' | 'down',
+    signal: AbortSignal,
+  ): Promise<ActionResult>;
+  selectOption(
+    tabId: number,
+    control: OutlineElement,
+    option: string,
+    signal: AbortSignal,
+  ): Promise<ActionResult>;
+  goTo(tabId: number, url: string, signal: AbortSignal): Promise<ActionResult>;
+  goBack(tabId: number, signal: AbortSignal): Promise<ActionResult>;
+  // Open a new tab (not switched to), linked to the chat by the caller.
+  openTab(url: string, signal: AbortSignal): Promise<OpenTabResult>;
+  // Show (or stop showing) that the assistant is working in a tab.
+  setWorking(tabId: number, working: boolean): void;
+}
+
+export interface AgentEnv extends ActionEnv {
   // The tabs this chat's links allow reading, as they are right now.
   linkedTabs(): WorkspaceTab[];
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
@@ -43,6 +122,8 @@ export interface AgentEnv {
 export interface ToolOutcome {
   label: string;
   ok: boolean;
+  // Set when the assistant offered choices: shown as buttons in the chat.
+  choices?: Choices;
   // A short note, written by the app, on how it went (saved with the call so you
   // can see it later). The page text itself is never saved.
   note: string;
@@ -53,7 +134,12 @@ export interface AgentTools {
   definitions: ToolDefinition[];
   // The line shown while the tool runs ("Reading: Page title").
   describe(call: ToolCall): string;
+  // Whether the call may just go ahead, needs the user's approval first, or is
+  // refused. (Reading and looking never ask.)
+  plan(call: ToolCall): Plan;
   run(call: ToolCall, signal: AbortSignal): Promise<ToolOutcome>;
+  // Called when the reply is over: stops showing the assistant as working.
+  finish(): void;
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -62,6 +148,28 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       'List the tabs the user has linked to this conversation, with their tab numbers, titles and addresses.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'offer_choices',
+    description:
+      'Show the user buttons to choose from (2 to 6 short options). Clicking one puts its text in their message box. Use it when you need the user to decide something, or after they say no to an action and you want to offer what to do instead. Then end your reply and wait: write one short line, do not repeat the options.',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'A short question shown above the buttons (optional).',
+        },
+        choices: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'The options, each a short sentence the user could send as their reply.',
+        },
+      },
+      required: ['choices'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'look_at_page',
@@ -149,11 +257,177 @@ function tabArgument(call: ToolCall): number | null {
   return null;
 }
 
+const failureWords: Record<
+  Extract<ActionResult, { ok: false }>['reason'],
+  string
+> = {
+  closed: 'the tab was closed',
+  timeout: 'the page took too long',
+  unavailable: 'the page could not be controlled',
+  gone: 'that control is no longer on the page',
+  sensitive: 'that is a password, card or code field',
+  'not-editable': 'that is not a text field',
+  'no-option': 'there is no option with that text',
+  blocked: 'it was blocked',
+};
+
 export function createAgentTools(env: AgentEnv): AgentTools {
   let reads = 0;
+  let looks = 0;
+  let actions = 0;
+  let tabsOpened = 0;
+  // The numbered controls from the latest look at each tab. Thrown away after
+  // anything that can change the page, so numbers cannot point at the wrong thing.
+  const outlines = new Map<number, OutlineElement[]>();
+  const touched = new Set<number>();
+
+  const actionContext = {
+    linkedTabs: () => env.linkedTabs(),
+    tabUrl: (tabId: number) => env.tabUrl(tabId),
+    controls: (tabId: number) => outlines.get(tabId),
+    actionsDone: () => actions,
+    tabsOpened: () => tabsOpened,
+  };
+
+  const plan = (call: ToolCall): Plan =>
+    isActionName(call.name)
+      ? planAction(call, actionContext)
+      : { kind: 'auto' };
+
+  // Do an action (after the user approved it, if it needed that).
+  async function runAction(
+    call: ToolCall,
+    signal: AbortSignal,
+  ): Promise<ToolOutcome> {
+    // Checked again now: things may have changed while the user decided.
+    const decided = planAction(call, actionContext);
+    if (decided.kind === 'refuse') {
+      return {
+        label: decided.label,
+        ok: false,
+        note: decided.note,
+        result: decided.result,
+      };
+    }
+    const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
+
+    // A new tab: not in any existing one. It is linked to the chat by the app, so
+    // the assistant can look at it and act in it.
+    if (call.name === 'open_tab') {
+      actions++;
+      tabsOpened++;
+      const text = decided.kind === 'ask' ? decided.text : 'Opened a new tab';
+      const opened = await env.openTab(args.url as string, signal);
+      if (!opened.ok) {
+        return {
+          label: `Couldn't do it: ${text}`,
+          ok: false,
+          note: 'The new tab could not be opened.',
+          result:
+            'The new tab could not be opened. Tell the user, or try another way.',
+        };
+      }
+      touched.add(opened.tabId);
+      env.setWorking(opened.tabId, true);
+      const where = shownAddress(opened.url);
+      return {
+        label: text,
+        ok: true,
+        note: `Opened tab ${opened.tabId}.`,
+        result: `Done. The new tab is tab ${opened.tabId}, at ${where} titled "${cleanLabel(opened.title) || 'untitled'}", and it is linked to this conversation. Use look_at_page on it before acting.`,
+      };
+    }
+
+    const tabId = args.tab as number;
+    const name = call.name as ActionName;
+    const control = outlines
+      .get(tabId)
+      ?.find((c) => c.id === (args.element as number));
+    const text =
+      decided.kind === 'ask' ? decided.text : `Scrolled ${args.direction}`;
+
+    if (!touched.has(tabId)) {
+      touched.add(tabId);
+      env.setWorking(tabId, true);
+    }
+    actions++;
+
+    let result: ActionResult;
+    switch (name) {
+      case 'click':
+        result = await env.click(tabId, control!, signal);
+        break;
+      case 'type_text':
+        result = await env.typeText(
+          tabId,
+          control!,
+          args.text as string,
+          signal,
+        );
+        break;
+      case 'press_key':
+        result = await env.pressKey(tabId, args.key as string, signal);
+        break;
+      case 'scroll':
+        result = await env.scroll(
+          tabId,
+          args.direction as 'up' | 'down',
+          signal,
+        );
+        break;
+      case 'select_option':
+        result = await env.selectOption(
+          tabId,
+          control!,
+          args.option as string,
+          signal,
+        );
+        break;
+      case 'go_to':
+        result = await env.goTo(tabId, args.url as string, signal);
+        break;
+      case 'go_back':
+        result = await env.goBack(tabId, signal);
+        break;
+      case 'open_tab':
+        // Handled above (it is not in any one tab).
+        result = { ok: false, reason: 'unavailable' };
+        break;
+    }
+
+    if (!result.ok) {
+      // The page may be in an unknown state now.
+      outlines.delete(tabId);
+      const why = failureWords[result.reason];
+      return {
+        label: `Couldn't do it: ${text}`,
+        ok: false,
+        note: `Not done: ${why}.`,
+        result: `That did not work (${why}). Look at the page again before trying anything else.`,
+      };
+    }
+    const changed = CHANGES_PAGE.has(name);
+    if (changed) outlines.delete(tabId);
+    const where = shownAddress(result.url);
+    return {
+      label: text,
+      ok: true,
+      note: changed ? `Done. The page is now ${where || 'blank'}.` : 'Done.',
+      result: changed
+        ? `Done. The tab is now at ${where} titled "${cleanLabel(result.title) || 'untitled'}". The page may have changed: use look_at_page again before the next action.`
+        : 'Done.',
+    };
+  }
 
   const describe = (call: ToolCall): string => {
     if (call.name === 'list_linked_tabs') return 'Checking the linked tabs';
+    if (call.name === 'offer_choices') return 'Offering choices';
+    if (isActionName(call.name)) {
+      const planned = planAction(call, actionContext);
+      if (planned.kind === 'ask') return planned.text;
+      if (planned.kind === 'refuse') return planned.label;
+      return 'Scrolling';
+    }
     if (call.name === 'read_page' || call.name === 'look_at_page') {
       const id = tabArgument(call);
       const tab = env.linkedTabs().find((t) => t.id === id);
@@ -185,6 +459,29 @@ export function createAgentTools(env: AgentEnv): AgentTools {
       };
     }
 
+    if (isActionName(call.name)) return runAction(call, signal);
+
+    if (call.name === 'offer_choices') {
+      const choices = parseChoices(call.arguments);
+      if (!choices) {
+        return {
+          label: "Couldn't show choices",
+          ok: false,
+          note: 'The choices were missing or not usable.',
+          result:
+            'choices must be a list of 2 to 6 short options. Just ask the user in words instead.',
+        };
+      }
+      return {
+        label: 'Offered choices',
+        ok: true,
+        choices,
+        note: `Showed ${choices.options.length} buttons.`,
+        result:
+          'The choices are now shown to the user as buttons. End your reply now with one short line, and wait for their answer.',
+      };
+    }
+
     if (call.name !== 'read_page' && call.name !== 'look_at_page') {
       return {
         label: 'Ignored an unknown request',
@@ -213,15 +510,27 @@ export function createAgentTools(env: AgentEnv): AgentTools {
         result: `Tab ${id} is not linked to this conversation, or it has been closed. Use list_linked_tabs to see what you can read.`,
       };
     }
-    if (reads >= MAX_READS) {
-      return {
-        label: 'Read limit reached',
-        ok: false,
-        note: `Already read ${MAX_READS} pages in this reply.`,
-        result: `You have already read ${MAX_READS} pages in this reply. Answer with what you have.`,
-      };
+    if (call.name === 'look_at_page') {
+      if (looks >= MAX_LOOKS) {
+        return {
+          label: 'Look limit reached',
+          ok: false,
+          note: `Already looked at pages ${MAX_LOOKS} times in this reply.`,
+          result: `You have already looked at pages ${MAX_LOOKS} times in this reply. Stop and tell the user where things stand.`,
+        };
+      }
+      looks++;
+    } else {
+      if (reads >= MAX_READS) {
+        return {
+          label: 'Read limit reached',
+          ok: false,
+          note: `Already read ${MAX_READS} pages in this reply.`,
+          result: `You have already read ${MAX_READS} pages in this reply. Answer with what you have.`,
+        };
+      }
+      reads++;
     }
-    reads++;
 
     if (call.name === 'look_at_page') {
       const seen = await env.outlinePage(id, signal);
@@ -239,6 +548,7 @@ export function createAgentTools(env: AgentEnv): AgentTools {
           result: `Tab ${id} could not be looked at (${why}).`,
         };
       }
+      outlines.set(id, seen.elements);
       const name = cleanLabel(seen.title) || tabName(tab);
       return {
         label: `Looked at: ${name}`,
@@ -296,5 +606,16 @@ export function createAgentTools(env: AgentEnv): AgentTools {
     };
   }
 
-  return { definitions: TOOL_DEFINITIONS, describe, run };
+  const finish = () => {
+    for (const tabId of touched) env.setWorking(tabId, false);
+    touched.clear();
+  };
+
+  return {
+    definitions: [...TOOL_DEFINITIONS, ...ACTION_DEFINITIONS],
+    describe,
+    plan,
+    run,
+    finish,
+  };
 }

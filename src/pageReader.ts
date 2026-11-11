@@ -10,6 +10,8 @@
 // The text it returns is untrusted. The caller (agentTools.ts) cleans it, cuts it
 // to size and marks it as data before the model sees it.
 import type { WebContents } from 'electron';
+import { findSensitiveFields } from './pageActions';
+import type { Cdp } from './pageActions';
 
 export interface PageText {
   title: string;
@@ -61,6 +63,20 @@ async function withDebugger<T>(
   }
 }
 
+// Run `work` against a page with the debugger attached for just that long (an
+// action: click, type, ...). Detaches again whatever happens.
+export function withCdp<T>(
+  contents: WebContents,
+  limitMs: number,
+  work: (cdp: Cdp) => Promise<T>,
+): Promise<T> {
+  return withDebugger(contents, limitMs, (debuggerApi) =>
+    work({
+      send: (method, params) => debuggerApi.sendCommand(method, params),
+    }),
+  );
+}
+
 export function readPageText(
   contents: WebContents,
   limitMs = DEFAULT_LIMIT_MS,
@@ -104,18 +120,37 @@ export function readPageText(
 }
 
 // The page's accessibility tree, as the browser reports it (untrusted; see
-// pageOutline.ts for how it is turned into the outline). Main frame only.
+// pageOutline.ts for how it is turned into the outline), plus which of its text
+// fields are really password, card or code fields. Main frame only.
 export function readAccessibilityTree(
   contents: WebContents,
   limitMs = DEFAULT_LIMIT_MS,
-): Promise<unknown[]> {
+): Promise<{ nodes: unknown[]; sensitive: Set<number> }> {
   return withDebugger(contents, limitMs, async (debuggerApi) => {
+    const cdp = {
+      send: (m: string, p?: Record<string, unknown>) =>
+        debuggerApi.sendCommand(m, p),
+    };
     await debuggerApi.sendCommand('Accessibility.enable');
     try {
       const result = (await debuggerApi.sendCommand(
         'Accessibility.getFullAXTree',
       )) as { nodes?: unknown };
-      return Array.isArray(result.nodes) ? result.nodes : [];
+      const nodes = Array.isArray(result.nodes) ? result.nodes : [];
+      const fieldIds = nodes.flatMap((n) => {
+        const node = n as {
+          role?: { value?: unknown };
+          backendDOMNodeId?: unknown;
+        };
+        return typeof node?.backendDOMNodeId === 'number' &&
+          typeof node.role?.value === 'string' &&
+          ['textbox', 'searchbox', 'combobox', 'spinbutton'].includes(
+            node.role.value,
+          )
+          ? [node.backendDOMNodeId]
+          : [];
+      });
+      return { nodes, sensitive: await findSensitiveFields(cdp, fieldIds) };
     } finally {
       await debuggerApi
         .sendCommand('Accessibility.disable')
