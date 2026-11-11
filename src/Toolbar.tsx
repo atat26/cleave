@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
-import { SIDEBAR_WIDTH, TOOLBAR_HEIGHT } from './layout';
+import { TOOLBAR_HEIGHT } from './layout';
 
 const buttonStyle: CSSProperties = {
   width: 32,
@@ -16,11 +16,18 @@ interface ToolbarProps {
   url: string;
   canGoBack: boolean;
   canGoForward: boolean;
+  // True when no web page is selected (e.g. on a Space's Overview).
+  disabled: boolean;
 }
 
 // The strip along the top: back/forward buttons and the address bar. It always
 // shows the active tab's address.
-export function Toolbar({ url, canGoBack, canGoForward }: ToolbarProps) {
+export function Toolbar({
+  url,
+  canGoBack,
+  canGoForward,
+  disabled,
+}: ToolbarProps) {
   const [text, setText] = useState(url);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,7 +46,8 @@ export function Toolbar({ url, canGoBack, canGoForward }: ToolbarProps) {
     <form
       onSubmit={submit}
       style={{
-        marginLeft: SIDEBAR_WIDTH,
+        // The app keeps this up to date while the sidebar slides (see App.tsx).
+        marginLeft: 'var(--content-left, 48px)',
         height: TOOLBAR_HEIGHT,
         boxSizing: 'border-box',
         display: 'flex',
@@ -75,7 +83,8 @@ export function Toolbar({ url, canGoBack, canGoForward }: ToolbarProps) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => e.target.select()}
-        placeholder="Search or enter address"
+        disabled={disabled}
+        placeholder={disabled ? 'Space overview' : 'Search or enter address'}
         spellCheck={false}
         style={{
           flex: 1,
