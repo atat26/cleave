@@ -165,6 +165,35 @@ test('the model is sent the system prompt and the conversation, with the right m
   assert.equal(d.calls[0].messages[0].content, DEFAULT_SYSTEM_PROMPT);
 });
 
+test('links are given to the model with the system prompt, and again on retry', async () => {
+  const linked =
+    'The user has linked these tabs...\nTab: "Docs" (https://docs.example.com)';
+  const withLinks: RunContext = { ...CONTEXT, linked };
+  let attempt = 0;
+  const t = setup(async function* () {
+    attempt++;
+    if (attempt === 1) throw new ChatError('network');
+    yield text('ok');
+  });
+  await (
+    t.runner.send(t.chatId, 'About my tabs', withLinks) as {
+      done: Promise<void>;
+    }
+  ).done;
+  assert.ok(t.calls[0].messages[0].content.endsWith(linked));
+  assert.equal(t.calls[0].messages[0].role, 'system');
+
+  await (t.runner.retry(t.chatId, withLinks) as { done: Promise<void> }).done;
+  assert.ok(t.calls[1].messages[0].content.endsWith(linked));
+
+  // A chat with no links gets the plain system prompt.
+  const plain = setup(sends(text('ok')));
+  await (
+    plain.runner.send(plain.chatId, 'Hi', CONTEXT) as { done: Promise<void> }
+  ).done;
+  assert.equal(plain.calls[0].messages[0].content, DEFAULT_SYSTEM_PROMPT);
+});
+
 test('Stop keeps the text written so far and marks the reply stopped', async () => {
   const t = setup(hangsAfter(text('Once upon ')));
   const started = t.runner.send(t.chatId, 'Tell a story', CONTEXT);

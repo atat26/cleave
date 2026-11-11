@@ -33,6 +33,42 @@ test('the system prompt comes first: yours, or the default when blank', () => {
   });
 });
 
+test('linked Spaces and tabs are added to the system message, only when there are some', () => {
+  const history = [msg('user', 'Hi')];
+  const linked =
+    'The user has linked these...\nTab: "Mail" (https://mail.example.com)';
+  const withLinks = buildMessages({
+    systemPrompt: 'Be brief.',
+    linkedContext: linked,
+    history,
+  });
+  assert.equal(withLinks[0].role, 'system');
+  assert.equal(withLinks[0].content, `Be brief.\n\n${linked}`);
+  // Still a single system message, then the conversation.
+  assert.deepEqual(
+    withLinks.map((m) => m.role),
+    ['system', 'user'],
+  );
+
+  // Default prompt plus links.
+  assert.equal(
+    buildMessages({ systemPrompt: null, linkedContext: linked, history })[0]
+      .content,
+    `${DEFAULT_SYSTEM_PROMPT}\n\n${linked}`,
+  );
+  // None, null or empty: the system prompt is exactly as before.
+  for (const nothing of [undefined, null, '']) {
+    assert.equal(
+      buildMessages({
+        systemPrompt: 'Be brief.',
+        linkedContext: nothing,
+        history,
+      })[0].content,
+      'Be brief.',
+    );
+  }
+});
+
 test('the conversation follows in order, with roles kept', () => {
   const out = buildMessages({
     systemPrompt: null,

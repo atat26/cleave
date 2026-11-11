@@ -6,7 +6,7 @@ import { ChatSwitcher } from './ChatSwitcher';
 import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ResizeHandle } from './ResizeHandle';
-import type { ChatsInfo, LlmInfo } from './types';
+import type { ChatsInfo, LlmInfo, SpaceInfo, TabInfo } from './types';
 
 const smallButton: CSSProperties = {
   border: 'none',
@@ -30,6 +30,9 @@ export function ChatBar({
   viewMode,
   chats,
   llm,
+  tabs,
+  spaces,
+  activeTabId,
   renameRequest,
   onRenameHandled,
 }: {
@@ -37,6 +40,10 @@ export function ChatBar({
   viewMode: ViewMode;
   chats: ChatsInfo;
   llm: LlmInfo;
+  // The Spaces and tabs (for linking them), and the tab you are looking at.
+  tabs: TabInfo[];
+  spaces: SpaceInfo[];
+  activeTabId: number | null;
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
@@ -108,11 +115,17 @@ export function ChatBar({
             {closeChat}
           </div>
         )}
-        {full && <MessageList chatId={chats.activeId} />}
+        {full && (
+          <MessageList chatId={chats.activeId} tabs={tabs} spaces={spaces} />
+        )}
         {chat && (
           <ChatComposer
             chat={chat}
             llm={llm}
+            refs={chats.refs}
+            tabs={tabs}
+            spaces={spaces}
+            activeTabId={activeTabId}
             compact={!full}
             before={
               !full ? (

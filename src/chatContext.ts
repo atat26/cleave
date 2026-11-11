@@ -21,6 +21,9 @@ type HistoryMessage = Pick<ChatMessage, 'role' | 'content' | 'status'>;
 
 export function buildMessages(options: {
   systemPrompt: string | null;
+  // The list of linked Spaces and tabs (see chatLinks.ts), if any. It goes after
+  // the system prompt, in the same system message.
+  linkedContext?: string | null;
   history: HistoryMessage[];
   maxMessages?: number;
   maxChars?: number;
@@ -55,8 +58,11 @@ export function buildMessages(options: {
   while (chosen.length > 1 && chosen[0].role === 'assistant') chosen.shift();
 
   const newest = chosen.length - 1;
+  const system = options.linkedContext
+    ? `${effectiveSystemPrompt(options.systemPrompt)}\n\n${options.linkedContext}`
+    : effectiveSystemPrompt(options.systemPrompt);
   return [
-    { role: 'system', content: effectiveSystemPrompt(options.systemPrompt) },
+    { role: 'system', content: system },
     ...chosen.map((m, i) => ({
       role: m.role,
       content: i === newest ? m.content.slice(0, maxChars) : m.content,

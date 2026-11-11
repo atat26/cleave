@@ -12,6 +12,8 @@
 //     into markup.
 import { clipboard, ipcMain, Menu } from 'electron';
 import type { BrowserWindow } from 'electron';
+import { buildLinkedContext, snapshotLookup } from './chatLinks';
+import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
 import type { RunContext } from './chatRunner';
 import * as chats from './chats';
@@ -39,6 +41,9 @@ export interface ChatService {
   runningChats(): number[];
   // Stop a chat's reply (used when the chat is deleted).
   stop(chatId: number): void;
+  // Send the UI the messages that have @ mentions or attached pages again (their
+  // tokens changed, for example after a closed page was reopened).
+  refreshMentions(): void;
   // Stop everything and unhook from the window.
   dispose(): void;
 }
@@ -47,6 +52,8 @@ export function createChatService(options: {
   win: BrowserWindow;
   llm: Promise<LlmContext | null>;
   getChats(): ChatsState;
+  // The Spaces and tabs, for building what a chat's links tell the model.
+  getWorkspace(): Workspace;
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
   setChats(next: ChatsState): void;
@@ -132,9 +139,21 @@ export function createChatService(options: {
         error: 'Choose a model in Settings first.',
       };
     }
+    // What the chat's links tell the model, built fresh from the current Spaces
+    // and tabs (titles and cleaned addresses only). First bring each link's
+    // remembered name up to date.
+    const workspace = options.getWorkspace();
+    options.setChats(
+      chats.refreshRefs(options.getChats(), snapshotLookup(workspace)),
+    );
+    const refs = chats.findConversation(options.getChats(), chatId)?.refs ?? [];
     return {
       ok: true,
-      context: { model, systemPrompt: settings.systemPrompt },
+      context: {
+        model,
+        systemPrompt: settings.systemPrompt,
+        linked: buildLinkedContext(refs, workspace),
+      },
     };
   }
 
@@ -154,6 +173,27 @@ export function createChatService(options: {
     error: 'That request was not understood.',
   };
 
+  // The "@" mentions sent with a message, from the (untrusted) page: only the
+  // shape is checked here; chats.ts checks they are really linked to the chat.
+  const sanitizeMentions = (raw: unknown) =>
+    Array.isArray(raw)
+      ? raw.flatMap((m) =>
+          typeof m === 'object' &&
+          m !== null &&
+          isId((m as { id?: unknown }).id) &&
+          typeof (m as { kind?: unknown }).kind === 'string' &&
+          typeof (m as { tag?: unknown }).tag === 'string'
+            ? [
+                {
+                  kind: (m as { kind: string }).kind,
+                  id: (m as { id: number }).id,
+                  tag: (m as { tag: string }).tag,
+                },
+              ]
+            : [],
+        )
+      : [];
+
   ipcMain.handle('chat:messages', (event, chatId: unknown) => {
     if (!fromUi(event)) throw new Error('Not allowed.');
     if (!isId(chatId)) return [];
@@ -162,12 +202,22 @@ export function createChatService(options: {
 
   ipcMain.handle(
     'chat:send',
-    (event, chatId: unknown, text: unknown): ChatSendResult => {
+    (
+      event,
+      chatId: unknown,
+      text: unknown,
+      mentions: unknown,
+    ): ChatSendResult => {
       if (!fromUi(event)) throw new Error('Not allowed.');
       if (!isId(chatId) || typeof text !== 'string') return invalid;
       const prepared = contextFor(chatId);
       if (!prepared.ok) return prepared;
-      const started = runner.send(chatId, text, prepared.context);
+      const started = runner.send(
+        chatId,
+        text,
+        prepared.context,
+        sanitizeMentions(mentions),
+      );
       if (started.ok) {
         options.onMeta(); // The first message may have named the chat.
         // The reply is written in the background; failures end up in the chat.
@@ -243,6 +293,13 @@ export function createChatService(options: {
   return {
     runningChats: () => runner.runningChats(),
     stop: (chatId) => runner.stop(chatId),
+    refreshMentions() {
+      for (const chat of options.getChats().conversations) {
+        for (const message of chat.messages) {
+          if (message.mentions.length > 0) markDirty(chat.id, message.id);
+        }
+      }
+    },
     dispose() {
       runner.stopAll();
       if (timer !== null) clearTimeout(timer);

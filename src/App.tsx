@@ -68,6 +68,10 @@ export function App() {
     });
   }, []);
 
+  // Everything above is listening now: ask for the current state. (The app also
+  // sends it when the page finishes loading, but that can come too early.)
+  useEffect(() => window.browserApi.uiReady(), []);
+
   if (state === null) return null;
 
   if (IS_SIDEBAR) {
@@ -118,6 +122,9 @@ export function App() {
           viewMode={state.viewMode}
           chats={state.chats}
           llm={state.llm}
+          tabs={state.tabs}
+          spaces={state.spaces}
+          activeTabId={activeTab?.id ?? null}
           renameRequest={chatRenameRequest}
           onRenameHandled={clearChatRenameRequest}
         />
