@@ -146,6 +146,16 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     changesThings: true,
   },
   {
+    name: 'read_link',
+    group: 'look',
+    title: 'Read a link',
+    summary: 'Read a page without opening a tab.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to fetch web pages on its own. Links from your tabs and from search results are read freely; any other address it makes up still asks. Pages are read logged out, and never from your own network.',
+  },
+  {
     name: 'web_search',
     group: 'look',
     title: 'Search the web',

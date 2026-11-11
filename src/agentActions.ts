@@ -73,7 +73,7 @@ export const ACTION_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'click',
     description:
-      'Click a button, checkbox or other control in a linked tab. Do not click a link just to read where it goes or to read its page: that takes the tab away from the page you were on. Open the address of the link in a new tab with open_tab instead (look_at_page shows where each link goes). First use look_at_page on the tab to get the control numbers. The user must approve it. After a click the page may change: look at it again before the next action.',
+      'Click a button, checkbox or other control in a linked tab. Do not click a link just to read where it goes or to read its page: that takes the tab away from the page you were on. Use read_link to read a page, or open_tab to show it in a new tab. First use look_at_page on the tab to get the control numbers. The user must approve it. After a click the page may change: look at it again before the next action.',
     parameters: {
       type: 'object',
       properties: { tab: tabNumber, element: elementNumber },

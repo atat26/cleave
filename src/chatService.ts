@@ -14,6 +14,8 @@ import { clipboard, ipcMain, Menu } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { createAgentTools } from './agentTools';
 import type { ActionEnv, OutlineRead, PageRead } from './agentTools';
+import { readLinkText } from './linkReader';
+import type { OutlineElement } from './pageOutline';
 import { buildLinkedContext, linkedTabs, snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
@@ -63,6 +65,12 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // The full address a numbered link on a tab goes to (or null).
+  linkAddress(
+    tabId: number,
+    control: OutlineElement,
+    signal: AbortSignal,
+  ): Promise<string | null>;
   // Doing things in a tab (click, type, ...). Every one is approved by you first.
   actions: ActionEnv;
   // Link a tab to a chat (used for tabs the assistant opens).
@@ -112,6 +120,26 @@ export function createChatService(options: {
   const markDirty = (chatId: number, messageId: number) => {
     dirty.set(`${chatId}:${messageId}`, [chatId, messageId]);
     if (timer === null) timer = setTimeout(flush, UI_UPDATE_MS);
+  };
+
+  // The addresses of earlier search results in a chat, so reading one of them
+  // counts as reading a known address. Only the address at the end of each result
+  // line is taken (a page's title could contain text that looks like an address).
+  const rememberedAddresses = (chatId: number): string[] => {
+    const found: string[] = [];
+    const messages =
+      chats.findConversation(options.getChats(), chatId)?.messages ?? [];
+    for (const message of messages) {
+      for (const part of message.parts) {
+        if (part.type !== 'tool' || part.name !== 'web_search') continue;
+        for (const hit of part.details.matchAll(
+          /^\[\d+\] .* - (https?:\/\/\S+)$/gm,
+        )) {
+          found.push(hit[1]);
+        }
+      }
+    }
+    return found.slice(-200);
   };
 
   // ---- The runner ---------------------------------------------------------------
@@ -219,6 +247,9 @@ export function createChatService(options: {
               ),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            linkAddress: options.linkAddress,
+            readLink: (url, signal) => readLinkText(url, signal),
+            rememberedAddresses: () => rememberedAddresses(chatId),
             searchReady: () => searchContext?.ready() ?? false,
             webSearch: async (query, signal) => {
               if (!searchContext) return { ok: false, reason: 'no-key' };
