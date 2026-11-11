@@ -81,7 +81,7 @@ test('controls are numbered in page order, with regions, headings and states', (
     '  [1] search field "Search"  (empty)',
     '  [2] button "Go"  (disabled)',
     '  [3] checkbox "Remember me"  (checked)',
-    '  [4] link "Plans" → shop.example',
+    '  [4] link "Plans" → shop.example/plans',
   ]);
   assert.deepEqual(
     outline.elements.map((e) => [e.id, e.backendNodeId, e.role]),
@@ -202,4 +202,22 @@ test('odd input never throws: junk, loops, missing children, deep trees', () => 
     buildOutline([node('button', 'Ghost', { backend: null })]).elements.length,
     0,
   );
+});
+
+test('a link shows where it goes (site and path, never the query), so the exact page can be opened', () => {
+  const tree = [
+    node('link', 'Article', {
+      id: 'l',
+      backend: 1,
+      props: {
+        url: 'https://www.news.example/2026/11/10/tech/story.html?utm=SECRET#top',
+      },
+    }),
+  ];
+  const outline = buildOutline(tree);
+  assert.equal(
+    outline.lines[0],
+    '[1] link "Article" → www.news.example/2026/11/10/tech/story.html',
+  );
+  assert.ok(!outline.lines[0].includes('SECRET'));
 });

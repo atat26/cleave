@@ -67,6 +67,9 @@ export type MessagePart =
       // "waiting" is waiting for you to approve it; "declined" is when you said no.
       status: 'waiting' | 'running' | 'ok' | 'error' | 'declined';
       outcome: string;
+      // What the tool found, for you to read when you open the call (search
+      // results, a page's controls...). Page text is never kept here.
+      details: string;
       // For something that needed your approval: what the approval card said, and
       // whether it was one of the kinds that always asks.
       ask: string;
@@ -121,6 +124,8 @@ const MAX_REASONING = 50_000;
 const MAX_PARTS = 300;
 const MAX_STEP_LABEL = 300;
 const MAX_TOOL_ARGUMENTS = 2000;
+// How much of what a tool found is kept with the call.
+export const MAX_DETAILS = 6000;
 const MAX_REFS = 50;
 const MAX_REF_TITLE = 200;
 // The most Spaces and tabs you can link to one chat.
@@ -253,6 +258,7 @@ function parseParts(raw: unknown): MessagePart[] {
               ? 'declined'
               : 'error',
         outcome: str(r.outcome, MAX_STEP_LABEL),
+        details: str(r.details, MAX_DETAILS),
         ask: str(r.ask, 400),
         risky: r.risky === true,
       });
@@ -280,6 +286,7 @@ function partsFromOldReply(m: Record<string, unknown>): MessagePart[] {
         label: str(r.label, MAX_STEP_LABEL),
         status: r.status === 'ok' ? 'ok' : 'error',
         outcome: '',
+        details: '',
         ask: '',
         risky: false,
       });
@@ -811,6 +818,7 @@ export function addToolPart(
           label: call.label.slice(0, MAX_STEP_LABEL),
           status: call.ask ? 'waiting' : 'running',
           outcome: '',
+          details: '',
           ask: (call.ask ?? '').slice(0, 400),
           risky: call.risky === true,
         },
@@ -871,6 +879,7 @@ export function finishToolPart(
     declined?: boolean;
     label?: string;
     outcome?: string;
+    details?: string;
   },
 ): ChatsState {
   return updateMessage(state, chatId, messageId, (m) => ({
@@ -888,6 +897,10 @@ export function finishToolPart(
               result.outcome === undefined
                 ? p.outcome
                 : result.outcome.slice(0, MAX_STEP_LABEL),
+            details:
+              result.details === undefined
+                ? p.details
+                : result.details.slice(0, MAX_DETAILS),
           }
         : p,
     ),

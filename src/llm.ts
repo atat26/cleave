@@ -9,7 +9,7 @@
 //     UI cannot choose a destination.
 //   - Errors shown to the user are written by us (ChatError); raw server text and
 //     keys never appear in a result or a log.
-import { app, ipcMain, net, safeStorage } from 'electron';
+import { app, ipcMain, net } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'node:path';
 import { DEFAULT_SYSTEM_PROMPT } from './chatContext';
@@ -24,8 +24,7 @@ import {
   withSystemPrompt,
 } from './providerSettings';
 import type { ProviderSettings } from './providerSettings';
-import { createSecretStore } from './secrets';
-import type { SecretCrypto } from './secrets';
+import type { SecretStore } from './secrets';
 import { loadJson, saveJson } from './storage';
 import type {
   LlmModelsResult,
@@ -33,13 +32,6 @@ import type {
   LlmStatus,
   LlmTestResult,
 } from './types';
-
-// Encryption tied to the current Windows account (Electron's safeStorage).
-const electronCrypto: SecretCrypto = {
-  isAvailable: () => safeStorage.isEncryptionAvailable(),
-  encrypt: (plain) => safeStorage.encryptString(plain),
-  decrypt: (data) => safeStorage.decryptString(Buffer.from(data)),
-};
 
 const SAVE_ERRORS = {
   invalid:
@@ -90,12 +82,13 @@ export interface LlmContext {
   onChange(listener: () => void): void;
 }
 
-export async function registerLlm(win: BrowserWindow): Promise<LlmContext> {
+export async function registerLlm(
+  win: BrowserWindow,
+  secretsReady: Promise<SecretStore>,
+): Promise<LlmContext> {
   const dir = app.getPath('userData');
-  const secrets = await createSecretStore(
-    path.join(dir, 'secrets.json'),
-    electronCrypto,
-  );
+  // The one shared store of secrets (see electronSecrets.ts).
+  const secrets = await secretsReady;
   const settingsFile = path.join(dir, 'llm.json');
   let settings = await loadJson(
     settingsFile,

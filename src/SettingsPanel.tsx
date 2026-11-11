@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { takeRequestedSection } from './settingsNav';
+import { WebSearchSettings } from './WebSearchSettings';
 import type { CSSProperties } from 'react';
 import { MAX_SYSTEM_PROMPT } from './providerSettings';
 import type { LlmStatus, LlmTestResult, ModelInfo } from './types';
@@ -66,6 +68,11 @@ const SECTIONS = [
     id: 'prompt',
     label: 'System prompt',
     about: 'Instructions the model follows in every chat',
+  },
+  {
+    id: 'web-search',
+    label: 'Web search',
+    about: 'Search provider and key for the assistant',
   },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]['id'];
@@ -206,7 +213,10 @@ export function SettingsPanel() {
 
   // Which part of Settings is showing.
   // (null = the list of sections.)
-  const [section, setSection] = useState<SectionId | null>(null);
+  // (It can open on a given part, when another panel linked here.)
+  const [section, setSection] = useState<SectionId | null>(() =>
+    takeRequestedSection(),
+  );
 
   useEffect(() => {
     void window.browserApi.llmStatus().then((loaded) => {
@@ -537,6 +547,8 @@ export function SettingsPanel() {
           )}
         </>
       )}
+
+      {section === 'web-search' && <WebSearchSettings />}
 
       {section === 'prompt' && (
         <>

@@ -430,6 +430,25 @@ function ToolBlock({
             <strong>Arguments:</strong>
           </div>
           <div>{showArguments(part.arguments)}</div>
+          {part.details !== '' && (
+            <div style={{ marginTop: 4 }}>
+              <strong>What it found:</strong>
+              <div
+                style={{
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  marginTop: 2,
+                  padding: '4px 8px',
+                  background: '#f8f9fa',
+                  borderRadius: 6,
+                }}
+              >
+                {part.details}
+              </div>
+            </div>
+          )}
           {part.ask !== '' && (
             <div style={{ marginTop: 4 }}>
               <strong>You were asked:</strong> {part.ask}

@@ -269,7 +269,12 @@ export function createChatRunner(deps: RunnerDeps) {
                 chatId,
                 replyId,
                 added.partId,
-                { ok: outcome.ok, label: outcome.label, outcome: outcome.note },
+                {
+                  ok: outcome.ok,
+                  label: outcome.label,
+                  outcome: outcome.note,
+                  details: outcome.details,
+                },
               ),
             );
             // Buttons the assistant offered go in the reply right after this.

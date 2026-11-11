@@ -246,7 +246,9 @@ export function buildOutline(
           node.role === 'link' && typeof node.props.get('url') === 'string'
             ? sanitizeUrl(node.props.get('url'))
             : null;
-        const host = url ? ` → ${new URL(url).host}` : '';
+        // Where the link goes (the address without its query), so the exact page
+        // can be opened and not only the site.
+        const host = url ? ` → ${url.replace(/^https:\/\//, '')}` : '';
         const name = node.name === '' ? '(no name)' : `"${node.name}"`;
         if (
           !add(

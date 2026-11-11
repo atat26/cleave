@@ -4,6 +4,8 @@ import {
   activeConversation,
   addChoicesPart,
   addToolPart,
+  finishToolPart,
+  MAX_DETAILS,
   addRef,
   addUserMessage,
   appendReasoning,
@@ -954,4 +956,40 @@ test('stray blank text between tool calls makes no part, so no gap shows', () =>
     message.parts[2].type === 'text' && message.parts[2].text,
     'Done now.',
   );
+});
+
+test('what a tool found is kept with the call, cut to a limit, and survives a save and load', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'search', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  const added = addToolPart(reply.state, chatId, reply.id, {
+    callId: 'c',
+    name: 'web_search',
+    arguments: '{"query":"pandas"}',
+    label: 'Searching',
+  })!;
+  state = finishToolPart(added.state, chatId, reply.id, added.partId, {
+    ok: true,
+    details: 'Search: "pandas"\n[1] Zoo - https://zoo.example/',
+  });
+  const part = findMessage(state, chatId, reply.id)!.parts[0];
+  assert.equal(
+    part.type === 'tool' && part.details.startsWith('Search: "pandas"'),
+    true,
+  );
+  const again = parseChats(JSON.parse(JSON.stringify(state)), NOW)
+    .conversations[0].messages[1];
+  assert.equal(
+    again.parts[0].type === 'tool' &&
+      again.parts[0].details.includes('zoo.example'),
+    true,
+  );
+  // Too much is cut.
+  state = finishToolPart(state, chatId, reply.id, added.partId, {
+    ok: true,
+    details: 'x'.repeat(20_000),
+  });
+  const cut = findMessage(state, chatId, reply.id)!.parts[0];
+  assert.equal(cut.type === 'tool' && cut.details.length, MAX_DETAILS);
 });

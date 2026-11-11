@@ -54,6 +54,7 @@ import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
+import type { SearchContext } from './search';
 import { createSaver, loadChats, loadJson, loadState } from './storage';
 import { isApprovalLevel } from './toolPolicy';
 import {
@@ -95,6 +96,7 @@ const clamp = (min: number, max: number, value: number) =>
 export async function createTabs(
   win: BrowserWindow,
   llm: Promise<LlmContext>,
+  search: Promise<SearchContext>,
 ): Promise<void> {
   const file = path.join(app.getPath('userData'), 'spaces.json');
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
@@ -888,6 +890,7 @@ export async function createTabs(
     outlinePage: outlineTab,
     actions: actionEnv,
     toolLevel: (tool) => levelFor(toolSettings, tool),
+    search: search.catch(() => null),
     linkTab: (chatId, tabId) => {
       const tab = model.findTab(state, tabId);
       if (!tab) return;

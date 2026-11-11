@@ -46,6 +46,21 @@ export interface LlmStatus {
 }
 
 // What the chat needs to know about the AI connection. (Never the key itself.)
+// What the Settings screen knows about web search. The key itself never leaves
+// the main process; only whether one is saved.
+export interface SearchStatus {
+  encryptionAvailable: boolean;
+  providers: { id: string; name: string; site: string }[];
+  provider: string;
+  hasKey: boolean;
+}
+export type SearchSaveResult =
+  | { ok: true; status: SearchStatus }
+  | { ok: false; error: string; status: SearchStatus };
+export type SearchTestResult =
+  | { ok: true; count: number }
+  | { ok: false; error: string };
+
 export interface LlmInfo {
   hasKey: boolean;
   // The default model for new chats.
@@ -166,6 +181,12 @@ export interface BrowserApi {
   renameSpace: (id: number, name: string) => void;
   // The mouse rested on the sidebar's icon strip: please open it. (Closing is
   // decided by the app, by watching how far the mouse has moved away.)
+  // Web search settings (the provider, and its key, which is never shown).
+  searchStatus: () => Promise<SearchStatus>;
+  searchSetProvider: (provider: string) => Promise<SearchStatus>;
+  searchSaveKey: (key: string) => Promise<SearchSaveResult>;
+  searchRemoveKey: () => Promise<SearchStatus>;
+  searchTest: () => Promise<SearchTestResult>;
   // The Tools panel: every tool with its level, change one level, or put them all
   // back to the defaults. Each answers with the updated list.
   toolsList: () => Promise<ToolRow[]>;
