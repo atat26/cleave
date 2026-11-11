@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, WebContentsView } from 'electron';
 import { TOOLBAR_HEIGHT } from './layout';
+import type { TabState } from './types';
 import { resolveInput } from './url';
 
 export const DEFAULT_URL = 'https://duckduckgo.com';
@@ -38,27 +39,48 @@ export function createTab(win: BrowserWindow): WebContentsView {
   fitToWindow();
   win.on('resize', fitToWindow);
 
-  // Tell the toolbar UI whenever the tab's address changes.
-  const sendUrl = () => {
-    if (!win.isDestroyed()) {
-      win.webContents.send('tab:url', view.webContents.getURL());
-    }
+  // Tell the toolbar UI whenever the tab's address or history changes.
+  const history = view.webContents.navigationHistory;
+  const sendState = () => {
+    if (win.isDestroyed()) return;
+    const state: TabState = {
+      url: view.webContents.getURL(),
+      canGoBack: history.canGoBack(),
+      canGoForward: history.canGoForward(),
+    };
+    win.webContents.send('tab:state', state);
   };
-  view.webContents.on('did-navigate', sendUrl);
-  view.webContents.on('did-navigate-in-page', sendUrl);
+  view.webContents.on('did-navigate', sendState);
+  view.webContents.on('did-navigate-in-page', sendState);
   // Also send it once the toolbar page itself has loaded, in case the tab
   // finished loading first.
-  win.webContents.on('did-finish-load', sendUrl);
+  win.webContents.on('did-finish-load', sendState);
 
-  // The address bar asks us to load something. Only accept requests that come
-  // from our own toolbar page, and only strings.
+  // The toolbar asks us to do things. Only accept requests that come from our
+  // own toolbar page.
+  const fromToolbar = (event: Electron.IpcMainEvent) =>
+    event.sender === win.webContents;
+
   const onNavigate = (event: Electron.IpcMainEvent, input: unknown) => {
-    if (event.sender !== win.webContents || typeof input !== 'string') return;
+    if (!fromToolbar(event) || typeof input !== 'string') return;
     const url = resolveInput(input);
     if (url !== '') void view.webContents.loadURL(url);
   };
+  const onBack = (event: Electron.IpcMainEvent) => {
+    if (fromToolbar(event) && history.canGoBack()) history.goBack();
+  };
+  const onForward = (event: Electron.IpcMainEvent) => {
+    if (fromToolbar(event) && history.canGoForward()) history.goForward();
+  };
+
   ipcMain.on('tab:navigate', onNavigate);
-  win.on('closed', () => ipcMain.removeListener('tab:navigate', onNavigate));
+  ipcMain.on('tab:back', onBack);
+  ipcMain.on('tab:forward', onForward);
+  win.on('closed', () => {
+    ipcMain.removeListener('tab:navigate', onNavigate);
+    ipcMain.removeListener('tab:back', onBack);
+    ipcMain.removeListener('tab:forward', onForward);
+  });
 
   void view.webContents.loadURL(DEFAULT_URL);
   return view;

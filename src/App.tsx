@@ -1,16 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { TOOLBAR_HEIGHT } from './layout';
 
-// The toolbar strip: the address bar. Back/forward buttons come next.
+const buttonStyle: CSSProperties = {
+  width: 32,
+  height: 32,
+  border: 'none',
+  borderRadius: 16,
+  background: 'transparent',
+  fontSize: 18,
+  cursor: 'pointer',
+};
+
+// The toolbar strip: back/forward buttons and the address bar.
 export function App() {
   const [text, setText] = useState('');
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Show the tab's current address, unless the user is typing in the box.
+  // Follow the tab: show its address (unless the user is typing in the box)
+  // and enable the buttons only when there is somewhere to go.
   useEffect(() => {
-    return window.browserApi.onUrlChange((url) => {
-      if (document.activeElement !== inputRef.current) setText(url);
+    return window.browserApi.onTabState((state) => {
+      if (document.activeElement !== inputRef.current) setText(state.url);
+      setCanGoBack(state.canGoBack);
+      setCanGoForward(state.canGoForward);
     });
   }, []);
 
@@ -28,11 +43,32 @@ export function App() {
         boxSizing: 'border-box',
         display: 'flex',
         alignItems: 'center',
+        gap: 4,
         padding: '0 12px',
         background: '#f1f3f4',
         borderBottom: '1px solid #d0d0d0',
       }}
     >
+      <button
+        type="button"
+        aria-label="Back"
+        title="Back"
+        disabled={!canGoBack}
+        onClick={() => window.browserApi.goBack()}
+        style={{ ...buttonStyle, opacity: canGoBack ? 1 : 0.35 }}
+      >
+        ←
+      </button>
+      <button
+        type="button"
+        aria-label="Forward"
+        title="Forward"
+        disabled={!canGoForward}
+        onClick={() => window.browserApi.goForward()}
+        style={{ ...buttonStyle, opacity: canGoForward ? 1 : 0.35 }}
+      >
+        →
+      </button>
       <input
         ref={inputRef}
         value={text}
@@ -43,6 +79,7 @@ export function App() {
         style={{
           flex: 1,
           height: 32,
+          marginLeft: 4,
           padding: '0 14px',
           border: '1px solid #c4c4c4',
           borderRadius: 16,
