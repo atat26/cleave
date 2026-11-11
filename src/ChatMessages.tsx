@@ -147,6 +147,70 @@ function FailedReply({
   );
 }
 
+// The model's thinking, in a block you can open. While the model is still thinking
+// (before its answer starts) it is labelled "Thinking…", and the text shows live
+// if you open it; afterwards it is the "Thought process". It is collapsed by
+// default. Models that do not show their thinking get only a plain "Thinking…"
+// while they work. (Some models, such as Claude, send a short summary of their
+// thinking rather than all of it.)
+function ThinkingBlock({ message }: { message: ChatMessage }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const thinking = message.status === 'streaming' && message.content === '';
+
+  // While it streams, an open block follows the newest thinking.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (open && thinking && el) el.scrollTop = el.scrollHeight;
+  }, [open, thinking, message.reasoning]);
+
+  if (message.reasoning === '') {
+    return thinking ? <div style={muted}>Thinking…</div> : null;
+  }
+
+  return (
+    <div style={{ margin: '0 0 6px' }}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        title={open ? 'Hide the thinking' : 'Show the thinking'}
+        style={{
+          ...smallButton,
+          padding: '2px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 12,
+        }}
+      >
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+        {thinking ? 'Thinking…' : 'Thought process'}
+      </button>
+      {open && (
+        <div
+          ref={box}
+          style={{
+            margin: '4px 0',
+            padding: '4px 10px',
+            borderLeft: '3px solid #dadce0',
+            color: '#5f6368',
+            fontSize: 13,
+            lineHeight: 1.45,
+            maxHeight: 240,
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            userSelect: 'text',
+          }}
+        >
+          {message.reasoning}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // One message. Everything is drawn as plain text: a model's reply is never turned
 // into markup, so it cannot do anything but be read. (Richer content, such as
 // buttons or diagrams, will come later in a safe, sandboxed form.)
@@ -195,14 +259,13 @@ function MessageView({
   const finished = message.status === 'done' || message.status === 'stopped';
   return (
     <div style={{ margin: '10px 0' }}>
-      {streaming && message.content === '' ? (
-        <div style={muted}>Thinking…</div>
-      ) : message.content !== '' ? (
+      <ThinkingBlock message={message} />
+      {message.content !== '' ? (
         <div style={text}>
           {message.content}
           {streaming && <span aria-hidden="true">▍</span>}
         </div>
-      ) : message.status === 'done' ? (
+      ) : message.status === 'done' && message.reasoning === '' ? (
         <div style={muted}>The model sent an empty reply.</div>
       ) : null}
 

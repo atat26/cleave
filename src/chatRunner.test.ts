@@ -104,6 +104,45 @@ test('a reply streams in, finishes, and records the model, tokens and cost', asy
   assert.equal(t.runner.isRunning(t.chatId), false);
 });
 
+test('thinking is collected apart from the answer, kept when stopped, and never sent back', async () => {
+  const t = setup(
+    sends(
+      { type: 'reasoning', text: 'Let me ' },
+      { type: 'reasoning', text: 'think.' },
+      text('Done.'),
+    ),
+  );
+  await (
+    t.runner.send(t.chatId, 'Hard question', CONTEXT) as { done: Promise<void> }
+  ).done;
+  const reply = t.chat.messages[1];
+  assert.deepEqual(
+    [reply.reasoning, reply.content, reply.status],
+    ['Let me think.', 'Done.', 'done'],
+  );
+
+  // On the next question the model gets the earlier ANSWER, not the thinking.
+  const next = t.runner.send(t.chatId, 'Follow up', CONTEXT);
+  assert.ok(next.ok);
+  await next.done;
+  const sent = t.calls[1].messages.map((m) => m.content).join('\n');
+  assert.ok(sent.includes('Done.'));
+  assert.ok(!sent.includes('Let me think.'));
+
+  // Stopped while still thinking: the thinking so far is kept.
+  const stopped = setup(hangsAfter({ type: 'reasoning', text: 'Pondering…' }));
+  const started = stopped.runner.send(stopped.chatId, 'Go', CONTEXT);
+  assert.ok(started.ok);
+  await new Promise((r) => setTimeout(r, 10));
+  stopped.runner.stop(stopped.chatId);
+  await started.done;
+  const partial = stopped.chat.messages[1];
+  assert.deepEqual(
+    [partial.reasoning, partial.content, partial.status],
+    ['Pondering…', '', 'stopped'],
+  );
+});
+
 test('the model is sent the system prompt and the conversation, with the right model', async () => {
   const t = setup(sends(text('ok')));
   await (

@@ -74,6 +74,11 @@ export function createChatRunner(deps: RunnerDeps) {
             chats.appendToMessage(deps.getState(), chatId, replyId, event.text),
           );
           deps.onMessage(chatId, replyId);
+        } else if (event.type === 'reasoning') {
+          deps.setState(
+            chats.appendReasoning(deps.getState(), chatId, replyId, event.text),
+          );
+          deps.onMessage(chatId, replyId);
         } else if (event.type === 'usage') {
           usage = { totalTokens: event.totalTokens, cost: event.cost };
         }

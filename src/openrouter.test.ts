@@ -123,6 +123,125 @@ test('text, finish and usage chunks are read; [DONE] ends the stream', () => {
   assert.equal(interpretData('  [DONE]  ').done, true);
 });
 
+test("the model's thinking is read from reasoning_details (text and summary entries)", () => {
+  const chunk = (details: unknown[]) =>
+    interpretData(
+      JSON.stringify({ choices: [{ delta: { reasoning_details: details } }] }),
+    );
+  assert.deepEqual(
+    chunk([
+      {
+        type: 'reasoning.text',
+        text: 'Let me think. ',
+        id: null,
+        format: 'unknown',
+        index: 0,
+      },
+    ]).events,
+    [{ type: 'reasoning', text: 'Let me think. ' }],
+  );
+  assert.deepEqual(
+    chunk([
+      { type: 'reasoning.summary', summary: 'Weighing options.', format: 'x' },
+    ]).events,
+    [{ type: 'reasoning', text: 'Weighing options.' }],
+  );
+  // Several entries in one piece join in order.
+  assert.deepEqual(
+    chunk([
+      { type: 'reasoning.text', text: 'A' },
+      { type: 'reasoning.text', text: 'B' },
+    ]).events,
+    [{ type: 'reasoning', text: 'AB' }],
+  );
+  // Scrambled (encrypted) data is not readable and is ignored, as is a placeholder.
+  assert.deepEqual(
+    chunk([{ type: 'reasoning.encrypted', data: 'U0VDUkVU' }]).events,
+    [],
+  );
+  assert.deepEqual(
+    chunk([{ type: 'reasoning.text', text: '[REDACTED]' }]).events,
+    [],
+  );
+  // Unknown entry types and wrongly typed fields are skipped.
+  assert.deepEqual(
+    chunk([
+      { type: 'mystery', text: 'x' },
+      null,
+      5,
+      { type: 'reasoning.text', text: 9 },
+    ]).events,
+    [],
+  );
+});
+
+test('a plain `reasoning` string is read too, but never doubled with reasoning_details', () => {
+  const plain = interpretData(
+    JSON.stringify({ choices: [{ delta: { reasoning: 'thinking aloud' } }] }),
+  );
+  assert.deepEqual(plain.events, [
+    { type: 'reasoning', text: 'thinking aloud' },
+  ]);
+
+  // If a piece has both, only one source is used, so the text is not repeated.
+  const both = interpretData(
+    JSON.stringify({
+      choices: [
+        {
+          delta: {
+            reasoning: 'same words',
+            reasoning_details: [{ type: 'reasoning.text', text: 'same words' }],
+          },
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(both.events, [{ type: 'reasoning', text: 'same words' }]);
+
+  // A "[REDACTED]" string is not shown; a non-string is ignored.
+  assert.deepEqual(
+    interpretData(
+      JSON.stringify({ choices: [{ delta: { reasoning: '[REDACTED]' } }] }),
+    ).events,
+    [],
+  );
+  assert.deepEqual(
+    interpretData(JSON.stringify({ choices: [{ delta: { reasoning: 5 } }] }))
+      .events,
+    [],
+  );
+});
+
+test('thinking and the answer can arrive together, and stay separate', () => {
+  const result = interpretData(
+    JSON.stringify({
+      choices: [{ delta: { reasoning: 'hmm', content: 'Hello' } }],
+    }),
+  );
+  assert.deepEqual(result.events, [
+    { type: 'reasoning', text: 'hmm' },
+    { type: 'text', text: 'Hello' },
+  ]);
+});
+
+test('streamChat passes thinking through as its own events, in order', async () => {
+  const fetchImpl: FetchLike = async () =>
+    streamResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning: 'Step 1. ' } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning: 'Step 2.' } }] })}\n\n`,
+      chunk('Answer'),
+      'data: [DONE]\n\n',
+    ]);
+  const events = await collect(
+    streamChat({ apiKey: KEY, model: 'm', messages: [], fetchImpl }),
+  );
+  assert.deepEqual(events, [
+    { type: 'reasoning', text: 'Step 1. ' },
+    { type: 'reasoning', text: 'Step 2.' },
+    { type: 'text', text: 'Answer' },
+  ]);
+});
+
 test('unreadable chunks are skipped, not fatal', () => {
   for (const junk of [
     '',

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   activeConversation,
   addUserMessage,
+  appendReasoning,
   appendToMessage,
   autoTitle,
   DEFAULT_CHAT_TITLE,
@@ -303,6 +304,56 @@ test('removeMessage and unknown ids are safe', () => {
   assert.equal(removeMessage(state, 9999, a.id), state);
   assert.equal(appendToMessage(state, 9999, a.id, 'x'), state);
   assert.equal(startAssistantMessage(state, 9999, 'm/a', NOW), null);
+});
+
+test('thinking is stored apart from the answer, and is capped and validated', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  const reply = startAssistantMessage(state, chatId, 'm/a', NOW)!;
+  assert.equal(findMessage(reply.state, chatId, reply.id)!.reasoning, '');
+  state = appendReasoning(reply.state, chatId, reply.id, 'Think ');
+  state = appendReasoning(state, chatId, reply.id, 'more.');
+  state = appendToMessage(state, chatId, reply.id, 'Answer');
+  const message = findMessage(state, chatId, reply.id)!;
+  assert.deepEqual(
+    [message.reasoning, message.content],
+    ['Think more.', 'Answer'],
+  );
+
+  // Capped, so one runaway reply cannot fill the save file.
+  const huge = appendReasoning(state, chatId, reply.id, 'x'.repeat(200_000));
+  assert.equal(findMessage(huge, chatId, reply.id)!.reasoning.length, 50_000);
+  // Unknown chat or message: nothing happens.
+  assert.equal(appendReasoning(state, 9999, reply.id, 'x'), state);
+
+  // Your own messages have none. Saved data is repaired on load.
+  const user = addUserMessage(defaultChats(NOW), 1, 'Hi', NOW)!;
+  assert.equal(findMessage(user.state, 1, user.id)!.reasoning, '');
+  const loaded = parseChats(
+    {
+      conversations: [
+        {
+          id: 1,
+          messages: [
+            { id: 2, role: 'assistant', content: 'a', reasoning: 'kept' },
+            { id: 3, role: 'assistant', content: 'b', reasoning: 42 },
+            {
+              id: 4,
+              role: 'assistant',
+              content: 'c',
+              reasoning: 'y'.repeat(99_999),
+            },
+            { id: 5, role: 'assistant', content: 'd' },
+          ],
+        },
+      ],
+    },
+    NOW,
+  );
+  const reasonings = loaded.conversations[0].messages.map(
+    (m) => m.reasoning.length,
+  );
+  assert.deepEqual(reasonings, [4, 0, 50_000, 0]);
 });
 
 test('a chat can use its own model, validated', () => {

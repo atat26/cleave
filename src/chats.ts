@@ -26,6 +26,9 @@ export interface ChatMessage {
   id: number;
   role: 'user' | 'assistant';
   content: string;
+  // For a reply: the model's "thinking" text, for models that show it (shown in
+  // an expandable block; never sent back to the model). Empty otherwise.
+  reasoning: string;
   createdAt: number;
   status: MessageStatus;
   // For a reply: the model that wrote it (null for your own messages).
@@ -69,6 +72,7 @@ const MAX_TITLE = 80;
 const AUTO_TITLE_CHARS = 40;
 const MAX_MESSAGES = 2000;
 const MAX_CONTENT = 100_000;
+const MAX_REASONING = 50_000;
 const MAX_REFS = 50;
 
 const ERROR_KINDS: readonly ChatErrorKind[] = [
@@ -171,6 +175,10 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
           id: m.id,
           role: m.role,
           content: m.content.slice(0, MAX_CONTENT),
+          reasoning:
+            typeof m.reasoning === 'string'
+              ? m.reasoning.slice(0, MAX_REASONING)
+              : '',
           createdAt: isTime(m.createdAt) ? m.createdAt : now,
           status,
           model: isValidModelId(m.model) ? m.model : null,
@@ -370,6 +378,7 @@ export function addUserMessage(
     id,
     role: 'user',
     content,
+    reasoning: '',
     createdAt: now,
     status: 'done',
     model: null,
@@ -403,6 +412,7 @@ export function startAssistantMessage(
     id,
     role: 'assistant',
     content: '',
+    reasoning: '',
     createdAt: now,
     status: 'streaming',
     model,
@@ -417,6 +427,19 @@ export function startAssistantMessage(
       messages: [...c.messages, message],
     })),
   };
+}
+
+// Add more of the model's thinking to a reply as it arrives.
+export function appendReasoning(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  text: string,
+): ChatsState {
+  return updateMessage(state, chatId, messageId, (m) => ({
+    ...m,
+    reasoning: (m.reasoning + text).slice(0, MAX_REASONING),
+  }));
 }
 
 // Add more text to a reply as it arrives.
