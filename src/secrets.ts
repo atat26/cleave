@@ -17,7 +17,7 @@ export interface SecretCrypto {
   decrypt(data: Uint8Array): string;
 }
 
-export const SECRET_NAMES = ['openrouter'] as const;
+export const SECRET_NAMES = ['openrouter', 'brave-search'] as const;
 export type SecretName = (typeof SECRET_NAMES)[number];
 
 // What is saved: for each secret, its ENCRYPTED bytes as base64.

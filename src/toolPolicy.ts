@@ -45,9 +45,13 @@ export interface ToolInfo {
   title: string;
   summary: string;
   defaultLevel: ApprovalLevel;
-  // Does it change anything (a page, your tabs)? "Always allow" then gets a
-  // warning when you choose it.
+  // Does it change anything (a page, your tabs), or send something out? "Always
+  // allow" then gets a warning when you choose it.
   changesThings: boolean;
+  // A warning written for this tool, shown instead of the usual one.
+  warning?: string;
+  // Needs setting up before it works (and has a settings page).
+  setup?: 'web-search';
 }
 
 // In the order they are shown.
@@ -140,6 +144,17 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
       'Open a web address in a new tab, which is then linked to the chat.',
     defaultLevel: 'ask',
     changesThings: true,
+  },
+  {
+    name: 'web_search',
+    group: 'look',
+    title: 'Search the web',
+    summary: 'Search the web with your chosen provider.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to search the web on its own. What it searches for is sent to your search provider, and a malicious web page could try to make it put something private into a search.',
+    setup: 'web-search',
   },
   {
     name: 'offer_choices',

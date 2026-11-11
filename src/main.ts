@@ -2,7 +2,9 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { FRAME_COLOR } from './layout';
+import { openSecretStore } from './electronSecrets';
 import { registerLlm } from './llm';
+import { registerSearch } from './search';
 import { createTabs } from './tabs';
 import { loadUi } from './ui';
 
@@ -40,13 +42,19 @@ const createWindow = () => {
   void loadUi(mainWindow.webContents);
 
   // The AI provider connection (key storage, model choice, network calls).
-  const llm = registerLlm(mainWindow);
+  // One shared store of secrets (API keys) for the AI connection and web search.
+  const secrets = openSecretStore();
+  const llm = registerLlm(mainWindow, secrets);
   llm.catch((error) =>
     console.error('Failed to start the AI connection:', error),
   );
 
+  // Web search (provider choice, key, the search itself).
+  const search = registerSearch(mainWindow, secrets);
+  search.catch((error) => console.error('Failed to start web search:', error));
+
   // The sidebar, the web page tabs and the chat.
-  createTabs(mainWindow, llm).catch((error) =>
+  createTabs(mainWindow, llm, search).catch((error) =>
     console.error('Failed to start tabs:', error),
   );
 

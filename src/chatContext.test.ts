@@ -156,3 +156,83 @@ test('an empty conversation is just the system prompt', () => {
     { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
   ]);
 });
+
+// ---- Remembering earlier searches ------------------------------------------------
+
+const searchPart = (query: string, details?: string) => ({
+  type: 'tool' as const,
+  id: 1,
+  callId: 'c',
+  name: 'web_search',
+  arguments: JSON.stringify({ query }),
+  label: 'Searched',
+  status: 'ok' as const,
+  outcome: '',
+  details:
+    details ?? `Search: "${query}"\n[1] Site - https://${query}.example/`,
+  ask: '',
+  risky: false,
+});
+
+test('earlier search results are put in front of the assistant so it need not search again', () => {
+  const history = [
+    {
+      role: 'user' as const,
+      content: 'search pandas',
+      status: 'done' as const,
+    },
+    {
+      role: 'assistant' as const,
+      content: 'Found some.',
+      status: 'done' as const,
+      parts: [searchPart('pandas')],
+    },
+    {
+      role: 'user' as const,
+      content: 'open the first',
+      status: 'done' as const,
+    },
+  ];
+  const system = buildMessages({ systemPrompt: null, history })[0].content;
+  assert.match(system, /already done in this conversation/);
+  assert.match(system, /open_tab/);
+  assert.match(system, /Search: "pandas"/);
+  assert.match(system, /https:\/\/pandas\.example\//);
+});
+
+test('only searches that worked, only the latest few, and only from the part of the chat that is sent', () => {
+  const asst = (parts: ReturnType<typeof searchPart>[]) => ({
+    role: 'assistant' as const,
+    content: 'ok',
+    status: 'done' as const,
+    parts,
+  });
+  const user = { role: 'user' as const, content: 'q', status: 'done' as const };
+  const failed = {
+    ...searchPart('failed'),
+    status: 'ok' as const,
+    details: '',
+  };
+  const history = [
+    user,
+    asst([searchPart('one')]),
+    user,
+    asst([searchPart('two')]),
+    user,
+    asst([searchPart('three'), failed]),
+    user,
+    asst([searchPart('four')]),
+    user,
+  ];
+  const system = buildMessages({ systemPrompt: null, history })[0].content;
+  assert.ok(!system.includes('Search: "one"')); // older than the latest three
+  for (const q of ['two', 'three', 'four'])
+    assert.ok(system.includes(`Search: "${q}"`));
+  assert.ok(!system.includes('failed'));
+
+  // Nothing to remember: the system message is exactly as before.
+  assert.equal(
+    buildMessages({ systemPrompt: null, history: [user] })[0].content,
+    DEFAULT_SYSTEM_PROMPT,
+  );
+});

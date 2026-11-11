@@ -22,7 +22,9 @@ import * as chats from './chats';
 import type { ChatsState } from './chats';
 import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
+import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
+import { SearchError } from './webSearch';
 import type { ChatSendResult } from './types';
 
 const isId = (value: unknown): value is number => Number.isInteger(value);
@@ -67,6 +69,8 @@ export function createChatService(options: {
   linkTab(chatId: number, tabId: number): void;
   // How much a tool may do without asking (your choice in the Tools panel).
   toolLevel(tool: string): ApprovalLevel;
+  // Web search (set up in Settings).
+  search: Promise<SearchContext | null>;
 
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
@@ -82,6 +86,10 @@ export function createChatService(options: {
   let llm: LlmContext | null = null;
   void options.llm.then((context) => {
     llm = context;
+  });
+  let searchContext: SearchContext | null = null;
+  void options.search.then((context) => {
+    searchContext = context;
   });
 
   // ---- Telling the UI about messages, a bit at a time ------------------------
@@ -211,6 +219,22 @@ export function createChatService(options: {
               ),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            searchReady: () => searchContext?.ready() ?? false,
+            webSearch: async (query, signal) => {
+              if (!searchContext) return { ok: false, reason: 'no-key' };
+              try {
+                return {
+                  ok: true,
+                  results: await searchContext.search(query, signal),
+                };
+              } catch (error) {
+                if (error instanceof SearchError) {
+                  return { ok: false, reason: error.kind };
+                }
+                if (signal.aborted) throw error; // Stop was pressed.
+                return { ok: false, reason: 'unknown' };
+              }
+            },
             ...options.actions,
             // A tab the assistant opens is linked to this chat, so it can use it.
             openTab: async (url, signal) => {

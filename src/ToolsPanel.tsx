@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { APPROVAL_LEVELS, GROUP_TITLES, LEVEL_WORDS } from './toolPolicy';
 import type { ApprovalLevel, ToolGroup } from './toolPolicy';
+import { requestSettingsSection } from './settingsNav';
 import type { ToolRow } from './toolSettings';
+import type { SearchStatus } from './types';
 
 const muted: CSSProperties = {
   color: '#5f6368',
@@ -38,8 +40,12 @@ export function ToolsPanel() {
   // A tool waiting for you to confirm "Always allow" (it changes things).
   const [confirming, setConfirming] = useState<string | null>(null);
 
+  // Web search needs setting up: whether it is, for the row that says so.
+  const [search, setSearch] = useState<SearchStatus | null>(null);
+
   useEffect(() => {
     void window.browserApi.toolsList().then(setRows);
+    void window.browserApi.searchStatus().then(setSearch);
   }, []);
 
   if (rows === null) return <p style={muted}>Loading…</p>;
@@ -108,6 +114,21 @@ export function ToolsPanel() {
                         {row.title}
                       </div>
                       <div style={muted}>{row.summary}</div>
+                      {row.setup === 'web-search' && search !== null && (
+                        <div
+                          style={{
+                            ...muted,
+                            whiteSpace: 'nowrap',
+                            color: search.hasKey ? '#188038' : '#b3261e',
+                          }}
+                        >
+                          {search.hasKey
+                            ? (search.providers.find(
+                                (p) => p.id === search.provider,
+                              )?.name ?? 'Provider')
+                            : 'Not set up yet'}
+                        </div>
+                      )}
                       {row.level !== row.defaultLevel && (
                         <button
                           type="button"
@@ -125,26 +146,54 @@ export function ToolsPanel() {
                         </button>
                       )}
                     </div>
-                    <select
-                      aria-label={`How to handle: ${row.title}`}
-                      value={row.level}
-                      onChange={(e) =>
-                        choose(row, e.target.value as ApprovalLevel)
-                      }
+                    <div
                       style={{
-                        fontSize: 12,
-                        padding: '4px 6px',
-                        borderRadius: 8,
-                        border: '1px solid #d0d0d0',
-                        background: '#ffffff',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-end',
+                        gap: 4,
+                        flexShrink: 0,
                       }}
                     >
-                      {APPROVAL_LEVELS.map((level) => (
-                        <option key={level} value={level}>
-                          {LEVEL_WORDS[level]}
-                        </option>
-                      ))}
-                    </select>
+                      <select
+                        aria-label={`How to handle: ${row.title}`}
+                        value={row.level}
+                        onChange={(e) =>
+                          choose(row, e.target.value as ApprovalLevel)
+                        }
+                        style={{
+                          fontSize: 12,
+                          padding: '4px 6px',
+                          borderRadius: 8,
+                          border: '1px solid #d0d0d0',
+                          background: '#ffffff',
+                        }}
+                      >
+                        {APPROVAL_LEVELS.map((level) => (
+                          <option key={level} value={level}>
+                            {LEVEL_WORDS[level]}
+                          </option>
+                        ))}
+                      </select>
+                      {row.setup === 'web-search' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requestSettingsSection('web-search');
+                            window.browserApi.openSettings();
+                          }}
+                          style={{
+                            ...button,
+                            padding: '0 7px',
+                            fontSize: 11,
+                            color: '#1a73e8',
+                            borderColor: '#c6dafc',
+                          }}
+                        >
+                          Settings
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {confirming === row.name && (
@@ -160,10 +209,10 @@ export function ToolsPanel() {
                         lineHeight: 1.45,
                       }}
                     >
-                      Allow this without asking? The assistant will be able to{' '}
-                      {row.title.toLowerCase()} on its own, including risky
-                      things such as buying or sending. The safety rules below
-                      still apply.
+                      Allow this without asking?{' '}
+                      {row.warning ??
+                        `The assistant will be able to ${row.title.toLowerCase()} on its own, including risky things such as buying or sending.`}{' '}
+                      The safety rules below still apply.
                       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                         <button
                           type="button"

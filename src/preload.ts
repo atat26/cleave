@@ -17,6 +17,12 @@ const browserApi: BrowserApi = {
   setSpaceCollapsed: (id, collapsed) =>
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
+  searchStatus: () => ipcRenderer.invoke('search:status'),
+  searchSetProvider: (provider) =>
+    ipcRenderer.invoke('search:set-provider', provider),
+  searchSaveKey: (key) => ipcRenderer.invoke('search:save-key', key),
+  searchRemoveKey: () => ipcRenderer.invoke('search:remove-key'),
+  searchTest: () => ipcRenderer.invoke('search:test'),
   toolsList: () => ipcRenderer.invoke('tools:list'),
   toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
   toolsReset: () => ipcRenderer.invoke('tools:reset'),

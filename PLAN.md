@@ -14,7 +14,7 @@
 - [x] M6b: Acting agent: click, type, press keys, scroll, choose, go to an address, open new tabs (linked automatically); every action but scrolling is approved on a card in the chat (risky ones always ask); never types in password/card/code fields or accepts terms; linked tabs only, 25 actions per reply; the tab it acts in is focused and marked; choice buttons the assistant can offer (click to send); Retry on the newest message and Branch on older ones
 - [x] Tools step 1: a list of the assistant's tools with four approval levels (always allow, allow if safe, ask first, never allow), saved in tools.json; safety refusals can never be overridden; defaults match the old behaviour. No screen yet.
 - [x] Tools step 2: the Tools panel on the chat rail (a dropdown per tool, a warning before Always allow on tools that change things, Return to default per tool, Reset to defaults, saved in tools.json)
-- [ ] Tools step 3: web search tool run by the app (Brave Search key), approvals per search, results treated as untrusted
+- [x] Tools step 3: web search run by the app (Brave Search key in Settings > Web search; a Search the web tool under Looking and reading; each search approved on a card; results and page controls kept with the call so you can read them; earlier searches remembered so a follow-up can open a result without searching again; links show where they go)
 - [ ] M7: Module system plus builder agent
 - [ ] M8: Daily-driver polish
 
