@@ -10,12 +10,22 @@ if (started) {
 const createWindow = () => {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1200,
+    height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      // Security: the UI page is isolated from Node.js and from Electron
+      // internals. It can only use what preload.ts exposes via contextBridge.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
+
+  // Security: our own UI window never opens new windows or navigates away.
+  // (Websites will live in their own tab views, added later in M1.)
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
 
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -26,8 +36,10 @@ const createWindow = () => {
     );
   }
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // Open the DevTools only while developing, never in a packaged app.
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 };
 
 // This method will be called when Electron has finished

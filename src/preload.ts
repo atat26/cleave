@@ -1,3 +1,10 @@
-// oxlint-disable eslint-plugin-unicorn/no-empty-file
-// See the Electron documentation for details on how to use preload scripts:
-// https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+// The preload script is the ONLY bridge between the UI page and the app.
+// Expose small, specific functions here -- never whole Electron modules.
+import { contextBridge } from 'electron';
+import type { BrowserApi } from './types';
+
+const browserApi: BrowserApi = {
+  platform: process.platform,
+};
+
+contextBridge.exposeInMainWorld('browserApi', browserApi);
