@@ -1,10 +1,12 @@
 import { useRef } from 'react';
 import type { CSSProperties } from 'react';
+import { ChatComposer } from './ChatComposer';
+import { MessageList } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
 import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ResizeHandle } from './ResizeHandle';
-import type { ChatsInfo } from './types';
+import type { ChatsInfo, LlmInfo } from './types';
 
 const smallButton: CSSProperties = {
   border: 'none',
@@ -17,10 +19,9 @@ const smallButton: CSSProperties = {
   color: '#5f6368',
 };
 
-// The chat. For now this is the container and the chat management; the
-// conversation itself arrives in a later update. It is a card on the frame:
-// a compact bar (one row) along the bottom that you can drag taller, an expanded
-// look, or, when the page is closed, the whole middle of the window.
+// The chat. It is a card on the frame: a compact bar (one row) along the bottom
+// that you can drag taller, an expanded look with the conversation, or, when the
+// page is closed, the whole middle of the window.
 //
 // `full` is true once it is tall enough for the expanded look. The app keeps
 // the --chat, --left and --panel variables up to date while the frame slides.
@@ -28,17 +29,20 @@ export function ChatBar({
   full,
   viewMode,
   chats,
+  llm,
   renameRequest,
   onRenameHandled,
 }: {
   full: boolean;
   viewMode: ViewMode;
   chats: ChatsInfo;
+  llm: LlmInfo;
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
   const regionRef = useRef<HTMLElement>(null);
   const chatOnly = viewMode === 'chat';
+  const chat = chats.conversations.find((c) => c.id === chats.activeId);
 
   const closeChat = (
     <button
@@ -104,51 +108,44 @@ export function ChatBar({
             {closeChat}
           </div>
         )}
-        {full && (
-          <div style={{ flex: 1, minHeight: 0, color: '#5f6368' }}>
-            Your conversation will appear here. Chat arrives in a later update.
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {!full && (
-            <ChatSwitcher
-              chats={chats}
-              renameRequest={renameRequest}
-              onRenameHandled={onRenameHandled}
-              compact
-            />
-          )}
-          <input
-            disabled
-            placeholder="Chat arrives in a later update. Ask anything, or link a tab with @"
-            aria-label="Message"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              height: 32,
-              padding: '0 14px',
-              border: '1px solid #d0d0d0',
-              borderRadius: 16,
-              fontSize: 13,
-              background: '#f8f9fa',
-              margin: '0 6px',
+        {full && <MessageList chatId={chats.activeId} />}
+        {chat && (
+          <ChatComposer
+            chat={chat}
+            llm={llm}
+            compact={!full}
+            before={
+              !full ? (
+                <ChatSwitcher
+                  chats={chats}
+                  renameRequest={renameRequest}
+                  onRenameHandled={onRenameHandled}
+                  compact
+                />
+              ) : undefined
+            }
+            after={
+              !full ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Expand chat"
+                    title="Expand chat (Ctrl+J)"
+                    onClick={() => window.browserApi.toggleChat()}
+                    style={smallButton}
+                  >
+                    ⌃
+                  </button>
+                  {closeChat}
+                </>
+              ) : undefined
+            }
+            // Sending from the one-row bar opens the chat so the reply is visible.
+            onSent={() => {
+              if (!full && viewMode === 'both') window.browserApi.toggleChat();
             }}
           />
-          {!full && (
-            <>
-              <button
-                type="button"
-                aria-label="Expand chat"
-                title="Expand chat (Ctrl+J)"
-                onClick={() => window.browserApi.toggleChat()}
-                style={smallButton}
-              >
-                ⌃
-              </button>
-              {closeChat}
-            </>
-          )}
-        </div>
+        )}
       </div>
       {viewMode === 'both' && (
         <ResizeHandle

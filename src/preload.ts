@@ -1,7 +1,7 @@
 // The preload script is the ONLY bridge between the UI page and the app.
 // Expose small, specific functions here -- never whole Electron modules.
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BrowserApi, FrameLayout, UiState } from './types';
+import type { BrowserApi, ChatMessage, FrameLayout, UiState } from './types';
 
 const browserApi: BrowserApi = {
   platform: process.platform,
@@ -26,6 +26,26 @@ const browserApi: BrowserApi = {
   llmTestConnection: () => ipcRenderer.invoke('llm:test'),
   llmListModels: (refresh) => ipcRenderer.invoke('llm:models', refresh),
   llmSetModel: (model) => ipcRenderer.invoke('llm:set-model', model),
+  llmTogglePin: (model) => ipcRenderer.invoke('llm:toggle-pin', model),
+  llmSetSystemPrompt: (text) =>
+    ipcRenderer.invoke('llm:set-system-prompt', text),
+  chatMessages: (chatId) => ipcRenderer.invoke('chat:messages', chatId),
+  chatSend: (chatId, text) => ipcRenderer.invoke('chat:send', chatId, text),
+  chatRetry: (chatId) => ipcRenderer.invoke('chat:retry', chatId),
+  chatStop: (chatId) => ipcRenderer.send('chat:stop', chatId),
+  chatCopy: (text) => ipcRenderer.send('chat:copy', text),
+  showModelMenu: (chatId) => ipcRenderer.send('chat:model-menu', chatId),
+  openSettings: () => ipcRenderer.send('panel:open', 'settings'),
+  onChatMessage: (callback) => {
+    const listener = (
+      _event: unknown,
+      payload: { chatId: number; message: ChatMessage },
+    ) => callback(payload);
+    ipcRenderer.on('chat:message', listener);
+    return () => {
+      ipcRenderer.removeListener('chat:message', listener);
+    };
+  },
   newChat: () => ipcRenderer.send('chats:new'),
   selectChat: (id) => ipcRenderer.send('chats:select', id),
   renameChat: (id, title) => ipcRenderer.send('chats:rename', id, title),

@@ -5,11 +5,19 @@
 - [x] M3: Spaces as Chrome-style tab groups (create, rename, recolour, collapse, ungroup, delete, move tabs), a Lead overview tab per Space, collapsible/draggable vertical sidebar, saved to disk
 - [x] M4a: Connected frame: left sidebar, top address strip, right rail with resizable panels, bottom chat (compact or expanded) around a rounded page card; everything slides together and is draggable; view modes (page only / both / chat only); context-aware rail (Skills with chat, Extensions with web, Settings always) and left panel (tabs with the page, chat list in chat-only); conversation list (new, switch, rename, delete) saved to its own file
 - [x] M4b: Settings panel, encrypted API key storage (Electron safeStorage, main process only), OpenRouter provider adapter with streaming parser, model picker, test connection
-- [ ] M4c: Chat itself: streaming replies with a Stop button, per-conversation history, `@` links to Spaces and tabs (titles and addresses only until M5), error messages
+- [x] M4c-1: Working chat: streaming replies with Stop and Retry, per-chat history, error messages, pinned models with a model chip, system prompt in Settings, cost line
+- [ ] M4c-2: `@` links to Spaces and tabs (titles and addresses only until M5; address query strings stripped) and an "ask about this page" chip
 - [ ] M5: Read-only agent ("summarize these tabs"), no clicking yet
 - [ ] M6: Acting agent with confirmations, step limit, stop button
 - [ ] M7: Module system plus builder agent
 - [ ] M8: Daily-driver polish
+
+After the agent (M5/M6), in this order of likelihood:
+
+- History: closed tabs, deleted Spaces and chats in one searchable list with Restore. Restoring a chat restores only the chat; linked tabs reopen on demand from their greyed chips. Closed tabs and Spaces expire after 90 days, chats stay until deleted, with a Clear history button
+- Full page history (every page visited) and a "find that page I was on" tool for the agent
+- Space files: attachments live in Spaces (files and images, shown on the overview page); linking a Space to a chat shares them
+- Rich message blocks (buttons, diagrams) rendered in a sandboxed frame with allow-listed actions
 
 ## Backlog (ideas, not scheduled)
 

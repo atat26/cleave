@@ -40,12 +40,13 @@ const createWindow = () => {
   void loadUi(mainWindow.webContents);
 
   // The AI provider connection (key storage, model choice, network calls).
-  registerLlm(mainWindow).catch((error) =>
+  const llm = registerLlm(mainWindow);
+  llm.catch((error) =>
     console.error('Failed to start the AI connection:', error),
   );
 
-  // The sidebar and the web page tabs.
-  createTabs(mainWindow).catch((error) =>
+  // The sidebar, the web page tabs and the chat.
+  createTabs(mainWindow, llm).catch((error) =>
     console.error('Failed to start tabs:', error),
   );
 

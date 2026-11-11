@@ -62,6 +62,16 @@ function ChatRow({
       <span aria-hidden="true" style={{ filter: 'grayscale(1)' }}>
         💬
       </span>
+      {chat.generating && (
+        <span
+          role="img"
+          aria-label="Writing a reply"
+          title="Writing a reply"
+          style={{ order: 3, color: '#1a73e8', fontSize: 10 }}
+        >
+          ●
+        </span>
+      )}
       {editing ? (
         <input
           autoFocus

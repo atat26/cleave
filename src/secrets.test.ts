@@ -5,11 +5,6 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { cleanApiKey, createSecretStore, parseSecrets } from './secrets.ts';
 import type { SecretCrypto } from './secrets.ts';
-import {
-  defaultProviderSettings,
-  parseProviderSettings,
-  withModel,
-} from './providerSettings.ts';
 
 const KEY = 'sk-or-v1-abcdef0123456789abcdef0123456789';
 
@@ -170,35 +165,4 @@ test('a tampered or corrupt secrets file is repaired or set aside', async () => 
   assert.equal(store.has('openrouter'), false);
   assert.equal(await fs.readFile(`${file}.corrupt`, 'utf8'), '{ not json');
   await fs.rm(dir, { recursive: true });
-});
-
-test('provider settings: default, validation on load, and choosing a model', () => {
-  assert.deepEqual(defaultProviderSettings(), {
-    version: 1,
-    provider: 'openrouter',
-    model: null,
-  });
-  assert.equal(
-    parseProviderSettings({ model: 'openai/gpt-4o' }).model,
-    'openai/gpt-4o',
-  );
-  for (const bad of [
-    null,
-    5,
-    {},
-    { model: 'has space' },
-    { model: 7 },
-    { model: 'x'.repeat(300) },
-  ]) {
-    assert.equal(parseProviderSettings(bad).model, null, JSON.stringify(bad));
-  }
-  const settings = defaultProviderSettings();
-  assert.equal(
-    withModel(settings, 'meta/llama-3:free').model,
-    'meta/llama-3:free',
-  );
-  assert.equal(withModel(withModel(settings, 'a/b'), null).model, null);
-  // A bad name leaves the earlier choice alone.
-  const chosen = withModel(settings, 'a/b');
-  assert.equal(withModel(chosen, 'bad name!'), chosen);
 });

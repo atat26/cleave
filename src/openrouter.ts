@@ -44,6 +44,10 @@ const MESSAGES: Record<ChatErrorKind, string> = {
   unknown: 'Something went wrong talking to OpenRouter.',
 };
 
+// The plain-language text for a kind of failure (written here, never from the
+// server). The chat uses this to show a message that failed.
+export const errorMessage = (kind: ChatErrorKind): string => MESSAGES[kind];
+
 // An error whose message is safe to show to the user.
 export class ChatError extends Error {
   readonly kind: ChatErrorKind;
@@ -132,6 +136,9 @@ export interface ChatMessageInput {
 
 export type StreamEvent =
   | { type: 'text'; text: string }
+  // A piece of the model's "thinking" (its reasoning), for models that show it.
+  // Shown in an expandable block; never sent back to the model.
+  | { type: 'reasoning'; text: string }
   | {
       type: 'usage';
       promptTokens: number | null;
@@ -143,6 +150,37 @@ export type StreamEvent =
 
 const num = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+// The readable thinking in one streamed piece, or "" if there is none.
+//
+// OpenRouter documents the thinking as `delta.reasoning_details`: a list where
+// "reasoning.text" entries hold readable text in `text`, "reasoning.summary"
+// entries hold a short summary in `summary`, and "reasoning.encrypted" entries
+// hold scrambled data that cannot be read (those are ignored, as is a
+// "[REDACTED]" placeholder). Many models also send the plain string
+// `delta.reasoning`. The docs do not say whether both can appear together, so only
+// ONE source is used per piece (the detailed list first), so nothing is doubled.
+function readReasoning(delta: Record<string, unknown>): string {
+  if (Array.isArray(delta.reasoning_details)) {
+    let text = '';
+    for (const entry of delta.reasoning_details) {
+      if (!isRecord(entry)) continue;
+      if (entry.type === 'reasoning.text' && typeof entry.text === 'string') {
+        text += entry.text;
+      } else if (
+        entry.type === 'reasoning.summary' &&
+        typeof entry.summary === 'string'
+      ) {
+        text += entry.summary;
+      }
+    }
+    if (text !== '' && text !== '[REDACTED]') return text;
+  }
+  if (typeof delta.reasoning === 'string' && delta.reasoning !== '[REDACTED]') {
+    return delta.reasoning;
+  }
+  return '';
+}
 
 // What one SSE event's data means. `data: [DONE]` ends the stream; keep-alive
 // comments never get here (the SSE parser drops them); anything unreadable is
@@ -177,6 +215,10 @@ export function interpretData(data: string): {
 
   if (choice) {
     const delta = isRecord(choice.delta) ? choice.delta : null;
+    if (delta) {
+      const thinking = readReasoning(delta);
+      if (thinking !== '') events.push({ type: 'reasoning', text: thinking });
+    }
     if (delta && typeof delta.content === 'string' && delta.content !== '') {
       events.push({ type: 'text', text: delta.content });
     }

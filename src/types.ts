@@ -1,7 +1,8 @@
+import type { ChatMessage } from './chats';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 
-export type { ModelInfo };
+export type { ChatMessage, ModelInfo };
 
 // A tab as the UI sees it.
 export interface TabInfo {
@@ -30,9 +31,40 @@ export interface LlmStatus {
   // Can a key be stored safely on this computer?
   encryptionAvailable: boolean;
   hasKey: boolean;
-  // The chosen model name, or null if none has been chosen.
+  // The default model for new chats, or null if none has been chosen.
   model: string | null;
+  // Models you use often, in pin order (quick choices in the chat).
+  pinned: string[];
+  // Your own system prompt, or null if you are using the default.
+  systemPrompt: string | null;
+  // The built-in default, to show in Settings.
+  defaultSystemPrompt: string;
 }
+
+// What the chat needs to know about the AI connection. (Never the key itself.)
+export interface LlmInfo {
+  hasKey: boolean;
+  // The default model for new chats.
+  model: string | null;
+  pinned: string[];
+}
+
+// The answer to "send this message" (or "retry"). On success the reply streams in
+// separately; on failure `kind` says why, so the chat can offer the right help.
+export type ChatSendResult =
+  | { ok: true }
+  | {
+      ok: false;
+      kind:
+        | 'no-key'
+        | 'no-model'
+        | 'busy'
+        | 'empty'
+        | 'unknown-chat'
+        | 'nothing-to-retry'
+        | 'invalid';
+      error: string;
+    };
 
 export type LlmResult =
   | { ok: true; status: LlmStatus }
@@ -58,6 +90,10 @@ export interface ChatInfo {
   id: number;
   title: string;
   messageCount: number;
+  // The model this chat uses instead of the default, or null for the default.
+  model: string | null;
+  // A reply is being written in this chat right now.
+  generating: boolean;
 }
 
 export interface ChatsInfo {
@@ -69,6 +105,7 @@ export interface ChatsInfo {
 // Everything the UI needs to draw itself.
 export interface UiState {
   chats: ChatsInfo;
+  llm: LlmInfo;
   spaces: SpaceInfo[];
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
@@ -133,6 +170,25 @@ export interface BrowserApi {
   llmTestConnection: () => Promise<LlmTestResult>;
   llmListModels: (refresh?: boolean) => Promise<LlmModelsResult>;
   llmSetModel: (model: string | null) => Promise<LlmResult>;
+  llmTogglePin: (model: string) => Promise<LlmResult>;
+  llmSetSystemPrompt: (text: string | null) => Promise<LlmResult>;
+  // Talking to the model. The messages live in the app; the UI asks for a chat's
+  // messages when it opens one, then follows changes as they stream in.
+  chatMessages: (chatId: number) => Promise<ChatMessage[]>;
+  chatSend: (chatId: number, text: string) => Promise<ChatSendResult>;
+  chatRetry: (chatId: number) => Promise<ChatSendResult>;
+  chatStop: (chatId: number) => void;
+  // Put text on the clipboard (the app does it, so it works the same everywhere).
+  chatCopy: (text: string) => void;
+  // Shows a menu of your pinned models to switch this chat to.
+  showModelMenu: (chatId: number) => void;
+  // Open the Settings panel.
+  openSettings: () => void;
+  // Called with a chat's message whenever it is added or changes (many times a
+  // second while a reply streams in). Returns an unsubscribe function.
+  onChatMessage: (
+    callback: (event: { chatId: number; message: ChatMessage }) => void,
+  ) => () => void;
   // Managing conversations. They are independent of Spaces and tabs.
   newChat: () => void;
   selectChat: (id: number) => void;
