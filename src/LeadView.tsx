@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
-import { TOOLBAR_HEIGHT } from './layout';
+import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
 import type { SpaceInfo, TabInfo } from './types';
 
@@ -34,15 +34,16 @@ export function LeadView({
   return (
     <main
       style={{
+        // The same rounded card where a web page would be. The app keeps these
+        // variables up to date while the frame slides (see App.tsx).
         position: 'fixed',
         top: TOOLBAR_HEIGHT,
-        // Starts right of the sidebar; the app keeps this up to date while the
-        // sidebar slides (see App.tsx).
-        left: 'var(--content-left, 48px)',
-        right: 0,
-        bottom: 0,
+        left: `calc(var(--left) + ${PAGE_INSET}px)`,
+        right: `calc(var(--rail) + var(--panel) + ${PAGE_INSET}px)`,
+        bottom: `calc(var(--chat) + ${PAGE_INSET}px)`,
         overflowY: 'auto',
         background: '#ffffff',
+        borderRadius: PAGE_RADIUS,
         padding: 24,
         boxSizing: 'border-box',
       }}

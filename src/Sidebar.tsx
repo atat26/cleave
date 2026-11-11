@@ -1,45 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  CSSProperties,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-} from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
+import { ChatList, ChatStrip } from './ChatHistory';
 import { SPACE_COLOR_HEX } from './colors';
-import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
+import { FRAME_COLOR, SIDEBAR_FULL_MIN_WIDTH } from './layout';
+import { ResizeHandle } from './ResizeHandle';
+import {
+  ellipsis,
+  iconButtonStyle,
+  rowStyle,
+  stripButton,
+} from './sidebarStyles';
 import type { SpaceInfo, TabInfo, UiState } from './types';
-
-const iconButtonStyle: CSSProperties = {
-  width: 24,
-  height: 24,
-  border: 'none',
-  borderRadius: 12,
-  background: 'transparent',
-  fontSize: 16,
-  lineHeight: 1,
-  cursor: 'pointer',
-  flexShrink: 0,
-};
-
-const rowStyle = (active: boolean): CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  height: 32,
-  padding: '0 6px 0 8px',
-  marginBottom: 2,
-  borderRadius: 8,
-  fontSize: 13,
-  cursor: 'pointer',
-  background: active ? '#ffffff' : 'transparent',
-  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.15)' : 'none',
-});
-
-const ellipsis: CSSProperties = {
-  flex: 1,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
 
 // What to write on a tab: its title, else its site name, else "New Tab".
 export function labelFor(tab: TabInfo): string {
@@ -322,19 +293,6 @@ function FullSidebar({
 // Narrow icon strip (the collapsed sidebar)
 // ---------------------------------------------------------------------------
 
-const stripButton = (active: boolean): CSSProperties => ({
-  width: 32,
-  height: 30,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  margin: '0 auto 2px',
-  borderRadius: 8,
-  cursor: 'pointer',
-  background: active ? '#ffffff' : 'transparent',
-  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.15)' : 'none',
-});
-
 function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
   return (
     <div
@@ -473,73 +431,23 @@ function useViewWidth(): number {
   return width;
 }
 
-// A thin grab handle on the sidebar's right edge. Drag it to resize the sidebar.
-// While you drag, the app moves the sidebar's edge to follow the mouse; when you
-// let go it either snaps to the icon strip (dragged all the way left) or pins
-// open at that width.
-function ResizeHandle() {
-  const drag = useRef<{ startX: number; startWidth: number } | null>(null);
-  const lastWidth = useRef(0);
-  const frame = useRef<number | undefined>(undefined);
-
-  const widthFor = (event: ReactPointerEvent) =>
-    (drag.current?.startWidth ?? 0) +
-    event.screenX -
-    (drag.current?.startX ?? 0);
-
-  const finish = (event: ReactPointerEvent) => {
-    if (drag.current === null) return;
-    window.cancelAnimationFrame(frame.current ?? 0);
-    lastWidth.current = widthFor(event);
-    drag.current = null;
-    window.browserApi.endSidebarDrag(lastWidth.current);
-  };
-
-  return (
-    <div
-      onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId);
-        // screenX does not change when the view resizes under the mouse, so it
-        // is a steady way to measure how far the mouse has moved.
-        drag.current = { startX: event.screenX, startWidth: window.innerWidth };
-        lastWidth.current = window.innerWidth;
-        window.browserApi.startSidebarDrag();
-      }}
-      onPointerMove={(event) => {
-        if (drag.current === null) return;
-        lastWidth.current = widthFor(event);
-        // At most one update per screen refresh.
-        if (frame.current !== undefined)
-          window.cancelAnimationFrame(frame.current);
-        frame.current = window.requestAnimationFrame(() =>
-          window.browserApi.dragSidebar(lastWidth.current),
-        );
-      }}
-      onPointerUp={finish}
-      onPointerCancel={finish}
-      title="Drag to resize. Drag all the way left to collapse."
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 8,
-        cursor: 'col-resize',
-        zIndex: 10,
-      }}
-    />
-  );
-}
-
 export function Sidebar({
   state,
   renameRequest,
   onRenameHandled,
+  chatRenameRequest,
+  onChatRenameHandled,
 }: {
   state: UiState;
   renameRequest: number | null;
   onRenameHandled: () => void;
+  // Set when "Rename chat" was chosen from a chat's right-click menu.
+  chatRenameRequest: number | null;
+  onChatRenameHandled: () => void;
 }) {
+  // With only the chat open, the tabs are not relevant: the left panel shows the
+  // chat history instead.
+  const chatOnly = state.viewMode === 'chat';
   const width = useViewWidth();
   const full = width >= SIDEBAR_FULL_MIN_WIDTH;
   const hoverTimer = useRef<number | undefined>(undefined);
@@ -569,8 +477,8 @@ export function Sidebar({
         display: 'flex',
         flexDirection: 'column',
         boxSizing: 'border-box',
-        background: '#e8eaed',
-        borderRight: '1px solid #d0d0d0',
+        // Same colour as the rest of the frame, so it reads as part of it.
+        background: FRAME_COLOR,
         // A shadow shows it floating over the page (when it is open but not pinned).
         boxShadow:
           full && !state.sidebarPinned
@@ -580,7 +488,17 @@ export function Sidebar({
         overflow: 'hidden',
       }}
     >
-      {full ? (
+      {chatOnly ? (
+        full ? (
+          <ChatList
+            chats={state.chats}
+            renameRequest={chatRenameRequest}
+            onRenameHandled={onChatRenameHandled}
+          />
+        ) : (
+          <ChatStrip chats={state.chats} />
+        )
+      ) : full ? (
         <FullSidebar
           state={state}
           renameRequest={renameRequest}
@@ -589,7 +507,14 @@ export function Sidebar({
       ) : (
         <Strip state={state} />
       )}
-      <ResizeHandle />
+      <ResizeHandle
+        kind="sidebar"
+        axis="x"
+        grows={1}
+        measure={() => window.innerWidth}
+        title="Drag to resize. Drag all the way left to collapse."
+        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 8 }}
+      />
     </nav>
   );
 }

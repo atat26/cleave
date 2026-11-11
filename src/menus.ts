@@ -2,6 +2,7 @@
 // describes the menus; the actions themselves live in tabs.ts.
 import { Menu } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
+import type { ChatsState } from './chats';
 import * as model from './model';
 import type { SavedState, SpaceColor } from './model';
 
@@ -14,6 +15,13 @@ export interface MenuActions {
   setSpaceCollapsed: (spaceId: number, collapsed: boolean) => void;
   ungroupSpace: (spaceId: number) => void;
   deleteSpace: (spaceId: number) => void;
+}
+
+export interface ChatMenuActions {
+  selectChat: (chatId: number) => void;
+  newChat: () => void;
+  renameChat: (chatId: number) => void;
+  deleteChat: (chatId: number) => void;
 }
 
 // In Windows menus "&" marks a keyboard shortcut letter, so a literal "&" in a
@@ -101,5 +109,34 @@ export function spaceMenu(
           : 'Delete Space',
       click: () => actions.deleteSpace(spaceId),
     },
+  ]);
+}
+
+// The right-click menu for one chat in the chat list.
+export function chatRowMenu(chatId: number, actions: ChatMenuActions): Menu {
+  return Menu.buildFromTemplate([
+    { label: 'Rename chat', click: () => actions.renameChat(chatId) },
+    { label: 'Delete chat', click: () => actions.deleteChat(chatId) },
+  ]);
+}
+
+// The menu for the chat's title button: switch between conversations (newest
+// first), start a new one, rename or delete the current one.
+export function chatMenu(chats: ChatsState, actions: ChatMenuActions): Menu {
+  const items: MenuItemConstructorOptions[] = [...chats.conversations]
+    .reverse()
+    .map((chat) => ({
+      label: label(chat.title),
+      type: 'radio' as const,
+      checked: chat.id === chats.activeId,
+      click: () => actions.selectChat(chat.id),
+    }));
+
+  return Menu.buildFromTemplate([
+    ...items,
+    { type: 'separator' },
+    { label: 'New chat', click: () => actions.newChat() },
+    { label: 'Rename chat', click: () => actions.renameChat(chats.activeId) },
+    { label: 'Delete chat', click: () => actions.deleteChat(chats.activeId) },
   ]);
 }

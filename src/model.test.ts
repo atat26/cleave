@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  CHAT_DEFAULT_HEIGHT,
+  CHAT_MAX_HEIGHT,
+  CHAT_MIN_HEIGHT,
+  isPanelRelevant,
+  PANEL_DEFAULT_WIDTH,
+  PANEL_MAX_WIDTH,
+  PANEL_MIN_WIDTH,
+  setChatExpanded,
+  setChatHeight,
+  setPanelWidth,
+  setRightPanel,
+  setViewMode,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -266,6 +278,134 @@ test('sidebar width is clamped, remembered, and validated on load', () => {
     SIDEBAR_DEFAULT_WIDTH,
   );
   assert.equal(parseState({}).settings.sidebarWidth, SIDEBAR_DEFAULT_WIDTH);
+});
+
+test('chat and right-panel settings have defaults, clamps and validation', () => {
+  const state = defaultState();
+  assert.equal(state.settings.chatExpanded, false);
+  assert.equal(state.settings.chatHeight, CHAT_DEFAULT_HEIGHT);
+  assert.equal(state.settings.rightPanel, null);
+  assert.equal(state.settings.panelWidth, PANEL_DEFAULT_WIDTH);
+
+  assert.equal(setChatExpanded(state, true).settings.chatExpanded, true);
+  assert.equal(setChatHeight(state, 400).settings.chatHeight, 400);
+  assert.equal(setChatHeight(state, 1).settings.chatHeight, CHAT_MIN_HEIGHT);
+  assert.equal(setChatHeight(state, 1e9).settings.chatHeight, CHAT_MAX_HEIGHT);
+  assert.equal(setChatHeight(state, Number.NaN), state);
+
+  assert.equal(setPanelWidth(state, 400).settings.panelWidth, 400);
+  assert.equal(setPanelWidth(state, 1).settings.panelWidth, PANEL_MIN_WIDTH);
+  assert.equal(setPanelWidth(state, 1e9).settings.panelWidth, PANEL_MAX_WIDTH);
+  assert.equal(setPanelWidth(state, Number.NaN), state);
+
+  assert.equal(
+    setRightPanel(state, 'settings').settings.rightPanel,
+    'settings',
+  );
+  assert.equal(
+    setRightPanel(setRightPanel(state, 'skills'), null).settings.rightPanel,
+    null,
+  );
+  // An unknown panel (e.g. from a bad message) is refused.
+  assert.equal(setRightPanel(state, 'plaid' as never), state);
+});
+
+test('rail buttons follow the view: chat ones with the chat, web ones with the page', () => {
+  // Skills belongs to the chat, Extensions to the web page, Settings to both.
+  assert.deepEqual(
+    (['skills', 'extensions', 'settings'] as const).map((p) =>
+      isPanelRelevant(p, 'both'),
+    ),
+    [true, true, true],
+  );
+  assert.deepEqual(
+    (['skills', 'extensions', 'settings'] as const).map((p) =>
+      isPanelRelevant(p, 'chat'),
+    ),
+    [true, false, true],
+  );
+  assert.deepEqual(
+    (['skills', 'extensions', 'settings'] as const).map((p) =>
+      isPanelRelevant(p, 'page'),
+    ),
+    [false, true, true],
+  );
+});
+
+test('a panel that does not belong in the view cannot open, and closes on switch', () => {
+  const state = defaultState(); // view: both
+  // Chat-only: Extensions is refused, Skills is allowed.
+  const chatOnly = setViewMode(state, 'chat');
+  assert.equal(setRightPanel(chatOnly, 'extensions'), chatOnly);
+  assert.equal(setRightPanel(chatOnly, 'skills').settings.rightPanel, 'skills');
+  // Open Extensions, then close the page: Extensions goes away with it...
+  const withExtensions = setRightPanel(state, 'extensions');
+  assert.equal(setViewMode(withExtensions, 'chat').settings.rightPanel, null);
+  // ...but Settings stays in every view.
+  const withSettings = setRightPanel(state, 'settings');
+  assert.equal(
+    setViewMode(withSettings, 'chat').settings.rightPanel,
+    'settings',
+  );
+  assert.equal(
+    setViewMode(withSettings, 'page').settings.rightPanel,
+    'settings',
+  );
+  // A saved file that disagrees with itself is repaired on load.
+  const loaded = parseState({
+    settings: { viewMode: 'chat', rightPanel: 'extensions' },
+  });
+  assert.equal(loaded.settings.rightPanel, null);
+});
+
+test('the view mode (page, chat, or both) is validated and defaults to both', () => {
+  const state = defaultState();
+  assert.equal(state.settings.viewMode, 'both');
+  assert.equal(setViewMode(state, 'chat').settings.viewMode, 'chat');
+  assert.equal(setViewMode(state, 'page').settings.viewMode, 'page');
+  assert.equal(setViewMode(state, 'plaid' as never), state);
+  assert.equal(
+    parseState({ settings: { viewMode: 'chat' } }).settings.viewMode,
+    'chat',
+  );
+  assert.equal(
+    parseState({ settings: { viewMode: 'hacks' } }).settings.viewMode,
+    'both',
+  );
+  assert.equal(parseState({}).settings.viewMode, 'both');
+});
+
+test('chat and panel settings are validated when loading a saved file', () => {
+  const loaded = parseState({
+    settings: {
+      chatExpanded: 'yes',
+      chatHeight: 'tall',
+      rightPanel: 'hacks',
+      panelWidth: -50,
+    },
+  });
+  assert.equal(loaded.settings.chatExpanded, false);
+  assert.equal(loaded.settings.chatHeight, CHAT_DEFAULT_HEIGHT);
+  assert.equal(loaded.settings.rightPanel, null);
+  assert.equal(loaded.settings.panelWidth, PANEL_MIN_WIDTH);
+
+  const good = parseState({
+    settings: {
+      chatExpanded: true,
+      chatHeight: 500,
+      rightPanel: 'settings',
+      panelWidth: 420,
+    },
+  });
+  assert.deepEqual(
+    [
+      good.settings.chatExpanded,
+      good.settings.chatHeight,
+      good.settings.rightPanel,
+      good.settings.panelWidth,
+    ],
+    [true, 500, 'settings', 420],
+  );
 });
 
 test('setActive ignores things that do not exist', () => {

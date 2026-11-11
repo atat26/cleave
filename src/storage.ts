@@ -1,59 +1,73 @@
-// Reading and writing spaces.json. Uses only Node's file system (no Electron),
-// so it can be tested on its own. The file location is passed in.
+// Reading and writing the app's save files (spaces.json, chats.json). Uses only
+// Node's file system (no Electron), so it can be tested on its own. The file
+// location is passed in. Every file is loaded the same careful way: whatever is
+// on disk is untrusted data and goes through a `parse` function first.
 import { mkdirSync, promises as fs, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { parseChats } from './chats.ts';
+import type { ChatsState } from './chats.ts';
 import { defaultState, parseState } from './model.ts';
 import type { SavedState } from './model.ts';
 
-// Load the saved state. A missing file gives a fresh default state. A file that
-// is not valid JSON is moved aside (to "<file>.corrupt") so it is not lost, and
-// we start fresh. This never throws.
-export async function loadState(file: string): Promise<SavedState> {
+// Load a save file. A missing file gives `fresh()`. A file that is not valid
+// JSON is moved aside (to "<file>.corrupt") so it is not lost, and we start
+// fresh. Valid JSON goes through `parse`, which repairs anything wrong. This
+// never throws.
+export async function loadJson<T>(
+  file: string,
+  parse: (raw: unknown) => T,
+  fresh: () => T,
+): Promise<T> {
   let text: string;
   try {
     text = await fs.readFile(file, 'utf8');
   } catch {
-    return defaultState();
+    return fresh();
   }
   try {
-    return parseState(JSON.parse(text));
+    return parse(JSON.parse(text));
   } catch {
     try {
       await fs.rename(file, `${file}.corrupt`);
     } catch {
       // Best effort only.
     }
-    return defaultState();
+    return fresh();
   }
 }
 
 // Save atomically: write a temporary file, then rename it over the real one,
-// so a crash in the middle can never leave a half-written spaces.json.
-export async function saveState(
-  file: string,
-  state: SavedState,
-): Promise<void> {
+// so a crash in the middle can never leave a half-written file.
+export async function saveJson(file: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.tmp`;
-  await fs.writeFile(temp, JSON.stringify(state, null, 2), 'utf8');
+  await fs.writeFile(temp, JSON.stringify(data, null, 2), 'utf8');
   await fs.rename(temp, file);
 }
 
-// Same as saveState, but blocking.
-export function saveStateSync(file: string, state: SavedState): void {
+// Same as saveJson, but blocking.
+export function saveJsonSync(file: string, data: unknown): void {
   mkdirSync(path.dirname(file), { recursive: true });
   const temp = `${file}.tmp`;
-  writeFileSync(temp, JSON.stringify(state, null, 2), 'utf8');
+  writeFileSync(temp, JSON.stringify(data, null, 2), 'utf8');
   renameSync(temp, file);
 }
 
+// The two save files:
+export const loadState = (file: string): Promise<SavedState> =>
+  loadJson(file, parseState, defaultState);
+export const saveState = saveJson;
+export const saveStateSync = saveJsonSync;
+export const loadChats = (file: string): Promise<ChatsState> =>
+  loadJson(
+    file,
+    (raw) => parseChats(raw),
+    () => parseChats(null),
+  );
+
 // Saves a little after the last change, so a burst of changes is one write.
 // flush() writes right away (use it when the app is quitting).
-export function createSaver(
-  file: string,
-  getState: () => SavedState,
-  delayMs = 500,
-) {
+export function createSaver<T>(file: string, getData: () => T, delayMs = 500) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let dirty = false;
   let writing: Promise<void> = Promise.resolve();
@@ -62,9 +76,9 @@ export function createSaver(
     timer = null;
     if (!dirty) return writing;
     dirty = false;
-    const state = getState();
+    const data = getData();
     // Chain writes so two never overlap.
-    writing = writing.then(() => saveState(file, state)).catch(() => undefined);
+    writing = writing.then(() => saveJson(file, data)).catch(() => undefined);
     return writing;
   };
 
@@ -85,7 +99,7 @@ export function createSaver(
       timer = null;
       if (!dirty) return;
       dirty = false;
-      saveStateSync(file, getState());
+      saveJsonSync(file, getData());
     },
   };
 }
