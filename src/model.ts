@@ -54,6 +54,7 @@ export interface SavedState {
 export const RIGHT_PANELS = [
   'skills',
   'tools',
+  'artifacts',
   'extensions',
   'settings',
 ] as const;
@@ -75,6 +76,7 @@ export type PanelContext = 'chat' | 'web' | 'always';
 export const PANEL_CONTEXT: Record<RightPanel, PanelContext> = {
   skills: 'chat',
   tools: 'chat',
+  artifacts: 'always',
   extensions: 'web',
   settings: 'always',
 };

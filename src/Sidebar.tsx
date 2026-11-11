@@ -115,6 +115,8 @@ function SpaceGroup({
   onRenameHandled: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // The mouse is over the title row (shows the rename pencil).
+  const [hover, setHover] = useState(false);
 
   useEffect(() => {
     if (renameRequest === space.id) {
@@ -141,6 +143,8 @@ function SpaceGroup({
     <div style={{ marginTop: 8 }}>
       <div
         onContextMenu={openMenu}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -190,6 +194,24 @@ function SpaceGroup({
           >
             {space.name}
           </span>
+        )}
+        {!editing && (
+          <button
+            type="button"
+            aria-label={`Rename ${space.name}`}
+            title="Rename"
+            onClick={() => setEditing(true)}
+            onFocus={() => setHover(true)}
+            onBlur={() => setHover(false)}
+            style={{
+              ...iconButtonStyle,
+              width: 18,
+              fontSize: 11,
+              opacity: hover ? 1 : 0,
+            }}
+          >
+            ✎
+          </button>
         )}
         <span style={{ flex: 1, fontSize: 11, color: '#5f6368' }}>
           {space.collapsed ? ` ${tabs.length}` : ''}

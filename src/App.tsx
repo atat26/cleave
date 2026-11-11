@@ -129,7 +129,13 @@ export function App() {
           onRenameHandled={clearChatRenameRequest}
         />
       )}
-      {panelVisible && shownPanel !== null && <RightPanel panel={shownPanel} />}
+      {panelVisible && shownPanel !== null && (
+        <RightPanel
+          panel={shownPanel}
+          artifacts={state.artifacts}
+          spaces={state.spaces}
+        />
+      )}
       <Rail open={state.rightPanel} viewMode={state.viewMode} />
     </>
   );

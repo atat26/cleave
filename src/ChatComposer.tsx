@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
-import { AddPageButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
+import { AddMenuButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
 import type { ChatInfo, ChatRef, LlmInfo, SpaceInfo, TabInfo } from './types';
 
@@ -97,7 +97,7 @@ function readBox(root: HTMLElement): Typed {
 // The box you type in, with the model chip and the Send / Stop button.
 //
 //   Enter sends, Shift+Enter adds a new line, Esc stops a reply being written.
-//   Type "@" (or press "+ Add page") to attach a Space or tab to the chat.
+//   Type "@" (or press "+" then "Add page") to attach a Space or tab to the chat.
 //
 // In the one-row (compact) chat bar, `before` and `after` hold the chat switcher
 // and the expand / close buttons, so everything fits on one line.
@@ -398,7 +398,7 @@ export function ChatComposer({
       {!compact && (
         <>
           <LinkChips chatId={chat.id} refs={refs} tabs={tabs} spaces={spaces} />
-          <AddPageButton onClick={openFromButton} />
+          <AddMenuButton onAddPage={openFromButton} />
         </>
       )}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>

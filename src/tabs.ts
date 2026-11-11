@@ -27,6 +27,8 @@ import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_SNAP_WIDTH,
 } from './layout';
+import * as artifactsModel from './artifacts';
+import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
 import type {
@@ -56,7 +58,13 @@ import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
 import type { SearchContext } from './search';
-import { createSaver, loadChats, loadJson, loadState } from './storage';
+import {
+  createSaver,
+  loadArtifacts,
+  loadChats,
+  loadJson,
+  loadState,
+} from './storage';
 import { isApprovalLevel } from './toolPolicy';
 import {
   defaultToolSettings,
@@ -103,6 +111,9 @@ export async function createTabs(
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
   let chats: ChatsState = await loadChats(chatsFile);
+  // Documents made inside the browser (not uploads).
+  const artifactsFile = path.join(app.getPath('userData'), 'artifacts.json');
+  let artifacts: ArtifactsState = await loadArtifacts(artifactsFile);
   // How much each tool may do without asking (the Tools panel's choices).
   const toolsFile = path.join(app.getPath('userData'), 'tools.json');
   let toolSettings = await loadJson(
@@ -121,6 +132,7 @@ export async function createTabs(
   const views = new Map<number, WebContentsView>();
   const saver = createSaver(file, () => state);
   const chatsSaver = createSaver(chatsFile, () => chats);
+  const artifactsSaver = createSaver(artifactsFile, () => artifacts);
 
   // The AI connection (key, model, pins, system prompt) and the chat service that
   // talks to the model. Both are set up a little later than the window.
@@ -301,6 +313,14 @@ export async function createTabs(
         name,
         color,
         collapsed,
+      })),
+      artifacts: artifacts.artifacts.map((a) => ({
+        id: a.id,
+        title: a.title,
+        kind: a.kind,
+        spaceId: a.spaceId,
+        updatedAt: a.updatedAt,
+        size: a.content.length,
       })),
       tabs: state.tabs.map((tab) => ({
         id: tab.id,
@@ -618,6 +638,29 @@ export async function createTabs(
     }
   };
 
+  const commitArtifacts = (next: ArtifactsState) => {
+    if (next === artifacts) return;
+    artifacts = next;
+    artifactsSaver.schedule();
+    sendState();
+  };
+
+  const deleteArtifact = async (id: number) => {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found) return;
+    if (
+      !(await confirm({
+        title: 'Delete artifact',
+        message: `Delete “${found.title}”?`,
+        detail: 'It cannot be undone.',
+        button: 'Delete artifact',
+      }))
+    ) {
+      return;
+    }
+    commitArtifacts(artifactsModel.deleteArtifact(artifacts, id));
+  };
+
   const deleteSpace = async (id: number) => {
     const space = model.findSpace(state, id);
     if (!space) return;
@@ -637,6 +680,8 @@ export async function createTabs(
     // The Space may have changed while the dialog was open.
     syncLinkSnapshots(); // Chats' links to this Space and its tabs remember them.
     const result = model.deleteSpace(state, id);
+    // Its artifacts are kept, just no longer in a Space.
+    commitArtifacts(artifactsModel.releaseSpace(artifacts, id));
     for (const tabId of result.removedTabIds) destroyView(tabId);
     commitAndShow(withSomethingActive(result.state));
   };
@@ -1112,6 +1157,34 @@ export async function createTabs(
         commit(model.setSpaceCollapsed(state, id, collapsed));
       }
     },
+    'artifact:rename': (id, title) => {
+      if (!isId(id) || typeof title !== 'string') return;
+      const result = artifactsModel.updateArtifact(
+        artifacts,
+        id,
+        { title },
+        Date.now(),
+      );
+      if (result.ok) commitArtifacts(result.state);
+    },
+    'artifact:move': (id, spaceId) => {
+      if (!isId(id)) return;
+      if (
+        spaceId !== null &&
+        !(isId(spaceId) && model.findSpace(state, spaceId))
+      )
+        return;
+      const result = artifactsModel.updateArtifact(
+        artifacts,
+        id,
+        { spaceId },
+        Date.now(),
+      );
+      if (result.ok) commitArtifacts(result.state);
+    },
+    'artifact:delete': (id) => {
+      if (isId(id)) void deleteArtifact(id);
+    },
     'space:rename': (id, name) => {
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
@@ -1142,6 +1215,12 @@ export async function createTabs(
     },
     'panel:open': (panel) => {
       if (panel === 'settings') openSettings();
+      else if (panel === 'artifacts') {
+        state = model.setRightPanel(state, 'artifacts');
+        saver.schedule();
+        applyLayout(true);
+        sendState();
+      }
     },
     'panel:toggle': (panel) => {
       if (!model.RIGHT_PANELS.includes(panel as model.RightPanel)) return;
@@ -1325,6 +1404,29 @@ export async function createTabs(
     }
     return describeTools(toolSettings);
   });
+  ipcMain.handle(
+    'artifact:create',
+    (event, kind: unknown, title: unknown, spaceId: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (
+        spaceId !== null &&
+        !(isId(spaceId) && model.findSpace(state, spaceId))
+      )
+        return null;
+      const result = artifactsModel.createArtifact(
+        artifacts,
+        {
+          kind: typeof kind === 'string' ? kind : '',
+          title: typeof title === 'string' ? title : '',
+          spaceId: spaceId as number | null,
+        },
+        Date.now(),
+      );
+      if (!result.ok) return null;
+      commitArtifacts(result.state);
+      return result.artifact.id;
+    },
+  );
   ipcMain.handle('tools:reset', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     toolSettings = defaultToolSettings();
@@ -1400,6 +1502,7 @@ export async function createTabs(
     saver.flushSync();
     chatsSaver.flushSync();
     toolsSaver.flushSync();
+    artifactsSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();
@@ -1409,6 +1512,7 @@ export async function createTabs(
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
+    ipcMain.removeHandler('artifact:create');
     clearInterval(watchdog);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);

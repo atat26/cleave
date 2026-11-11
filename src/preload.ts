@@ -26,6 +26,11 @@ const browserApi: BrowserApi = {
   toolsList: () => ipcRenderer.invoke('tools:list'),
   toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
   toolsReset: () => ipcRenderer.invoke('tools:reset'),
+  artifactCreate: (kind, title, spaceId) =>
+    ipcRenderer.invoke('artifact:create', kind, title, spaceId),
+  artifactRename: (id, title) => ipcRenderer.send('artifact:rename', id, title),
+  artifactMove: (id, spaceId) => ipcRenderer.send('artifact:move', id, spaceId),
+  artifactDelete: (id) => ipcRenderer.send('artifact:delete', id),
   openUrl: (url) => ipcRenderer.send('ui:open-url', url),
   uiReady: () => ipcRenderer.send('ui:ready'),
   hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
@@ -66,6 +71,7 @@ const browserApi: BrowserApi = {
   chatReopenLink: (chatId, tabId) =>
     ipcRenderer.send('chats:reopen-link', chatId, tabId),
   showModelMenu: (chatId) => ipcRenderer.send('chat:model-menu', chatId),
+  openArtifacts: () => ipcRenderer.send('panel:open', 'artifacts'),
   openSettings: () => ipcRenderer.send('panel:open', 'settings'),
   onChatMessage: (callback) => {
     const listener = (

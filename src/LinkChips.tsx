@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { resolveLink } from './chatLinks';
 import type { Workspace } from './chatLinks';
@@ -264,25 +265,60 @@ export function MentionToken({
 
 // "+ Add page": opens the same list as typing "@", but only attaches the page
 // (it adds nothing to your text).
-export function AddPageButton({ onClick }: { onClick: () => void }) {
+// A "+" that opens two choices in place (not a floating menu, which a web page
+// could cover): add a page, or add an artifact.
+export function AddMenuButton({ onAddPage }: { onAddPage: () => void }) {
+  const [open, setOpen] = useState(false);
+  const choice: CSSProperties = {
+    ...chipStyle,
+    padding: '3px 10px',
+    cursor: 'pointer',
+    color: '#1a73e8',
+    borderColor: '#c6dafc',
+  };
+  // Keep the text box focused, so the list's arrow keys work.
+  const keepFocus = (e: React.MouseEvent) => e.preventDefault();
   return (
-    <div style={{ margin: '0 0 6px' }}>
+    <div style={{ margin: '0 0 6px', display: 'flex', gap: 6 }}>
       <button
         type="button"
-        // Keep the text box focused, so the list's arrow keys work.
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onClick}
-        title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
-        style={{
-          ...chipStyle,
-          padding: '3px 10px',
-          cursor: 'pointer',
-          color: '#1a73e8',
-          borderColor: '#c6dafc',
-        }}
+        aria-label="Add"
+        aria-expanded={open}
+        onMouseDown={keepFocus}
+        onClick={() => setOpen(!open)}
+        title="Add a page or an artifact to the chat"
+        style={{ ...choice, padding: '3px 12px', fontWeight: 600 }}
       >
-        + Add page
+        +
       </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={() => {
+              setOpen(false);
+              onAddPage();
+            }}
+            title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
+            style={choice}
+          >
+            Add page
+          </button>
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={() => {
+              setOpen(false);
+              window.browserApi.openArtifacts();
+            }}
+            title="Open the Artifacts panel (adding one to a chat comes in a later update)"
+            style={choice}
+          >
+            Add artifact
+          </button>
+        </>
+      )}
     </div>
   );
 }

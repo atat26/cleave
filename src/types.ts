@@ -3,6 +3,7 @@ import type { ApprovalLevel } from './toolPolicy';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
+import type { ArtifactKind } from './artifacts';
 
 export type { ChatMessage, ChatRef, MessagePart, ModelInfo };
 
@@ -18,6 +19,18 @@ export interface TabInfo {
   loaded: boolean;
   // True while the assistant is working in this tab.
   working: boolean;
+}
+
+// An artifact as the UI lists it (its text stays in the app until it is opened).
+export interface ArtifactInfo {
+  id: number;
+  title: string;
+  kind: ArtifactKind;
+  // The Space it belongs to, or null for one outside every Space.
+  spaceId: number | null;
+  updatedAt: number;
+  // How many characters it holds.
+  size: number;
 }
 
 export interface SpaceInfo {
@@ -131,6 +144,7 @@ export interface UiState {
   chats: ChatsInfo;
   llm: LlmInfo;
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
@@ -192,6 +206,17 @@ export interface BrowserApi {
   toolsList: () => Promise<ToolRow[]>;
   toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
   toolsReset: () => Promise<ToolRow[]>;
+  // The Artifacts panel: make one (outside every Space when spaceId is null),
+  // rename it, move it into a Space (or null for none), or delete it (the app asks
+  // first). The list itself arrives with the rest of the state.
+  artifactCreate: (
+    kind: ArtifactKind,
+    title: string,
+    spaceId: number | null,
+  ) => Promise<number | null>;
+  artifactRename: (id: number, title: string) => void;
+  artifactMove: (id: number, spaceId: number | null) => void;
+  artifactDelete: (id: number) => void;
   // A link in a reply was clicked: open it as a new tab (web addresses only).
   openUrl: (url: string) => void;
   // Ask the app to send the current state (call once listening for it).
@@ -249,6 +274,8 @@ export interface BrowserApi {
   showModelMenu: (chatId: number) => void;
   // Open the Settings panel.
   openSettings: () => void;
+  // Open the Artifacts panel (it stays open if it already is).
+  openArtifacts: () => void;
   // Called with a chat's message whenever it is added or changes (many times a
   // second while a reply streams in). Returns an unsubscribe function.
   onChatMessage: (
