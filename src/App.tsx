@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatBar } from './ChatBar';
 import { CHAT_FULL_MIN_HEIGHT, RAIL_WIDTH } from './layout';
+import { ArtifactView } from './ArtifactView';
 import { LeadView } from './LeadView';
 import type { RightPanel as RightPanelName } from './model';
 import { Rail } from './Rail';
@@ -91,6 +92,10 @@ export function App() {
     active?.kind === 'tab'
       ? state.tabs.find((tab) => tab.id === active.id)
       : undefined;
+  const activeArtifact =
+    active?.kind === 'artifact'
+      ? state.artifactTabs.find((a) => a.id === active.id)
+      : undefined;
   const leadSpace =
     active?.kind === 'lead'
       ? state.spaces.find((space) => space.id === active.spaceId)
@@ -109,6 +114,9 @@ export function App() {
         viewMode={state.viewMode}
         chats={state.chats}
       />
+      {activeArtifact && (
+        <ArtifactView key={activeArtifact.id} tab={activeArtifact} />
+      )}
       {leadSpace && (
         <LeadView
           key={leadSpace.id}

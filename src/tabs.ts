@@ -124,6 +124,9 @@ export async function createTabs(
   const toolsSaver = createSaver(toolsFile, () => toolSettings);
   if (win.isDestroyed()) return;
 
+  // Artifact tabs only make sense for artifacts that still exist.
+  state = model.reconcileArtifactTabs(state, artifacts.artifacts);
+
   // The first time ever (or after a reset) there is nothing: start with one tab.
   if (state.active === null) {
     state = model.addTab(state, { url: NEW_TAB_URL }).state;
@@ -314,6 +317,12 @@ export async function createTabs(
         color,
         collapsed,
       })),
+      artifactTabs: state.artifactTabs.flatMap((t) => {
+        const a = artifactsModel.findArtifact(artifacts, t.artifactId);
+        return a
+          ? [{ id: a.id, title: a.title, kind: a.kind, spaceId: t.spaceId }]
+          : [];
+      }),
       artifacts: artifacts.artifacts.map((a) => ({
         id: a.id,
         title: a.title,
@@ -642,7 +651,20 @@ export async function createTabs(
     if (next === artifacts) return;
     artifacts = next;
     artifactsSaver.schedule();
-    sendState();
+    // Open tabs follow their artifacts (closed when deleted, regrouped when moved).
+    const reconciled = model.reconcileArtifactTabs(state, artifacts.artifacts);
+    if (reconciled !== state) {
+      commitAndShow(withSomethingActive(reconciled));
+    } else {
+      sendState();
+    }
+  };
+
+  // Open an artifact as a tab and show it (editing takes over the page area).
+  const openArtifact = (id: number) => {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found) return;
+    commitAndShow(revealPage(model.openArtifactTab(state, id, found.spaceId)));
   };
 
   const deleteArtifact = async (id: number) => {
@@ -1074,6 +1096,11 @@ export async function createTabs(
     if (active?.kind === 'lead') return active.spaceId;
     if (active?.kind === 'tab')
       return model.findTab(state, active.id)?.spaceId ?? null;
+    if (active?.kind === 'artifact')
+      return (
+        state.artifactTabs.find((t) => t.artifactId === active.id)?.spaceId ??
+        null
+      );
     return null;
   };
 
@@ -1094,6 +1121,11 @@ export async function createTabs(
       event.preventDefault();
       const id = activeTabId();
       if (id !== null) closeTab(id);
+      else if (state.active?.kind === 'artifact') {
+        commitAndShow(
+          withSomethingActive(model.closeArtifactTab(state, state.active.id)),
+        );
+      }
     } else if (key === 'j') {
       event.preventDefault();
       toggleChat();
@@ -1156,6 +1188,16 @@ export async function createTabs(
       if (isId(id) && typeof collapsed === 'boolean') {
         commit(model.setSpaceCollapsed(state, id, collapsed));
       }
+    },
+    'artifact:open': (id) => {
+      if (isId(id)) openArtifact(id);
+    },
+    'artifact:select': (id) => {
+      if (isId(id)) select({ kind: 'artifact', id });
+    },
+    'artifact:close': (id) => {
+      if (isId(id))
+        commitAndShow(withSomethingActive(model.closeArtifactTab(state, id)));
     },
     'artifact:rename': (id, title) => {
       if (!isId(id) || typeof title !== 'string') return;
@@ -1404,6 +1446,34 @@ export async function createTabs(
     }
     return describeTools(toolSettings);
   });
+  // The editor loads an artifact's text when it opens, and saves as you type.
+  ipcMain.handle('artifact:read', (event, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const found = isId(id)
+      ? artifactsModel.findArtifact(artifacts, id)
+      : undefined;
+    return found
+      ? {
+          id: found.id,
+          title: found.title,
+          kind: found.kind,
+          content: found.content,
+        }
+      : null;
+  });
+  ipcMain.handle('artifact:write', (event, id: unknown, content: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!isId(id) || typeof content !== 'string') return false;
+    const result = artifactsModel.updateArtifact(
+      artifacts,
+      id,
+      { content },
+      Date.now(),
+    );
+    if (!result.ok) return false;
+    commitArtifacts(result.state);
+    return true;
+  });
   ipcMain.handle(
     'artifact:create',
     (event, kind: unknown, title: unknown, spaceId: unknown) => {
@@ -1513,6 +1583,8 @@ export async function createTabs(
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
     ipcMain.removeHandler('artifact:create');
+    ipcMain.removeHandler('artifact:read');
+    ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);

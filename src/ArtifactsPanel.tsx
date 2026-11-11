@@ -49,6 +49,7 @@ function EditableTitle({
   onEdit,
   onSave,
   onCancel,
+  onOpen,
   style,
 }: {
   text: string;
@@ -57,6 +58,8 @@ function EditableTitle({
   onEdit: () => void;
   onSave: (name: string) => void;
   onCancel: () => void;
+  // When given, the title itself is a button that opens the artifact.
+  onOpen?: () => void;
   style?: CSSProperties;
 }) {
   const [hover, setHover] = useState(false);
@@ -84,7 +87,27 @@ function EditableTitle({
       onMouseLeave={() => setHover(false)}
       style={{ display: 'flex', alignItems: 'center', gap: 6, ...style }}
     >
-      <span style={{ wordBreak: 'break-word' }}>{text}</span>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          title="Open"
+          style={{
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            font: 'inherit',
+            color: 'inherit',
+            cursor: 'pointer',
+            textAlign: 'left',
+            wordBreak: 'break-word',
+          }}
+        >
+          {text}
+        </button>
+      ) : (
+        <span style={{ wordBreak: 'break-word' }}>{text}</span>
+      )}
       <button
         type="button"
         aria-label={label}
@@ -187,6 +210,7 @@ export function ArtifactsPanel({
               setRenaming(null);
             }}
             onCancel={() => setRenaming(null)}
+            onOpen={() => window.browserApi.artifactOpen(a.id)}
             style={{ fontSize: 13, fontWeight: 500 }}
           />
         </div>

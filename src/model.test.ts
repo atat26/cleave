@@ -19,11 +19,14 @@ import {
   setSidebarWidth,
   addSpace,
   addTab,
+  closeArtifactTab,
   defaultState,
   deleteSpace,
   moveTab,
   navOrder,
+  openArtifactTab,
   parseState,
+  reconcileArtifactTabs,
   removeTab,
   renameSpace,
   setActive,
@@ -412,4 +415,111 @@ test('setActive ignores things that do not exist', () => {
   const { state } = build();
   assert.equal(setActive(state, { kind: 'tab', id: 9999 }), state);
   assert.equal(setActive(state, { kind: 'lead', spaceId: 9999 }), state);
+});
+
+// ---- Artifact tabs ----------------------------------------------------------
+
+test('an artifact opens as a tab under its Space, and opening twice does not duplicate it', () => {
+  const { state, spaceId } = build();
+  const opened = openArtifactTab(state, 7, spaceId);
+  assert.deepEqual(opened.artifactTabs, [{ artifactId: 7, spaceId }]);
+  assert.deepEqual(opened.active, { kind: 'artifact', id: 7 });
+  const again = openArtifactTab(
+    setActive(opened, { kind: 'lead', spaceId }),
+    7,
+    spaceId,
+  );
+  assert.equal(again.artifactTabs.length, 1);
+  assert.deepEqual(again.active, { kind: 'artifact', id: 7 });
+  // A Space that does not exist means no Space.
+  assert.equal(openArtifactTab(state, 8, 9999).artifactTabs[0].spaceId, null);
+});
+
+test('artifact tabs sit after the web tabs of their group in the sidebar order', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(openArtifactTab(state, 1, null), 2, spaceId);
+  const order = navOrder(s);
+  const free = order.findIndex((r) => r.kind === 'artifact' && r.id === 1);
+  const lead = order.findIndex(
+    (r) => r.kind === 'lead' && r.spaceId === spaceId,
+  );
+  const inSpace = order.findIndex((r) => r.kind === 'artifact' && r.id === 2);
+  assert.ok(free < lead && lead < inSpace);
+});
+
+test('closing an artifact tab selects a neighbour and keeps other tabs', () => {
+  const { state } = build();
+  const s = openArtifactTab(openArtifactTab(state, 1, null), 2, null);
+  const closed = closeArtifactTab(s, 2);
+  assert.deepEqual(
+    closed.artifactTabs.map((t) => t.artifactId),
+    [1],
+  );
+  assert.notDeepEqual(closed.active, { kind: 'artifact', id: 2 });
+  assert.equal(closed.active !== null, true);
+  assert.equal(closeArtifactTab(closed, 99), closed);
+});
+
+test('artifact tabs follow their artifacts: gone ones close, moved ones change group', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(openArtifactTab(state, 1, null), 2, null);
+  const moved = reconcileArtifactTabs(s, [
+    { id: 1, spaceId },
+    { id: 2, spaceId: null },
+  ]);
+  assert.deepEqual(moved.artifactTabs, [
+    { artifactId: 1, spaceId },
+    { artifactId: 2, spaceId: null },
+  ]);
+  const gone = reconcileArtifactTabs(s, [{ id: 1, spaceId: null }]);
+  assert.deepEqual(
+    gone.artifactTabs.map((t) => t.artifactId),
+    [1],
+  );
+  assert.notDeepEqual(gone.active, { kind: 'artifact', id: 2 });
+  // Nothing changed: the very same state comes back.
+  assert.equal(
+    reconcileArtifactTabs(s, [
+      { id: 1, spaceId: null },
+      { id: 2, spaceId: null },
+    ]),
+    s,
+  );
+});
+
+test('deleting or ungrouping a Space keeps its artifact tabs, now outside it', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(state, 5, spaceId);
+  assert.equal(deleteSpace(s, spaceId).state.artifactTabs[0].spaceId, null);
+  assert.equal(ungroupSpace(s, spaceId).artifactTabs[0].spaceId, null);
+  assert.deepEqual(deleteSpace(s, spaceId).state.active, {
+    kind: 'artifact',
+    id: 5,
+  });
+});
+
+test('artifact tabs are saved and loaded, and bad ones are repaired', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(state, 5, spaceId);
+  assert.deepEqual(
+    parseState(JSON.parse(JSON.stringify(s))).artifactTabs,
+    s.artifactTabs,
+  );
+  assert.deepEqual(parseState(JSON.parse(JSON.stringify(s))).active, {
+    kind: 'artifact',
+    id: 5,
+  });
+  const bad = parseState({
+    ...JSON.parse(JSON.stringify(s)),
+    artifactTabs: [
+      { artifactId: 5, spaceId: 424242 },
+      { artifactId: 5 },
+      { artifactId: 'x' },
+      3,
+    ],
+    active: { kind: 'artifact', id: 77 },
+  });
+  assert.deepEqual(bad.artifactTabs, [{ artifactId: 5, spaceId: null }]);
+  assert.notDeepEqual(bad.active, { kind: 'artifact', id: 77 });
+  assert.deepEqual(parseState({}).artifactTabs, []);
 });

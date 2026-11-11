@@ -33,6 +33,22 @@ export interface ArtifactInfo {
   size: number;
 }
 
+// An artifact with its text, for the editor.
+export interface ArtifactDocument {
+  id: number;
+  title: string;
+  kind: ArtifactKind;
+  content: string;
+}
+
+// An artifact that is open as a tab.
+export interface ArtifactTabInfo {
+  id: number;
+  title: string;
+  kind: ArtifactKind;
+  spaceId: number | null;
+}
+
 export interface SpaceInfo {
   id: number;
   name: string;
@@ -145,6 +161,8 @@ export interface UiState {
   llm: LlmInfo;
   spaces: SpaceInfo[];
   artifacts: ArtifactInfo[];
+  // The artifacts that are open as tabs, in the order they were opened.
+  artifactTabs: ArtifactTabInfo[];
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
@@ -214,6 +232,14 @@ export interface BrowserApi {
     title: string,
     spaceId: number | null,
   ) => Promise<number | null>;
+  // Open an artifact as a tab (or switch to it), switch to an open one, or close
+  // its tab (the artifact is kept).
+  artifactOpen: (id: number) => void;
+  artifactSelect: (id: number) => void;
+  artifactClose: (id: number) => void;
+  // The editor: load an artifact's text, and save changes to it.
+  artifactRead: (id: number) => Promise<ArtifactDocument | null>;
+  artifactWrite: (id: number, content: string) => Promise<boolean>;
   artifactRename: (id: number, title: string) => void;
   artifactMove: (id: number, spaceId: number | null) => void;
   artifactDelete: (id: number) => void;

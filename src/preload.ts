@@ -28,6 +28,12 @@ const browserApi: BrowserApi = {
   toolsReset: () => ipcRenderer.invoke('tools:reset'),
   artifactCreate: (kind, title, spaceId) =>
     ipcRenderer.invoke('artifact:create', kind, title, spaceId),
+  artifactOpen: (id) => ipcRenderer.send('artifact:open', id),
+  artifactSelect: (id) => ipcRenderer.send('artifact:select', id),
+  artifactClose: (id) => ipcRenderer.send('artifact:close', id),
+  artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
+  artifactWrite: (id, content) =>
+    ipcRenderer.invoke('artifact:write', id, content),
   artifactRename: (id, title) => ipcRenderer.send('artifact:rename', id, title),
   artifactMove: (id, spaceId) => ipcRenderer.send('artifact:move', id, spaceId),
   artifactDelete: (id) => ipcRenderer.send('artifact:delete', id),
