@@ -53,6 +53,25 @@ const showTabMenu = (tab: TabInfo) => (event: ReactMouseEvent) => {
 // Full-width sidebar
 // ---------------------------------------------------------------------------
 
+// A small blue dot: the assistant is working in this tab right now.
+function WorkingDot() {
+  return (
+    <span
+      role="img"
+      aria-label="The assistant is working in this tab"
+      title="The assistant is working in this tab"
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        background: '#1a73e8',
+        boxShadow: '0 0 0 3px rgba(26, 115, 232, 0.25)',
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
   return (
     <div
@@ -63,6 +82,7 @@ function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
     >
       <Favicon tab={tab} />
       <span style={ellipsis}>{labelFor(tab)}</span>
+      {tab.working && <WorkingDot />}
       <button
         type="button"
         aria-label={`Close ${labelFor(tab)}`}
@@ -299,9 +319,18 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
       onClick={() => window.browserApi.selectTab(tab.id)}
       onContextMenu={showTabMenu(tab)}
       title={labelFor(tab)}
-      style={{ ...stripButton(active), opacity: tab.loaded ? 1 : 0.6 }}
+      style={{
+        ...stripButton(active),
+        opacity: tab.loaded ? 1 : 0.6,
+        position: 'relative',
+      }}
     >
       <Favicon tab={tab} />
+      {tab.working && (
+        <span style={{ position: 'absolute', top: 2, right: 2 }}>
+          <WorkingDot />
+        </span>
+      )}
     </div>
   );
 }

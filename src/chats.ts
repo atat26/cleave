@@ -52,6 +52,8 @@ export interface ChatMessage {
 export type MessagePart =
   | { type: 'thinking'; text: string }
   | { type: 'text'; text: string }
+  // Buttons the assistant offered: clicking one fills your message box.
+  | { type: 'choices'; question: string; options: string[] }
   | {
       type: 'tool';
       id: number;
@@ -62,8 +64,13 @@ export type MessagePart =
       arguments: string;
       // Lines written by the app: what it is doing, and how it ended.
       label: string;
-      status: 'running' | 'ok' | 'error';
+      // "waiting" is waiting for you to approve it; "declined" is when you said no.
+      status: 'waiting' | 'running' | 'ok' | 'error' | 'declined';
       outcome: string;
+      // For something that needed your approval: what the approval card said, and
+      // whether it was one of the kinds that always asks.
+      ask: string;
+      risky: boolean;
     };
 
 export interface Mention extends ChatRef {
@@ -221,6 +228,14 @@ function parseParts(raw: unknown): MessagePart[] {
       out.push({ type: 'thinking', text: r.text.slice(0, MAX_REASONING) });
     } else if (r.type === 'text' && typeof r.text === 'string') {
       out.push({ type: 'text', text: r.text.slice(0, MAX_CONTENT) });
+    } else if (r.type === 'choices' && Array.isArray(r.options)) {
+      const options = r.options
+        .filter((o): o is string => typeof o === 'string' && o !== '')
+        .map((o) => o.slice(0, 120))
+        .slice(0, 6);
+      if (options.length >= 2) {
+        out.push({ type: 'choices', question: str(r.question, 200), options });
+      }
     } else if (r.type === 'tool' && isId(r.id)) {
       out.push({
         type: 'tool',
@@ -229,9 +244,17 @@ function parseParts(raw: unknown): MessagePart[] {
         name: str(r.name, 100),
         arguments: str(r.arguments, MAX_TOOL_ARGUMENTS),
         label: str(r.label, MAX_STEP_LABEL),
-        // A call still "running" when the app closed did not finish.
-        status: r.status === 'ok' ? 'ok' : 'error',
+        // A call still "running" (or waiting for approval) when the app closed
+        // did not happen.
+        status:
+          r.status === 'ok'
+            ? 'ok'
+            : r.status === 'declined'
+              ? 'declined'
+              : 'error',
         outcome: str(r.outcome, MAX_STEP_LABEL),
+        ask: str(r.ask, 400),
+        risky: r.risky === true,
       });
     }
   }
@@ -257,6 +280,8 @@ function partsFromOldReply(m: Record<string, unknown>): MessagePart[] {
         label: str(r.label, MAX_STEP_LABEL),
         status: r.status === 'ok' ? 'ok' : 'error',
         outcome: '',
+        ask: '',
+        risky: false,
       });
     }
   }
@@ -513,6 +538,65 @@ export function autoTitle(text: string): string {
     : tidy;
 }
 
+// Start a new chat from a message of yours: a copy of the conversation up to and
+// including that message and its reply (with the same links and model), which
+// becomes the active chat. Nothing is asked of the model: you carry on from
+// there. The original chat is left exactly as it was.
+export function branchConversation(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  now = Date.now(),
+): { state: ChatsState; id: number } | null {
+  const chat = findConversation(state, chatId);
+  const index =
+    chat?.messages.findIndex((m) => m.id === messageId && m.role === 'user') ??
+    -1;
+  if (!chat || index < 0 || state.conversations.length >= MAX_CONVERSATIONS) {
+    return null;
+  }
+  const id = state.nextId;
+  const copy: Conversation = {
+    ...chat,
+    id,
+    title: cleanTitle(`${chat.title} (branch)`, DEFAULT_CHAT_TITLE),
+    createdAt: now,
+    updatedAt: now,
+    refs: chat.refs.map((r) => ({ ...r })),
+    messages: chat.messages
+      .slice(
+        0,
+        chat.messages[index + 1]?.role === 'assistant' ? index + 2 : index + 1,
+      )
+      .map((m) => ({ ...m })),
+  };
+  return {
+    id,
+    state: {
+      ...state,
+      conversations: [...state.conversations, copy],
+      activeId: id,
+      nextId: id + 1,
+    },
+  };
+}
+
+// Remove every message after the given one (which stays). Used when a past
+// prompt is retried: the conversation carries on from there.
+export function truncateAfter(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+): ChatsState {
+  const chat = findConversation(state, chatId);
+  const index = chat?.messages.findIndex((m) => m.id === messageId) ?? -1;
+  if (!chat || index < 0 || index === chat.messages.length - 1) return state;
+  return update(state, chatId, (c) => ({
+    ...c,
+    messages: c.messages.slice(0, index + 1),
+  }));
+}
+
 // Add your message to a chat. Empty text (or text over the limit) is refused.
 // The first message in a chat that still has the default name also names it.
 export function addUserMessage(
@@ -676,7 +760,8 @@ export function finishMessage(
         result.status === 'error' ? (result.errorKind ?? 'unknown') : null,
       // Nothing is still running once the reply is over (for example Stop).
       parts: m.parts.map((part) =>
-        part.type === 'tool' && part.status === 'running'
+        part.type === 'tool' &&
+        (part.status === 'running' || part.status === 'waiting')
           ? { ...part, status: 'error' }
           : part,
       ),
@@ -690,7 +775,15 @@ export function addToolPart(
   state: ChatsState,
   chatId: number,
   messageId: number,
-  call: { callId: string; name: string; arguments: string; label: string },
+  call: {
+    callId: string;
+    name: string;
+    arguments: string;
+    label: string;
+    // If it needs your approval: the card's words, and whether it always asks.
+    ask?: string;
+    risky?: boolean;
+  },
 ): { state: ChatsState; partId: number } | null {
   const message = findMessage(state, chatId, messageId);
   if (!message || message.parts.length >= MAX_PARTS) return null;
@@ -712,12 +805,55 @@ export function addToolPart(
           name: call.name.slice(0, 100),
           arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS),
           label: call.label.slice(0, MAX_STEP_LABEL),
-          status: 'running',
+          status: call.ask ? 'waiting' : 'running',
           outcome: '',
+          ask: (call.ask ?? '').slice(0, 400),
+          risky: call.risky === true,
         },
       ],
     })),
   };
+}
+
+// Add the buttons the assistant offered, in their place in the reply.
+export function addChoicesPart(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  choices: { question: string; options: string[] },
+): ChatsState {
+  const message = findMessage(state, chatId, messageId);
+  if (!message || message.parts.length >= MAX_PARTS) return state;
+  return updateMessage(state, chatId, messageId, (m) => ({
+    ...m,
+    parts: [
+      ...m.parts,
+      {
+        type: 'choices',
+        question: choices.question.slice(0, 200),
+        options: choices.options.slice(0, 6).map((o) => o.slice(0, 120)),
+      },
+    ],
+  }));
+}
+
+// Change a tool call's status (for example from waiting for approval to running).
+export function setToolStatus(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  partId: number,
+  status: 'waiting' | 'running',
+  outcome?: string,
+): ChatsState {
+  return updateMessage(state, chatId, messageId, (m) => ({
+    ...m,
+    parts: m.parts.map((p) =>
+      p.type === 'tool' && p.id === partId
+        ? { ...p, status, outcome: outcome ?? p.outcome }
+        : p,
+    ),
+  }));
 }
 
 // Record how a tool call ended, with its final wording and a short note.
@@ -726,7 +862,12 @@ export function finishToolPart(
   chatId: number,
   messageId: number,
   partId: number,
-  result: { ok: boolean; label?: string; outcome?: string },
+  result: {
+    ok: boolean;
+    declined?: boolean;
+    label?: string;
+    outcome?: string;
+  },
 ): ChatsState {
   return updateMessage(state, chatId, messageId, (m) => ({
     ...m,
@@ -734,7 +875,7 @@ export function finishToolPart(
       p.type === 'tool' && p.id === partId
         ? {
             ...p,
-            status: result.ok ? 'ok' : 'error',
+            status: result.declined ? 'declined' : result.ok ? 'ok' : 'error',
             label:
               result.label === undefined
                 ? p.label

@@ -43,9 +43,17 @@ export function useChatMessages(chatId: number): ChatMessage[] {
       if (event.chatId === chatId)
         setMessages((current) => upsert(current, event.message));
     });
+    // Some messages were removed (a past prompt was retried): load them again.
+    const unsubscribeReset = window.browserApi.onChatReset((resetId) => {
+      if (resetId !== chatId) return;
+      void window.browserApi.chatMessages(chatId).then((loaded) => {
+        if (!cancelled) setMessages(loaded);
+      });
+    });
     return () => {
       cancelled = true;
       unsubscribe();
+      unsubscribeReset();
     };
   }, [chatId]);
 
@@ -148,6 +156,72 @@ function FailedReply({
   );
 }
 
+// Buttons the assistant offered. Clicking one puts its text in your message box
+// (so you can send it as it is, or change it first). They are drawn here from plain
+// text: the assistant cannot send anything that runs.
+function ChoiceButtons({
+  chatId,
+  question,
+  options,
+  busy,
+}: {
+  chatId: number;
+  question: string;
+  options: string[];
+  // A reply is being written, so nothing can be sent right now.
+  busy: boolean;
+}) {
+  const [note, setNote] = useState('');
+  const choose = async (option: string) => {
+    setNote('');
+    const result = await window.browserApi.chatSend(chatId, option, []);
+    if (!result.ok) setNote(result.error);
+  };
+  return (
+    <div style={{ margin: '4px 0 8px' }}>
+      {question !== '' && (
+        <div style={{ ...muted, margin: '0 0 4px' }}>{question}</div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            disabled={busy}
+            title="Send this as your reply"
+            onClick={() => void choose(option)}
+            style={{
+              ...approveButton,
+              cursor: busy ? 'default' : 'pointer',
+              opacity: busy ? 0.6 : 1,
+              borderColor: '#c6dafc',
+              color: '#1a56c4',
+              background: '#f4f8ff',
+              textAlign: 'left',
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      {note && (
+        <div style={{ ...muted, color: '#b3261e', marginTop: 4 }}>{note}</div>
+      )}
+    </div>
+  );
+}
+
+const approveButton: CSSProperties = {
+  border: '1px solid #d0d0d0',
+  background: '#ffffff',
+  borderRadius: 14,
+  fontSize: 12,
+  padding: '4px 10px',
+  cursor: 'pointer',
+  color: '#202124',
+};
+
 const blockButton: CSSProperties = {
   ...smallButton,
   padding: '2px 0',
@@ -224,10 +298,102 @@ type ToolPart = Extract<MessagePart, { type: 'tool' }>;
 // A tool the assistant used, in its place in the reply. The line says what it did;
 // open it to see exactly what was called (the tool and its arguments) and how it
 // ended. What a page said is not kept, only what was called.
-function ToolBlock({ part }: { part: ToolPart }) {
+function ToolBlock({
+  part,
+  chatId,
+  messageId,
+}: {
+  part: ToolPart;
+  chatId: number;
+  messageId: number;
+}) {
   const [open, setOpen] = useState(false);
   const icon =
-    part.status === 'running' ? '…' : part.status === 'ok' ? '✓' : '✕';
+    part.status === 'running'
+      ? '…'
+      : part.status === 'waiting'
+        ? '?'
+        : part.status === 'ok'
+          ? '✓'
+          : part.status === 'declined'
+            ? '⊘'
+            : '✕';
+  const decide = (decision: 'allow' | 'allow-rest' | 'deny') =>
+    window.browserApi.chatDecide(chatId, messageId, part.id, decision);
+
+  // Waiting for you: the question, always visible, with the ways to answer it.
+  if (part.status === 'waiting') {
+    return (
+      <div
+        role="group"
+        aria-label="Approve this action"
+        style={{
+          margin: '0 0 8px',
+          padding: '8px 10px',
+          background: '#fef7e0',
+          border: '1px solid #f0d58c',
+          borderRadius: 8,
+          fontSize: 13,
+        }}
+      >
+        <div style={{ ...muted }}>The assistant wants to:</div>
+        <div
+          style={{
+            fontWeight: 600,
+            margin: '2px 0 6px',
+            overflowWrap: 'anywhere',
+          }}
+        >
+          {part.ask}
+        </div>
+        {part.risky && (
+          <div style={{ fontSize: 12, color: '#b3261e', marginBottom: 6 }}>
+            This kind of action always asks you first.
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => decide('allow')}
+            style={{
+              ...approveButton,
+              background: '#1a73e8',
+              color: '#ffffff',
+              border: 'none',
+            }}
+          >
+            Allow
+          </button>
+          {!part.risky && (
+            <button
+              type="button"
+              onClick={() => decide('allow-rest')}
+              title="Go ahead with the rest of this reply without asking again, except for risky actions"
+              style={approveButton}
+            >
+              Allow the rest of this reply
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => decide('deny')}
+            style={approveButton}
+          >
+            Don't allow
+          </button>
+          <button
+            type="button"
+            onClick={() => window.browserApi.chatStop(chatId)}
+            title="Stop this reply"
+            style={approveButton}
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ margin: '0 0 6px' }}>
       <button
@@ -237,7 +403,12 @@ function ToolBlock({ part }: { part: ToolPart }) {
         title={open ? 'Hide what was called' : 'Show what was called'}
         style={{
           ...blockButton,
-          color: part.status === 'error' ? '#b3261e' : '#5f6368',
+          color:
+            part.status === 'error'
+              ? '#b3261e'
+              : part.status === 'declined'
+                ? '#80868b'
+                : '#5f6368',
         }}
       >
         <span aria-hidden="true">{open ? '▾' : '▸'}</span>
@@ -259,6 +430,11 @@ function ToolBlock({ part }: { part: ToolPart }) {
             <strong>Arguments:</strong>
           </div>
           <div>{showArguments(part.arguments)}</div>
+          {part.ask !== '' && (
+            <div style={{ marginTop: 4 }}>
+              <strong>You were asked:</strong> {part.ask}
+            </div>
+          )}
           <div style={{ marginTop: 4 }}>
             <strong>Result:</strong>{' '}
             {part.status === 'running'
@@ -314,16 +490,34 @@ function withTokens(
 function MessageView({
   message,
   isLast,
+  isNewestUser,
+  busy,
   chatId,
   tabs,
   spaces,
 }: {
   message: ChatMessage;
   isLast: boolean;
+  // Is this your newest message? (Only that one can be retried.)
+  isNewestUser: boolean;
+  // A reply is being written in this chat right now.
+  busy: boolean;
   chatId: number;
   tabs: TabInfo[];
   spaces: SpaceInfo[];
 }) {
+  const [retryNote, setRetryNote] = useState('');
+  const retry = async () => {
+    setRetryNote('');
+    const result = await window.browserApi.chatRetry(chatId, message.id);
+    if (!result.ok) setRetryNote(result.error);
+  };
+  // An older message: start a new chat from it instead of changing this one.
+  const branch = async () => {
+    setRetryNote('');
+    const result = await window.browserApi.chatBranch(chatId, message.id);
+    if (!result.ok) setRetryNote(result.error);
+  };
   const text: CSSProperties = {
     whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere',
@@ -354,6 +548,32 @@ function MessageView({
           }}
         >
           {withTokens(message, chatId, tabs, spaces)}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {retryNote && (
+            <span style={{ ...muted, color: '#b3261e' }}>{retryNote}</span>
+          )}
+          {isNewestUser ? (
+            !busy && (
+              <button
+                type="button"
+                title="Ask this again and replace the reply"
+                onClick={() => void retry()}
+                style={smallButton}
+              >
+                Retry
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              title="Start a new chat from here (this message and its reply). This chat stays as it is."
+              onClick={() => void branch()}
+              style={smallButton}
+            >
+              Branch
+            </button>
+          )}
         </div>
         {attached.length > 0 && (
           <div
@@ -393,7 +613,27 @@ function MessageView({
             <ThinkingBlock key={i} text={part.text} live={streaming && last} />
           );
         }
-        if (part.type === 'tool') return <ToolBlock key={i} part={part} />;
+        if (part.type === 'choices') {
+          return (
+            <ChoiceButtons
+              key={i}
+              chatId={chatId}
+              question={part.question}
+              options={part.options}
+              busy={busy}
+            />
+          );
+        }
+        if (part.type === 'tool') {
+          return (
+            <ToolBlock
+              key={i}
+              part={part}
+              chatId={chatId}
+              messageId={message.id}
+            />
+          );
+        }
         return (
           <div key={i} style={{ ...text, margin: '0 0 6px' }}>
             {part.text}
@@ -446,10 +686,13 @@ function MessageView({
 // have scrolled up to read something (then it leaves you where you are).
 export function MessageList({
   chatId,
+  generating,
   tabs,
   spaces,
 }: {
   chatId: number;
+  // A reply is being written in this chat right now.
+  generating: boolean;
   tabs: TabInfo[];
   spaces: SpaceInfo[];
 }) {
@@ -467,6 +710,9 @@ export function MessageList({
   }, [messages, chatId]);
 
   const lastId = messages[messages.length - 1]?.id;
+  const newestUserId = [...messages]
+    .reverse()
+    .find((m) => m.role === 'user')?.id;
 
   return (
     <div
@@ -487,6 +733,8 @@ export function MessageList({
           key={m.id}
           message={m}
           isLast={m.id === lastId}
+          isNewestUser={m.id === newestUserId}
+          busy={generating}
           chatId={chatId}
           tabs={tabs}
           spaces={spaces}

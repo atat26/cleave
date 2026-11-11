@@ -14,6 +14,8 @@ export interface TabInfo {
   spaceId: number | null;
   // False for a "sleeping" tab that has not been opened yet this session.
   loaded: boolean;
+  // True while the assistant is working in this tab.
+  working: boolean;
 }
 
 export interface SpaceInfo {
@@ -187,8 +189,23 @@ export interface BrowserApi {
     text: string,
     mentions: { kind: 'space' | 'tab'; id: number; tag: string }[],
   ) => Promise<ChatSendResult>;
-  chatRetry: (chatId: number) => Promise<ChatSendResult>;
+  // Try again: the last reply (after a failure or a stop), or, with a message id,
+  // from that earlier message of yours (even if it went fine).
+  chatRetry: (chatId: number, messageId?: number) => Promise<ChatSendResult>;
+  // Start a new chat from an earlier message of yours (it and its reply are
+  // copied; the chat it came from is left as it was).
+  chatBranch: (chatId: number, messageId: number) => Promise<ChatSendResult>;
+  // The messages of a chat changed in a way the screen cannot patch (some were
+  // removed): load them again.
+  onChatReset: (callback: (chatId: number) => void) => () => void;
   chatStop: (chatId: number) => void;
+  // Answer an approval card in a reply.
+  chatDecide: (
+    chatId: number,
+    messageId: number,
+    partId: number,
+    decision: 'allow' | 'allow-rest' | 'deny',
+  ) => void;
   // Put text on the clipboard (the app does it, so it works the same everywhere).
   chatCopy: (text: string) => void;
   // Linking Spaces and tabs to a chat (so the model knows what the chat is about).

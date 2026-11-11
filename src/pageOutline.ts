@@ -34,6 +34,8 @@ export interface OutlineElement {
   role: string;
   name: string;
   sensitive: boolean;
+  // For a link: where it goes (cleaned, no query), otherwise null.
+  url: string | null;
 }
 
 export interface Outline {
@@ -82,6 +84,20 @@ const REGIONS = new Set([
 const SENSITIVE_NAME =
   /password|passcode|passphrase|card number|credit card|security code|\bcvv\b|\bcvc\b|\bssn\b|social security|one[- ]time code|verification code/i;
 const SENSITIVE_AUTOCOMPLETE = /password|cc-|one-time-code/i;
+
+// Does a field look like one the assistant must never type in? Judged from its
+// name, its autocomplete hint and (when known) its input type.
+export function looksSensitive(field: {
+  name?: string;
+  autocomplete?: string;
+  inputType?: string;
+}): boolean {
+  return (
+    (field.inputType ?? '').toLowerCase() === 'password' ||
+    SENSITIVE_NAME.test(field.name ?? '') ||
+    SENSITIVE_AUTOCOMPLETE.test(field.autocomplete ?? '')
+  );
+}
 
 interface RawNode {
   id: string;
@@ -166,7 +182,12 @@ function stateNotes(node: RawNode, sensitive: boolean): string {
   return notes.length > 0 ? `  (${notes.join(', ')})` : '';
 }
 
-export function buildOutline(raw: unknown): Outline {
+// `extraSensitive`: browser ids of fields known (from the page itself) to be
+// password, card or code fields, which the accessibility tree does not say.
+export function buildOutline(
+  raw: unknown,
+  extraSensitive: ReadonlySet<number> = new Set(),
+): Outline {
   const nodes = parseNodes(raw);
   const lines: string[] = [];
   const elements: OutlineElement[] = [];
@@ -214,9 +235,12 @@ export function buildOutline(raw: unknown): Outline {
         const autocomplete = node.props.get('autocomplete');
         const sensitive =
           TEXT_FIELDS.has(node.role) &&
-          (SENSITIVE_NAME.test(node.name) ||
-            (typeof autocomplete === 'string' &&
-              SENSITIVE_AUTOCOMPLETE.test(autocomplete)));
+          (extraSensitive.has(node.backendNodeId) ||
+            looksSensitive({
+              name: node.name,
+              autocomplete:
+                typeof autocomplete === 'string' ? autocomplete : '',
+            }));
         const number = elements.length + 1;
         const url =
           node.role === 'link' && typeof node.props.get('url') === 'string'
@@ -238,6 +262,7 @@ export function buildOutline(raw: unknown): Outline {
           role: node.role,
           name: node.name,
           sensitive,
+          url,
         });
       } else if (node.role === 'heading' && node.name !== '') {
         const level = node.props.get('level');

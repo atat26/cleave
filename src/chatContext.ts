@@ -7,7 +7,7 @@ import type { ChatMessageInput } from './openrouter.ts';
 
 // Used when you have not written your own system prompt in Settings.
 export const DEFAULT_SYSTEM_PROMPT =
-  "You are a helpful assistant built into a web browser. Be clear and concise, and say so when you are unsure. You can't see or open web pages unless their text is included in the conversation.";
+  'You are a helpful assistant built into a web browser. Be clear and concise, and say so when you are unsure. You can only see, open or use web pages through the tools you are given; if you have none for something, say so.';
 
 // At most this many recent messages, and about this many characters, are sent.
 export const MAX_HISTORY_MESSAGES = 30;
