@@ -1,8 +1,8 @@
-import type { ChatMessage, ChatRef } from './chats';
+import type { ChatMessage, ChatRef, MessagePart } from './chats';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 
-export type { ChatMessage, ChatRef, ModelInfo };
+export type { ChatMessage, ChatRef, MessagePart, ModelInfo };
 
 // A tab as the UI sees it.
 export interface TabInfo {

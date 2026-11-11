@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
 import { AddPageButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
@@ -112,6 +112,7 @@ export function ChatComposer({
   before,
   after,
   onSent,
+  onNeedRoom,
 }: {
   chat: ChatInfo;
   llm: LlmInfo;
@@ -127,6 +128,8 @@ export function ChatComposer({
   after?: ReactNode;
   // Called after a message is sent (the compact bar opens up to show the reply).
   onSent: () => void;
+  // Called when the list needs more room than the one-row bar has.
+  onNeedRoom: () => void;
 }) {
   // A copy of the box's text, kept for the Send button and the placeholder.
   const [text, setText] = useState('');
@@ -143,7 +146,15 @@ export function ChatComposer({
     start: number;
   } | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
-  const [anchor, setAnchor] = useState({ left: 0, top: 0, width: 300 });
+  // Where the text box is on screen, and how much room there is above it inside
+  // the chat (a web page is drawn over anything that reaches into it, so the list
+  // has to stay within the chat).
+  const [anchor, setAnchor] = useState({
+    left: 0,
+    top: 0,
+    width: 300,
+    room: 280,
+  });
 
   const model = chat.model ?? llm.model;
   const setup = !llm.hasKey ? 'key' : model === null ? 'model' : null;
@@ -165,10 +176,33 @@ export function ChatComposer({
     if (box.current) setText(readBox(box.current).text);
   };
 
-  const placeAnchor = () => {
+  // Measure the text box and the room above it. Returns the room.
+  const placeAnchor = (): number => {
     const rect = box.current?.getBoundingClientRect();
-    if (rect) setAnchor({ left: rect.left, top: rect.top, width: rect.width });
+    if (!rect) return 0;
+    const region = box.current?.closest('section')?.getBoundingClientRect();
+    const room = region ? Math.floor(rect.top - region.top - 10) : 280;
+    setAnchor((previous) =>
+      previous.left === rect.left &&
+      previous.top === rect.top &&
+      previous.width === rect.width &&
+      previous.room === room
+        ? previous
+        : { left: rect.left, top: rect.top, width: rect.width, room },
+    );
+    return room;
   };
+
+  // While the list is open, follow the box as the chat slides or is resized.
+  const listOpen = picker !== null;
+  useEffect(() => {
+    if (!listOpen) return;
+    let frame = requestAnimationFrame(function follow() {
+      placeAnchor();
+      frame = requestAnimationFrame(follow);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [listOpen]);
 
   // Open or close the "@" list from where the cursor is.
   const refreshPicker = () => {
@@ -196,7 +230,9 @@ export function ChatComposer({
       start: sel.anchorOffset - match[2].length - 1,
     });
     setPickerIndex(0);
-    placeAnchor();
+    // In the one-row bar there is no room above the box (the web page is there),
+    // so the chat opens up to make room for the list.
+    if (placeAnchor() < 140 && compact) onNeedRoom();
   };
 
   const openFromButton = () => {
@@ -430,7 +466,12 @@ export function ChatComposer({
                 refreshPicker();
               }
             }}
-            onBlur={() => setPicker(null)}
+            // Closes the list when you click elsewhere in the chat, but not when the
+            // whole window briefly loses the keyboard (for example while the chat
+            // opens up).
+            onBlur={() => {
+              if (document.hasFocus()) setPicker(null);
+            }}
             onKeyDown={onKeyDown}
             // Only plain text can be pasted or dropped in.
             onPaste={(e) => {

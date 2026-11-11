@@ -377,7 +377,7 @@ export function LinkPicker({
   items: PickerItem[];
   index: number;
   // Where the text box is on screen.
-  anchor: { left: number; top: number; width: number };
+  anchor: { left: number; top: number; width: number; room: number };
   onPick: (item: PickerItem) => void;
   onHover: (index: number) => void;
 }) {
@@ -390,7 +390,9 @@ export function LinkPicker({
         left: anchor.left,
         bottom: window.innerHeight - anchor.top + 6,
         width: Math.min(360, Math.max(240, anchor.width)),
-        maxHeight: 280,
+        // Never taller than the room inside the chat: anything above it would be
+        // hidden behind the web page.
+        maxHeight: Math.max(60, Math.min(280, anchor.room)),
         overflowY: 'auto',
         background: '#ffffff',
         border: '1px solid #d0d0d0',

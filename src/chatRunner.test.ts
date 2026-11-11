@@ -394,6 +394,7 @@ function fakeTools(
   run: (signal: AbortSignal) => Promise<ToolOutcome> = async () => ({
     label: 'Read: Example',
     ok: true,
+    note: 'Returned 9 characters of page text.',
     result: 'PAGE TEXT',
   }),
 ) {
@@ -410,6 +411,11 @@ function fakeTools(
   };
   return { tools, runs };
 }
+
+const toolParts = (message: chats.ChatMessage) =>
+  message.parts.flatMap((p) => (p.type === 'tool' ? [p] : []));
+
+const thinks = (t: string): StreamEvent => ({ type: 'reasoning', text: t });
 
 // A model that answers each request from a list of scripted replies.
 const scripted = (...replies: StreamEvent[][]): StreamFn => {
@@ -439,7 +445,7 @@ test('the assistant can ask for a page, get it, and then answer', async () => {
   assert.equal(reply.content, 'Let me look.\n\nIt says hello.');
   assert.equal(reply.status, 'done');
   assert.deepEqual(
-    reply.steps.map((s) => [s.label, s.status]),
+    toolParts(reply).map((p) => [p.label, p.status]),
     [['Read: Example', 'ok']],
   );
   // Tokens and cost are added up over both requests.
@@ -473,7 +479,7 @@ test('a chat without tools sends none and never loops', async () => {
   assert.equal(t.calls.length, 1);
   assert.equal(t.calls[0].tools, undefined);
   assert.equal(t.chat.messages[1].content, 'Hi');
-  assert.deepEqual(t.chat.messages[1].steps, []);
+  assert.deepEqual(toolParts(t.chat.messages[1]), []);
 });
 
 test('after the tool rounds are used up, the model is asked to answer without tools', async () => {
@@ -509,7 +515,7 @@ test('Stop while a page is being read ends the reply and marks the step', async 
   await started.done;
   const reply = t.chat.messages[1];
   assert.equal(reply.status, 'stopped');
-  assert.equal(reply.steps[0].status, 'error');
+  assert.equal(toolParts(reply)[0].status, 'error');
   assert.equal(t.calls.length, 1);
 });
 
@@ -526,7 +532,48 @@ test('a tool that fails is reported to the model and the reply carries on', asyn
   const reply = t.chat.messages[1];
   assert.equal(reply.status, 'done');
   assert.equal(reply.content, 'Sorry, I could not read it.');
-  assert.equal(reply.steps[0].status, 'error');
+  assert.equal(toolParts(reply)[0].status, 'error');
   const last = t.calls[1].messages[t.calls[1].messages.length - 1];
   assert.equal(last.role, 'tool');
+});
+
+test('a reply keeps what happened in order, and each tool call keeps exactly what was called', async () => {
+  const { tools } = fakeTools();
+  const t = setup(
+    scripted(
+      [
+        thinks('I should look. '),
+        thinks('Tab 3 it is.'),
+        text('One moment. '),
+        call('c1', 3),
+      ],
+      [thinks('Now I know. '), text('It says hello.'), text(' Done.')],
+    ),
+  );
+  const started = t.runner.send(t.chatId, 'What is on tab 3?', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+
+  const reply = t.chat.messages[1];
+  // Thinking, then the first words, then the tool, then thinking, then the answer.
+  assert.deepEqual(
+    reply.parts.map((p) => p.type),
+    ['thinking', 'text', 'tool', 'thinking', 'text'],
+  );
+  assert.deepEqual(
+    reply.parts.flatMap((p) => (p.type === 'thinking' ? [p.text] : [])),
+    ['I should look. Tab 3 it is.', 'Now I know. '],
+  );
+  const tool = toolParts(reply)[0];
+  assert.equal(tool.name, 'read_page');
+  assert.equal(tool.arguments, '{"tab":3}');
+  assert.equal(tool.callId, 'c1');
+  assert.equal(tool.outcome, 'Returned 9 characters of page text.');
+  // The joined texts still match, and no page text was saved anywhere.
+  assert.equal(reply.content, 'One moment. \n\nIt says hello. Done.');
+  assert.equal(reply.reasoning, 'I should look. Tab 3 it is.Now I know. ');
+  assert.ok(!JSON.stringify(t.chat).includes('PAGE TEXT'));
 });

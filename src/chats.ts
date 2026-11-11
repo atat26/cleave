@@ -42,18 +42,29 @@ export interface ChatMessage {
   // their own copy of the name and address, so they stay in an old message even
   // after the link is removed from the chat (a closed tab can be reopened).
   mentions: Mention[];
-  // For a reply: what the assistant did while writing it (the pages it read),
-  // shown above the answer. Only the answer is kept as the conversation; the
-  // page text itself is never saved.
-  steps: ToolStep[];
+  // For a reply: what happened, in the order it happened (thinking, a tool the
+  // assistant used, more thinking, the answer...). `content` and `reasoning`
+  // above are those same texts joined together (the answer, and the thinking).
+  // The page text a tool read is never saved: only what was called.
+  parts: MessagePart[];
 }
 
-export interface ToolStep {
-  id: number;
-  // A line written by the app, such as: Read: Page title.
-  label: string;
-  status: 'running' | 'ok' | 'error';
-}
+export type MessagePart =
+  | { type: 'thinking'; text: string }
+  | { type: 'text'; text: string }
+  | {
+      type: 'tool';
+      id: number;
+      // The model's own id for the call, the tool's name, and its arguments
+      // exactly as the model wrote them (JSON text), so you can see what was called.
+      callId: string;
+      name: string;
+      arguments: string;
+      // Lines written by the app: what it is doing, and how it ended.
+      label: string;
+      status: 'running' | 'ok' | 'error';
+      outcome: string;
+    };
 
 export interface Mention extends ChatRef {
   tag: string;
@@ -100,8 +111,9 @@ const AUTO_TITLE_CHARS = 40;
 const MAX_MESSAGES = 2000;
 const MAX_CONTENT = 100_000;
 const MAX_REASONING = 50_000;
-const MAX_STEPS = 50;
+const MAX_PARTS = 300;
 const MAX_STEP_LABEL = 300;
+const MAX_TOOL_ARGUMENTS = 2000;
 const MAX_REFS = 50;
 const MAX_REF_TITLE = 200;
 // The most Spaces and tabs you can link to one chat.
@@ -195,21 +207,66 @@ function parseMentions(raw: unknown): Mention[] {
   return out;
 }
 
-function parseSteps(raw: unknown): ToolStep[] {
-  const out: ToolStep[] = [];
+const str = (value: unknown, max: number) =>
+  typeof value === 'string' ? value.slice(0, max) : '';
+
+// The ordered parts of a reply, read defensively.
+function parseParts(raw: unknown): MessagePart[] {
+  const out: MessagePart[] = [];
   if (!Array.isArray(raw)) return out;
   for (const r of raw) {
-    if (out.length >= MAX_STEPS) break;
-    if (!isRecord(r) || !isId(r.id) || typeof r.label !== 'string') continue;
-    out.push({
-      id: r.id,
-      label: r.label.slice(0, MAX_STEP_LABEL),
-      // A step still "running" when the app closed did not finish.
-      status: r.status === 'ok' ? 'ok' : 'error',
-    });
+    if (out.length >= MAX_PARTS) break;
+    if (!isRecord(r)) continue;
+    if (r.type === 'thinking' && typeof r.text === 'string') {
+      out.push({ type: 'thinking', text: r.text.slice(0, MAX_REASONING) });
+    } else if (r.type === 'text' && typeof r.text === 'string') {
+      out.push({ type: 'text', text: r.text.slice(0, MAX_CONTENT) });
+    } else if (r.type === 'tool' && isId(r.id)) {
+      out.push({
+        type: 'tool',
+        id: r.id,
+        callId: str(r.callId, 200),
+        name: str(r.name, 100),
+        arguments: str(r.arguments, MAX_TOOL_ARGUMENTS),
+        label: str(r.label, MAX_STEP_LABEL),
+        // A call still "running" when the app closed did not finish.
+        status: r.status === 'ok' ? 'ok' : 'error',
+        outcome: str(r.outcome, MAX_STEP_LABEL),
+      });
+    }
   }
   return out;
 }
+
+// A reply saved before replies kept their order: thinking, then the tools it
+// used, then the answer is the best guess.
+function partsFromOldReply(m: Record<string, unknown>): MessagePart[] {
+  const parts: MessagePart[] = [];
+  const reasoning = str(m.reasoning, MAX_REASONING);
+  if (reasoning !== '') parts.push({ type: 'thinking', text: reasoning });
+  if (Array.isArray(m.steps)) {
+    for (const r of m.steps) {
+      if (parts.length >= MAX_PARTS - 1) break;
+      if (!isRecord(r) || !isId(r.id)) continue;
+      parts.push({
+        type: 'tool',
+        id: r.id,
+        callId: '',
+        name: 'read_page',
+        arguments: '',
+        label: str(r.label, MAX_STEP_LABEL),
+        status: r.status === 'ok' ? 'ok' : 'error',
+        outcome: '',
+      });
+    }
+  }
+  const content = str(m.content, MAX_CONTENT);
+  if (content !== '') parts.push({ type: 'text', text: content });
+  return parts;
+}
+
+const joinParts = (parts: MessagePart[], type: 'text' | 'thinking') =>
+  parts.flatMap((p) => (p.type === type ? [p.text] : [])).join('');
 
 export function parseChats(raw: unknown, now = Date.now()): ChatsState {
   if (!isRecord(raw) || !Array.isArray(raw.conversations)) {
@@ -237,6 +294,21 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
         messageIds.add(m.id);
         maxId = Math.max(maxId, m.id);
 
+        // A reply keeps its parts in order; one saved before that is converted.
+        // Content and thinking are always rebuilt from the parts, so the two can
+        // never disagree.
+        let parts: MessagePart[] = [];
+        let content = m.content.slice(0, MAX_CONTENT);
+        let reasoning = str(m.reasoning, MAX_REASONING);
+        if (m.role === 'assistant') {
+          parts = Array.isArray(m.parts)
+            ? parseParts(m.parts)
+            : partsFromOldReply(m);
+          content = joinParts(parts, 'text').slice(0, MAX_CONTENT);
+          reasoning = joinParts(parts, 'thinking').slice(0, MAX_REASONING);
+        }
+        const parsed = { parts, content, reasoning };
+
         // A reply that was still being written when the app closed was cut off:
         // keep what it had, and mark it stopped.
         let status = STATUSES.find((s) => s === m.status) ?? 'done';
@@ -250,18 +322,15 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
         messages.push({
           id: m.id,
           role: m.role,
-          content: m.content.slice(0, MAX_CONTENT),
-          reasoning:
-            typeof m.reasoning === 'string'
-              ? m.reasoning.slice(0, MAX_REASONING)
-              : '',
+          content: parsed.content,
+          reasoning: parsed.reasoning,
           createdAt: isTime(m.createdAt) ? m.createdAt : now,
           status,
           model: isValidModelId(m.model) ? m.model : null,
           usage,
           errorKind: ERROR_KINDS.find((k) => k === m.errorKind) ?? null,
           mentions: parseMentions(m.mentions),
-          steps: parseSteps(m.steps),
+          parts: parsed.parts,
         });
       }
     }
@@ -485,7 +554,7 @@ export function addUserMessage(
     // Links added since they were last shown (for example with the "Add page"
     // button) are attached to this message too, with no "@name" in the text.
     mentions: parseMentions(inline.concat(attached)),
-    steps: [],
+    parts: [],
   };
   const firstMessage = !chat.messages.some((m) => m.role === 'user');
   const next = update({ ...state, nextId: id + 1 }, chatId, (c) => ({
@@ -521,7 +590,7 @@ export function startAssistantMessage(
     usage: null,
     errorKind: null,
     mentions: [],
-    steps: [],
+    parts: [],
   };
   return {
     id,
@@ -531,6 +600,26 @@ export function startAssistantMessage(
       messages: [...c.messages, message],
     })),
   };
+}
+
+// Add to the last part if it is of the same kind (the thinking or the answer is
+// still going), otherwise start a new part (something else happened in between).
+function extendParts(
+  parts: MessagePart[],
+  type: 'text' | 'thinking',
+  text: string,
+  max: number,
+): MessagePart[] {
+  if (text === '') return parts;
+  const last = parts[parts.length - 1];
+  if (last && last.type === type) {
+    return [
+      ...parts.slice(0, -1),
+      { type, text: (last.text + text).slice(0, max) },
+    ];
+  }
+  if (parts.length >= MAX_PARTS) return parts;
+  return [...parts, { type, text: text.slice(0, max) }];
 }
 
 // Add more of the model's thinking to a reply as it arrives.
@@ -543,19 +632,23 @@ export function appendReasoning(
   return updateMessage(state, chatId, messageId, (m) => ({
     ...m,
     reasoning: (m.reasoning + text).slice(0, MAX_REASONING),
+    parts: extendParts(m.parts, 'thinking', text, MAX_REASONING),
   }));
 }
 
-// Add more text to a reply as it arrives.
+// Add more text to a reply as it arrives. `gap` is a paragraph break to put in
+// the joined text (not in the part) when the answer carries on after a tool.
 export function appendToMessage(
   state: ChatsState,
   chatId: number,
   messageId: number,
   text: string,
+  gap = '',
 ): ChatsState {
   return updateMessage(state, chatId, messageId, (m) => ({
     ...m,
-    content: (m.content + text).slice(0, MAX_CONTENT),
+    content: (m.content + gap + text).slice(0, MAX_CONTENT),
+    parts: extendParts(m.parts, 'text', text, MAX_CONTENT),
   }));
 }
 
@@ -582,60 +675,76 @@ export function finishMessage(
       errorKind:
         result.status === 'error' ? (result.errorKind ?? 'unknown') : null,
       // Nothing is still running once the reply is over (for example Stop).
-      steps: m.steps.map((step) =>
-        step.status === 'running' ? { ...step, status: 'error' } : step,
+      parts: m.parts.map((part) =>
+        part.type === 'tool' && part.status === 'running'
+          ? { ...part, status: 'error' }
+          : part,
       ),
     }),
     now,
   );
 }
 
-// Record that the assistant started something (such as reading a page).
-export function addStep(
+// Record that the assistant started using a tool, in its place in the reply.
+export function addToolPart(
   state: ChatsState,
   chatId: number,
   messageId: number,
-  label: string,
-): { state: ChatsState; stepId: number } | null {
+  call: { callId: string; name: string; arguments: string; label: string },
+): { state: ChatsState; partId: number } | null {
   const message = findMessage(state, chatId, messageId);
-  if (!message || message.steps.length >= MAX_STEPS) return null;
-  const stepId = message.steps.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+  if (!message || message.parts.length >= MAX_PARTS) return null;
+  const partId =
+    message.parts.reduce(
+      (max, p) => (p.type === 'tool' ? Math.max(max, p.id) : max),
+      0,
+    ) + 1;
   return {
-    stepId,
+    partId,
     state: updateMessage(state, chatId, messageId, (m) => ({
       ...m,
-      steps: [
-        ...m.steps,
+      parts: [
+        ...m.parts,
         {
-          id: stepId,
-          label: label.slice(0, MAX_STEP_LABEL),
+          type: 'tool',
+          id: partId,
+          callId: call.callId.slice(0, 200),
+          name: call.name.slice(0, 100),
+          arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS),
+          label: call.label.slice(0, MAX_STEP_LABEL),
           status: 'running',
+          outcome: '',
         },
       ],
     })),
   };
 }
 
-// Record how a step ended, optionally with its final wording.
-export function finishStep(
+// Record how a tool call ended, with its final wording and a short note.
+export function finishToolPart(
   state: ChatsState,
   chatId: number,
   messageId: number,
-  stepId: number,
-  ok: boolean,
-  label?: string,
+  partId: number,
+  result: { ok: boolean; label?: string; outcome?: string },
 ): ChatsState {
   return updateMessage(state, chatId, messageId, (m) => ({
     ...m,
-    steps: m.steps.map((s) =>
-      s.id === stepId
+    parts: m.parts.map((p) =>
+      p.type === 'tool' && p.id === partId
         ? {
-            ...s,
-            status: ok ? 'ok' : 'error',
+            ...p,
+            status: result.ok ? 'ok' : 'error',
             label:
-              label === undefined ? s.label : label.slice(0, MAX_STEP_LABEL),
+              result.label === undefined
+                ? p.label
+                : result.label.slice(0, MAX_STEP_LABEL),
+            outcome:
+              result.outcome === undefined
+                ? p.outcome
+                : result.outcome.slice(0, MAX_STEP_LABEL),
           }
-        : s,
+        : p,
     ),
   }));
 }

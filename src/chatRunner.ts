@@ -8,7 +8,7 @@
 import { buildMessages } from './chatContext.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
-import type { AgentTools } from './agentTools.ts';
+import type { AgentTools, ToolOutcome } from './agentTools.ts';
 import { ChatError } from './openrouter.ts';
 import type {
   ChatMessageInput,
@@ -108,7 +108,8 @@ export function createChatRunner(deps: RunnerDeps) {
                 deps.getState(),
                 chatId,
                 replyId,
-                gap + event.text,
+                event.text,
+                gap,
               ),
             );
             changed();
@@ -144,17 +145,17 @@ export function createChatRunner(deps: RunnerDeps) {
         ];
         for (const call of calls) {
           if (controller.signal.aborted) break;
-          const added = chats.addStep(
-            deps.getState(),
-            chatId,
-            replyId,
-            tools.describe(call),
-          );
+          const added = chats.addToolPart(deps.getState(), chatId, replyId, {
+            callId: call.id,
+            name: call.name,
+            arguments: call.arguments,
+            label: tools.describe(call),
+          });
           if (added) {
             deps.setState(added.state);
             changed();
           }
-          let outcome: { label: string; ok: boolean; result: string };
+          let outcome: ToolOutcome;
           try {
             outcome = await tools.run(call, controller.signal);
           } catch (error) {
@@ -162,18 +163,18 @@ export function createChatRunner(deps: RunnerDeps) {
             outcome = {
               label: 'A tool failed',
               ok: false,
+              note: 'The tool failed unexpectedly.',
               result: 'The tool failed. Answer with what you already have.',
             };
           }
           if (added) {
             deps.setState(
-              chats.finishStep(
+              chats.finishToolPart(
                 deps.getState(),
                 chatId,
                 replyId,
-                added.stepId,
-                outcome.ok,
-                outcome.label,
+                added.partId,
+                { ok: outcome.ok, label: outcome.label, outcome: outcome.note },
               ),
             );
             changed();
