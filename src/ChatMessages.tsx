@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { MentionToken } from './LinkChips';
+import { Markdown } from './MarkdownView';
 import { errorMessage } from './openrouter';
 import type { ChatMessage, MessagePart, SpaceInfo, TabInfo } from './types';
 
@@ -208,6 +209,21 @@ function ChoiceButtons({
       {note && (
         <div style={{ ...muted, color: '#b3261e', marginTop: 4 }}>{note}</div>
       )}
+    </div>
+  );
+}
+
+// A small spinner, on the left of whatever the assistant is doing right now.
+function ActiveRow({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <span
+        className="spinner"
+        role="img"
+        aria-label="Working"
+        style={{ marginTop: 4 }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
   );
 }
@@ -627,6 +643,15 @@ function MessageView({
       {/* Everything that happened, in the order it happened. */}
       {message.parts.map((part, i) => {
         const last = i === message.parts.length - 1;
+        // The part being worked on right now gets a spinner beside it.
+        const active =
+          streaming &&
+          last &&
+          (part.type === 'thinking' ||
+            part.type === 'text' ||
+            (part.type === 'tool' && part.status === 'running'));
+        const wrap = (node: ReactNode) =>
+          active ? <ActiveRow key={i}>{node}</ActiveRow> : node;
         // Nothing to show for blank text (older chats may have some): no gap.
         if (
           (part.type === 'text' || part.type === 'thinking') &&
@@ -635,8 +660,8 @@ function MessageView({
           return null;
         }
         if (part.type === 'thinking') {
-          return (
-            <ThinkingBlock key={i} text={part.text} live={streaming && last} />
+          return wrap(
+            <ThinkingBlock key={i} text={part.text} live={streaming && last} />,
           );
         }
         if (part.type === 'choices') {
@@ -651,28 +676,49 @@ function MessageView({
           );
         }
         if (part.type === 'tool') {
-          return (
+          return wrap(
             <ToolBlock
               key={i}
               part={part}
               chatId={chatId}
               messageId={message.id}
-            />
+            />,
           );
         }
-        return (
-          <div key={i} style={{ ...text, margin: '0 0 6px' }}>
-            {part.text}
+        return wrap(
+          <div
+            key={i}
+            style={{ ...text, whiteSpace: 'normal', margin: '0 0 6px' }}
+          >
+            <Markdown text={part.text} />
             {streaming && last && <span aria-hidden="true">▍</span>}
-          </div>
+          </div>,
         );
       })}
+      {/* Between steps (nothing started yet, or the last step is finished and the
+          next has not begun): still working, so still a spinner. */}
+      {streaming &&
+        (message.parts.length === 0 ||
+          (() => {
+            const lastPart = message.parts[message.parts.length - 1];
+            return (
+              lastPart.type === 'choices' ||
+              (lastPart.type === 'tool' &&
+                lastPart.status !== 'running' &&
+                lastPart.status !== 'waiting')
+            );
+          })()) && (
+          <ActiveRow>
+            <div style={muted}>
+              {message.parts.length === 0 ? 'Thinking…' : 'Working…'}
+            </div>
+          </ActiveRow>
+        )}
       {message.parts.length === 0 &&
-        (streaming ? (
-          <div style={muted}>Thinking…</div>
-        ) : message.status === 'done' ? (
+        !streaming &&
+        message.status === 'done' && (
           <div style={muted}>The model sent an empty reply.</div>
-        ) : null)}
+        )}
 
       {message.status === 'stopped' && (
         <div style={{ ...muted, marginTop: 4 }}>Stopped.</div>

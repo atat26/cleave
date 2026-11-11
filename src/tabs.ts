@@ -1103,6 +1103,16 @@ export async function createTabs(
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
     },
+    // A link in one of the assistant's replies was clicked: open it as a new tab.
+    'ui:open-url': (url) => {
+      if (
+        typeof url === 'string' &&
+        url.length <= 2000 &&
+        model.isWebUrl(url)
+      ) {
+        openTab(url, currentSpaceId());
+      }
+    },
     'sidebar:hover': () => {
       if (!pinned() && drag === null) setHover(true);
     },

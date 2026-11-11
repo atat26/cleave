@@ -192,6 +192,8 @@ export interface BrowserApi {
   toolsList: () => Promise<ToolRow[]>;
   toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
   toolsReset: () => Promise<ToolRow[]>;
+  // A link in a reply was clicked: open it as a new tab (web addresses only).
+  openUrl: (url: string) => void;
   // Ask the app to send the current state (call once listening for it).
   uiReady: () => void;
   hoverSidebar: () => void;

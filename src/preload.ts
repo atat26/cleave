@@ -26,6 +26,7 @@ const browserApi: BrowserApi = {
   toolsList: () => ipcRenderer.invoke('tools:list'),
   toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
   toolsReset: () => ipcRenderer.invoke('tools:reset'),
+  openUrl: (url) => ipcRenderer.send('ui:open-url', url),
   uiReady: () => ipcRenderer.send('ui:ready'),
   hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
   toggleChat: () => ipcRenderer.send('chat:toggle'),
