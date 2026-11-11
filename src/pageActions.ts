@@ -441,3 +441,28 @@ export function chooseOption(
     };
   });
 }
+
+// Where a link really goes, in full (relative addresses worked out against the page,
+// query included). Null if the control has no address. Used so the assistant can
+// read a page by the NUMBER of a link and never has to retype (or change) its address.
+export async function readLinkAddress(
+  cdp: Cdp,
+  backendNodeId: number,
+): Promise<string | null> {
+  try {
+    await cdp.send('DOM.enable');
+    const context = await isolatedWorld(cdp);
+    const objectId = await objectFor(cdp, backendNodeId, context);
+    const answer = await cdp.send('Runtime.callFunctionOn', {
+      objectId,
+      functionDeclaration:
+        "function () { return this && typeof this.href === 'string' ? this.href : ''; }",
+      returnByValue: true,
+    });
+    const value =
+      isRecord(answer) && isRecord(answer.result) ? answer.result.value : '';
+    return typeof value === 'string' && value !== '' ? value : null;
+  } catch {
+    return null;
+  }
+}

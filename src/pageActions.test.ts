@@ -6,6 +6,7 @@ import {
   findSensitiveFields,
   judgeField,
   pressKey,
+  readLinkAddress,
   scrollPage,
   typeIntoControl,
 } from './pageActions.ts';
@@ -298,4 +299,26 @@ test('nothing at the spot is "blocked", not "gone"; only a vanished control is g
     ok: false,
     reason: 'gone',
   });
+});
+
+test('a link address is read from the page, in full, or null when there is none', async () => {
+  const run = async (value: unknown) => {
+    const page = fakePage({
+      'Page.getFrameTree': { frameTree: { frame: { id: 'f' } } },
+      'Page.createIsolatedWorld': { executionContextId: 5 },
+      'DOM.resolveNode': { object: { objectId: 'obj' } },
+      'Runtime.callFunctionOn': { result: { value } },
+    });
+    return readLinkAddress(page.cdp, 7);
+  };
+  assert.equal(
+    await run('https://a.example/p?id=5'),
+    'https://a.example/p?id=5',
+  );
+  assert.equal(await run(''), null);
+  assert.equal(await run(undefined), null);
+  assert.equal(await run({ baseVal: 'svg' }), null);
+  // A page that cannot be asked gives null, never an error.
+  const broken = fakePage({ 'DOM.enable': new Error('boom') });
+  assert.equal(await readLinkAddress(broken.cdp, 7), null);
 });

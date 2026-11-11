@@ -10,8 +10,8 @@
 // The text it returns is untrusted. The caller (agentTools.ts) cleans it, cuts it
 // to size and marks it as data before the model sees it.
 import type { WebContents } from 'electron';
-import { findSensitiveFields } from './pageActions';
-import type { Cdp } from './pageActions';
+import { findSensitiveFields } from './pageActions.ts';
+import type { Cdp } from './pageActions.ts';
 
 export interface PageText {
   title: string;
@@ -77,46 +77,50 @@ export function withCdp<T>(
   );
 }
 
+// Read the text of the page that `cdp` is attached to (one fixed script, in an
+// isolated world). Used with a debugger the caller has already attached.
+export async function readPageTextVia(cdp: Cdp): Promise<PageText> {
+  const tree = (await cdp.send('Page.getFrameTree')) as {
+    frameTree?: { frame?: { id?: unknown } };
+  };
+  const frameId = tree.frameTree?.frame?.id;
+  if (typeof frameId !== 'string') throw new Error('no-frame');
+
+  const world = (await cdp.send('Page.createIsolatedWorld', {
+    frameId,
+    worldName: 'ai-browser-reader',
+  })) as { executionContextId?: unknown };
+  if (typeof world.executionContextId !== 'number') {
+    throw new Error('no-world');
+  }
+
+  const evaluated = (await cdp.send('Runtime.evaluate', {
+    expression: READ_SCRIPT,
+    contextId: world.executionContextId,
+    returnByValue: true,
+    timeout: 4000,
+  })) as { result?: { value?: unknown } };
+  const value = evaluated.result?.value;
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as PageText).text === 'string'
+  ) {
+    const page = value as PageText;
+    return {
+      title: typeof page.title === 'string' ? page.title : '',
+      url: typeof page.url === 'string' ? page.url : '',
+      text: page.text,
+    };
+  }
+  throw new Error('unreadable');
+}
+
 export function readPageText(
   contents: WebContents,
   limitMs = DEFAULT_LIMIT_MS,
 ): Promise<PageText> {
-  return withDebugger(contents, limitMs, async (debuggerApi) => {
-    const tree = (await debuggerApi.sendCommand('Page.getFrameTree')) as {
-      frameTree?: { frame?: { id?: unknown } };
-    };
-    const frameId = tree.frameTree?.frame?.id;
-    if (typeof frameId !== 'string') throw new Error('no-frame');
-
-    const world = (await debuggerApi.sendCommand('Page.createIsolatedWorld', {
-      frameId,
-      worldName: 'ai-browser-reader',
-    })) as { executionContextId?: unknown };
-    if (typeof world.executionContextId !== 'number') {
-      throw new Error('no-world');
-    }
-
-    const evaluated = (await debuggerApi.sendCommand('Runtime.evaluate', {
-      expression: READ_SCRIPT,
-      contextId: world.executionContextId,
-      returnByValue: true,
-      timeout: 4000,
-    })) as { result?: { value?: unknown } };
-    const value = evaluated.result?.value;
-    if (
-      typeof value === 'object' &&
-      value !== null &&
-      typeof (value as PageText).text === 'string'
-    ) {
-      const page = value as PageText;
-      return {
-        title: typeof page.title === 'string' ? page.title : '',
-        url: typeof page.url === 'string' ? page.url : '',
-        text: page.text,
-      };
-    }
-    throw new Error('unreadable');
-  });
+  return withCdp(contents, limitMs, readPageTextVia);
 }
 
 // The page's accessibility tree, as the browser reports it (untrusted; see

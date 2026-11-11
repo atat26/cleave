@@ -39,6 +39,7 @@ import {
   chooseOption,
   clickControl,
   pressKey as pressKeyInPage,
+  readLinkAddress,
   scrollPage,
   typeIntoControl,
 } from './pageActions';
@@ -888,6 +889,18 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    // Where a numbered link goes (its full address, read from the page).
+    linkAddress: async (tabId, control, signal) => {
+      const ready = await prepareTab(tabId, signal);
+      if (!ready.ok) return null;
+      try {
+        return await withCdp(ready.contents, 8000, (cdp) =>
+          readLinkAddress(cdp, control.backendNodeId),
+        );
+      } catch {
+        return null;
+      }
+    },
     actions: actionEnv,
     toolLevel: (tool) => levelFor(toolSettings, tool),
     search: search.catch(() => null),
