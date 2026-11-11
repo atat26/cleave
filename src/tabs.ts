@@ -30,6 +30,8 @@ import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
+import { snapshotLookup } from './chatLinks';
+import type { Workspace } from './chatLinks';
 import { chatMenu, chatRowMenu, spaceMenu, tabMenu } from './menus';
 import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
@@ -46,6 +48,8 @@ export const NEW_TAB_URL = 'https://duckduckgo.com';
 const isId = (value: unknown): value is number => Number.isInteger(value);
 const isIdOrNull = (value: unknown): value is number | null =>
   value === null || isId(value);
+const isLinkKind = (value: unknown): value is 'tab' | 'space' =>
+  value === 'tab' || value === 'space';
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const isResizeKind = (value: unknown): value is ResizeKind =>
@@ -86,6 +90,28 @@ export async function createTabs(
   // talks to the model. Both are set up a little later than the window.
   let llmContext: LlmContext | null = null;
   let chatService: ChatService | null = null;
+
+  // The Spaces and tabs as the chat sees them (titles and addresses).
+  const workspace = (): Workspace => ({
+    tabs: state.tabs.map((t) => ({
+      id: t.id,
+      title: t.title,
+      url: t.url,
+      spaceId: t.spaceId,
+    })),
+    spaces: state.spaces.map((s) => ({ id: s.id, name: s.name })),
+  });
+
+  // Keep each chat link's remembered name and address current. Done just before
+  // something closes, so a link to a closed tab or Space can still show its name
+  // (and a closed tab can be reopened).
+  const syncLinkSnapshots = () => {
+    const next = chatsModel.refreshRefs(chats, snapshotLookup(workspace()));
+    if (next !== chats) {
+      chats = next;
+      chatsSaver.schedule();
+    }
+  };
 
   // The sidebar is open without being pinned because the mouse is on it.
   let hover = false;
@@ -246,6 +272,8 @@ export async function createTabs(
           generating: generating.includes(c.id),
         })),
         activeId: chats.activeId,
+        // The links on the chat you are looking at.
+        refs: chatsModel.activeConversation(chats).refs,
       },
       llm: {
         hasKey: llmContext?.hasKey() ?? false,
@@ -496,6 +524,7 @@ export async function createTabs(
 
   const closeTab = (id: number) => {
     if (!model.findTab(state, id)) return;
+    syncLinkSnapshots(); // So a chat's link to this tab remembers its latest name.
     destroyView(id);
     commitAndShow(withSomethingActive(model.removeTab(state, id)));
   };
@@ -542,6 +571,7 @@ export async function createTabs(
       return;
     }
     // The Space may have changed while the dialog was open.
+    syncLinkSnapshots(); // Chats' links to this Space and its tabs remember them.
     const result = model.deleteSpace(state, id);
     for (const tabId of result.removedTabIds) destroyView(tabId);
     commitAndShow(withSomethingActive(result.state));
@@ -569,6 +599,7 @@ export async function createTabs(
     win,
     llm: llm.catch(() => null),
     getChats: () => chats,
+    getWorkspace: workspace,
     // Every piece of a streaming reply lands here: save soon, but do not rebuild
     // the whole UI each time.
     setChats: (next) => {
@@ -644,8 +675,10 @@ export async function createTabs(
       commit(model.setSpaceColor(state, spaceId, color)),
     setSpaceCollapsed: (spaceId, collapsed) =>
       commit(model.setSpaceCollapsed(state, spaceId, collapsed)),
-    ungroupSpace: (spaceId) =>
-      commitAndShow(model.ungroupSpace(state, spaceId)),
+    ungroupSpace: (spaceId) => {
+      syncLinkSnapshots(); // The Space goes away; links to it remember its name.
+      commitAndShow(model.ungroupSpace(state, spaceId));
+    },
     deleteSpace: (spaceId) => void deleteSpace(spaceId),
   };
 
@@ -767,6 +800,9 @@ export async function createTabs(
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
     },
+    // A UI page asks for the current state once it is listening for it (the
+    // state sent when the page finished loading can arrive too early).
+    'ui:ready': () => sendState(),
     'sidebar:hover': () => {
       if (!pinned() && drag === null) setHover(true);
     },
@@ -846,6 +882,55 @@ export async function createTabs(
       saver.schedule();
       applyLayout(true);
       sendState();
+    },
+    // Linking Spaces and tabs to a chat. Only things that exist can be linked.
+    'chats:link': (chatId, kind, id) => {
+      if (!isId(chatId) || !isLinkKind(kind) || !isId(id)) return;
+      const found = snapshotLookup(workspace())(kind, id);
+      if (!found) return;
+      commitChats(
+        chatsModel.addRef(chats, chatId, {
+          kind,
+          id,
+          title: found.title,
+          url: found.url,
+        }),
+      );
+    },
+    'chats:unlink': (chatId, kind, id) => {
+      if (!isId(chatId) || !isLinkKind(kind) || !isId(id)) return;
+      commitChats(chatsModel.removeRef(chats, chatId, kind, id));
+    },
+    // Clicking a link chip jumps to that tab, or to that Space's overview.
+    'chats:open-link': (kind, id) => {
+      if (!isLinkKind(kind) || !isId(id)) return;
+      if (kind === 'tab' && model.findTab(state, id)) {
+        select({ kind: 'tab', id });
+      } else if (kind === 'space' && model.findSpace(state, id)) {
+        select({ kind: 'lead', spaceId: id });
+      }
+    },
+    // Bring a closed tab back (as a new, ungrouped tab) and point every chat's
+    // link to it at the new tab.
+    'chats:reopen-link': (chatId, id) => {
+      if (!isId(chatId) || !isId(id)) return;
+      // The link may have been removed from the chat since; an old message's
+      // token still remembers the address.
+      const conversation = chatsModel.findConversation(chats, chatId);
+      const ref =
+        conversation?.refs.find((r) => r.kind === 'tab' && r.id === id) ??
+        conversation?.messages
+          .flatMap((m) => m.mentions)
+          .find((x) => x.kind === 'tab' && x.id === id);
+      // Only for a closed tab whose address was remembered.
+      if (!ref || !ref.url || model.findTab(state, id)) return;
+      const created = model.addTab(state, { url: ref.url, spaceId: null });
+      commitAndShow(revealPage(created.state));
+      const reopened = { id: created.id, title: ref.title, url: ref.url };
+      // Every chat that used the page follows it to the new tab: links and the
+      // tokens in old messages. A link you had removed is not added back.
+      commitChats(chatsModel.retargetEverywhere(chats, 'tab', id, reopened));
+      chatService?.refreshMentions(); // Show the live tokens without a reload.
     },
     'chats:new': () => chatMenuActions.newChat(),
     'chats:select': (id) => {

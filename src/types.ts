@@ -1,8 +1,8 @@
-import type { ChatMessage } from './chats';
+import type { ChatMessage, ChatRef } from './chats';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 
-export type { ChatMessage, ModelInfo };
+export type { ChatMessage, ChatRef, ModelInfo };
 
 // A tab as the UI sees it.
 export interface TabInfo {
@@ -100,6 +100,8 @@ export interface ChatsInfo {
   // In the order they were created.
   conversations: ChatInfo[];
   activeId: number;
+  // The Spaces and tabs linked to the chat you are looking at.
+  refs: ChatRef[];
 }
 
 // Everything the UI needs to draw itself.
@@ -157,6 +159,8 @@ export interface BrowserApi {
   renameSpace: (id: number, name: string) => void;
   // The mouse rested on the sidebar's icon strip: please open it. (Closing is
   // decided by the app, by watching how far the mouse has moved away.)
+  // Ask the app to send the current state (call once listening for it).
+  uiReady: () => void;
   hoverSidebar: () => void;
   // Expand the bottom chat, or shrink it back to the compact bar. (If the chat
   // is closed, or fills the window, this brings back the page with the chat.)
@@ -175,11 +179,22 @@ export interface BrowserApi {
   // Talking to the model. The messages live in the app; the UI asks for a chat's
   // messages when it opens one, then follows changes as they stream in.
   chatMessages: (chatId: number) => Promise<ChatMessage[]>;
-  chatSend: (chatId: number, text: string) => Promise<ChatSendResult>;
+  chatSend: (
+    chatId: number,
+    text: string,
+    mentions: { kind: 'space' | 'tab'; id: number; tag: string }[],
+  ) => Promise<ChatSendResult>;
   chatRetry: (chatId: number) => Promise<ChatSendResult>;
   chatStop: (chatId: number) => void;
   // Put text on the clipboard (the app does it, so it works the same everywhere).
   chatCopy: (text: string) => void;
+  // Linking Spaces and tabs to a chat (so the model knows what the chat is about).
+  chatLink: (chatId: number, kind: 'tab' | 'space', id: number) => void;
+  chatUnlink: (chatId: number, kind: 'tab' | 'space', id: number) => void;
+  // Jump to a linked tab, or to a linked Space's overview.
+  chatOpenLink: (kind: 'tab' | 'space', id: number) => void;
+  // Bring back a linked tab that was closed.
+  chatReopenLink: (chatId: number, tabId: number) => void;
   // Shows a menu of your pinned models to switch this chat to.
   showModelMenu: (chatId: number) => void;
   // Open the Settings panel.

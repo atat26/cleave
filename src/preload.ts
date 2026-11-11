@@ -17,6 +17,7 @@ const browserApi: BrowserApi = {
   setSpaceCollapsed: (id, collapsed) =>
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
+  uiReady: () => ipcRenderer.send('ui:ready'),
   hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
   toggleChat: () => ipcRenderer.send('chat:toggle'),
   setViewMode: (mode) => ipcRenderer.send('view:set', mode),
@@ -30,10 +31,18 @@ const browserApi: BrowserApi = {
   llmSetSystemPrompt: (text) =>
     ipcRenderer.invoke('llm:set-system-prompt', text),
   chatMessages: (chatId) => ipcRenderer.invoke('chat:messages', chatId),
-  chatSend: (chatId, text) => ipcRenderer.invoke('chat:send', chatId, text),
+  chatSend: (chatId, text, mentions) =>
+    ipcRenderer.invoke('chat:send', chatId, text, mentions),
   chatRetry: (chatId) => ipcRenderer.invoke('chat:retry', chatId),
   chatStop: (chatId) => ipcRenderer.send('chat:stop', chatId),
   chatCopy: (text) => ipcRenderer.send('chat:copy', text),
+  chatLink: (chatId, kind, id) =>
+    ipcRenderer.send('chats:link', chatId, kind, id),
+  chatUnlink: (chatId, kind, id) =>
+    ipcRenderer.send('chats:unlink', chatId, kind, id),
+  chatOpenLink: (kind, id) => ipcRenderer.send('chats:open-link', kind, id),
+  chatReopenLink: (chatId, tabId) =>
+    ipcRenderer.send('chats:reopen-link', chatId, tabId),
   showModelMenu: (chatId) => ipcRenderer.send('chat:model-menu', chatId),
   openSettings: () => ipcRenderer.send('panel:open', 'settings'),
   onChatMessage: (callback) => {

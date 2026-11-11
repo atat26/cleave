@@ -5,6 +5,7 @@
 //
 // Linked Spaces/tabs (`refs`) are reserved here and filled in by the "@" feature
 // (a later step); for now they are always empty.
+import { isWebUrl } from './model.ts';
 import { isValidModelId } from './openrouter.ts';
 import type { ChatErrorKind } from './openrouter.ts';
 
@@ -35,6 +36,16 @@ export interface ChatMessage {
   model: string | null;
   usage: MessageUsage | null;
   errorKind: ChatErrorKind | null;
+  // For your messages: the Spaces and tabs you mentioned with "@" in it, drawn as
+  // small tokens where their "@name" (`tag`) is in the text, plus anything newly
+  // attached without an "@name" (empty `tag`), drawn under the message. They keep
+  // their own copy of the name and address, so they stay in an old message even
+  // after the link is removed from the chat (a closed tab can be reopened).
+  mentions: Mention[];
+}
+
+export interface Mention extends ChatRef {
+  tag: string;
 }
 
 // A Space or tab the conversation has been linked to, so the agent knows where
@@ -42,6 +53,11 @@ export interface ChatMessage {
 export interface ChatRef {
   kind: 'space' | 'tab';
   id: number;
+  // The item's last known name and address, kept so that a link to something that
+  // has since been closed can still be shown by name (and a tab reopened).
+  title: string;
+  // The full address, for tabs (so it can be reopened); null for Spaces.
+  url: string | null;
 }
 
 export interface Conversation {
@@ -74,6 +90,9 @@ const MAX_MESSAGES = 2000;
 const MAX_CONTENT = 100_000;
 const MAX_REASONING = 50_000;
 const MAX_REFS = 50;
+const MAX_REF_TITLE = 200;
+// The most Spaces and tabs you can link to one chat.
+export const MAX_LINKS = 20;
 
 const ERROR_KINDS: readonly ChatErrorKind[] = [
   'auth',
@@ -135,6 +154,34 @@ export function defaultChats(now = Date.now()): ChatsState {
 // Anything invalid is dropped or repaired; this never throws.
 // ---------------------------------------------------------------------------
 
+const validTag = (tag: unknown): tag is string =>
+  typeof tag === 'string' &&
+  tag.length >= 2 &&
+  tag.length <= MAX_REF_TITLE + 1 &&
+  tag.startsWith('@') &&
+  !/[\r\n]/.test(tag);
+
+function parseMentions(raw: unknown): Mention[] {
+  const out: Mention[] = [];
+  if (!Array.isArray(raw)) return out;
+  for (const r of raw) {
+    if (out.length >= MAX_LINKS) break;
+    // An empty tag is an item attached without an "@name" in the text.
+    if (!isRecord(r) || !isId(r.id) || !(r.tag === '' || validTag(r.tag)))
+      continue;
+    if (r.kind !== 'space' && r.kind !== 'tab') continue;
+    if (out.some((x) => x.kind === r.kind && x.id === r.id)) continue;
+    out.push({
+      kind: r.kind,
+      id: r.id,
+      tag: r.tag,
+      title: typeof r.title === 'string' ? r.title.slice(0, MAX_REF_TITLE) : '',
+      url: r.kind === 'tab' && isWebUrl(r.url) ? r.url : null,
+    });
+  }
+  return out;
+}
+
 export function parseChats(raw: unknown, now = Date.now()): ChatsState {
   if (!isRecord(raw) || !Array.isArray(raw.conversations)) {
     return defaultChats(now);
@@ -184,6 +231,7 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
           model: isValidModelId(m.model) ? m.model : null,
           usage,
           errorKind: ERROR_KINDS.find((k) => k === m.errorKind) ?? null,
+          mentions: parseMentions(m.mentions),
         });
       }
     }
@@ -195,7 +243,13 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
         if (!isRecord(r) || !isId(r.id)) continue;
         if (r.kind !== 'space' && r.kind !== 'tab') continue;
         if (refs.some((x) => x.kind === r.kind && x.id === r.id)) continue;
-        refs.push({ kind: r.kind, id: r.id });
+        refs.push({
+          kind: r.kind,
+          id: r.id,
+          title:
+            typeof r.title === 'string' ? r.title.slice(0, MAX_REF_TITLE) : '',
+          url: r.kind === 'tab' && isWebUrl(r.url) ? r.url : null,
+        });
       }
     }
 
@@ -367,11 +421,23 @@ export function addUserMessage(
   chatId: number,
   text: string,
   now = Date.now(),
+  mentions: { kind: string; id: number; tag: string }[] = [],
 ): { state: ChatsState; id: number } | null {
   const chat = findConversation(state, chatId);
   const content = text.trim();
   if (!chat || content === '' || content.length > MAX_USER_CHARS) return null;
   if (chat.messages.length >= MAX_MESSAGES) return null;
+
+  const inline = mentions.flatMap((m) => {
+    const ref = chat.refs.find((r) => sameLink(r, m));
+    return ref && m.tag !== '' && content.includes(m.tag)
+      ? [{ ...ref, tag: m.tag }]
+      : [];
+  });
+  const shown = chat.messages.flatMap((m) => m.mentions);
+  const attached = chat.refs
+    .filter((r) => ![...inline, ...shown].some((x) => sameLink(x, r)))
+    .map((r) => ({ ...r, tag: '' }));
 
   const id = state.nextId;
   const message: ChatMessage = {
@@ -384,6 +450,11 @@ export function addUserMessage(
     model: null,
     usage: null,
     errorKind: null,
+    // Only things linked to this chat, and whose "@name" is really in the text,
+    // can be mentioned. The name and address come from the link, not the sender.
+    // Links added since they were last shown (for example with the "Add page"
+    // button) are attached to this message too, with no "@name" in the text.
+    mentions: parseMentions(inline.concat(attached)),
   };
   const firstMessage = !chat.messages.some((m) => m.role === 'user');
   const next = update({ ...state, nextId: id + 1 }, chatId, (c) => ({
@@ -418,6 +489,7 @@ export function startAssistantMessage(
     model,
     usage: null,
     errorKind: null,
+    mentions: [],
   };
   return {
     id,
@@ -480,6 +552,144 @@ export function finishMessage(
     }),
     now,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Links to Spaces and tabs
+// ---------------------------------------------------------------------------
+
+const sameLink = (
+  a: { kind: string; id: number },
+  b: { kind: string; id: number },
+) => a.kind === b.kind && a.id === b.id;
+
+// Link a Space or tab to a chat. Linking something already linked just refreshes
+// what is remembered about it. Over the limit, or with a bad id or kind, nothing
+// happens.
+export function addRef(
+  state: ChatsState,
+  chatId: number,
+  ref: ChatRef,
+): ChatsState {
+  if (!isId(ref.id) || (ref.kind !== 'space' && ref.kind !== 'tab'))
+    return state;
+  const clean: ChatRef = {
+    kind: ref.kind,
+    id: ref.id,
+    title: ref.title.slice(0, MAX_REF_TITLE),
+    url: ref.kind === 'tab' && isWebUrl(ref.url) ? ref.url : null,
+  };
+  const chat = findConversation(state, chatId);
+  if (!chat) return state;
+  const exists = chat.refs.some((r) => sameLink(r, clean));
+  if (!exists && chat.refs.length >= MAX_LINKS) return state;
+  return update(state, chatId, (c) => ({
+    ...c,
+    refs: exists
+      ? c.refs.map((r) => (sameLink(r, clean) ? clean : r))
+      : [...c.refs, clean],
+  }));
+}
+
+export function removeRef(
+  state: ChatsState,
+  chatId: number,
+  kind: ChatRef['kind'],
+  id: number,
+): ChatsState {
+  return update(state, chatId, (c) => ({
+    ...c,
+    refs: c.refs.filter((r) => !sameLink(r, { kind, id })),
+  }));
+}
+
+// Point a link at a different item (a closed tab that was reopened is a new tab
+// with a new id).
+export function retargetRef(
+  state: ChatsState,
+  chatId: number,
+  kind: ChatRef['kind'],
+  oldId: number,
+  next: { id: number; title: string; url: string | null },
+): ChatsState {
+  const chat = findConversation(state, chatId);
+  const old = { kind, id: oldId };
+  const inRefs = chat?.refs.some((r) => sameLink(r, old)) ?? false;
+  const inMessages =
+    chat?.messages.some((m) => m.mentions.some((x) => sameLink(x, old))) ??
+    false;
+  if (!chat || (!inRefs && !inMessages)) return state;
+
+  const title = next.title.slice(0, MAX_REF_TITLE);
+  const url = kind === 'tab' && isWebUrl(next.url) ? next.url : null;
+  return update(state, chatId, (c) => {
+    const alreadyLinked = c.refs.some((r) =>
+      sameLink(r, { kind, id: next.id }),
+    );
+    return {
+      ...c,
+      // Earlier mentions (even of a link since removed) follow the reopened tab.
+      messages: c.messages.map((m) =>
+        m.mentions.some((x) => sameLink(x, old))
+          ? {
+              ...m,
+              mentions: m.mentions.map((x) =>
+                sameLink(x, old) ? { ...x, id: next.id, title, url } : x,
+              ),
+            }
+          : m,
+      ),
+      refs: alreadyLinked
+        ? c.refs.filter((r) => !sameLink(r, old))
+        : c.refs.map((r) =>
+            sameLink(r, old) ? { kind, id: next.id, title, url } : r,
+          ),
+    };
+  });
+}
+
+// Same as retargetRef, but for every chat that links or mentions the item (a
+// reopened page is picked up by all the chats that used it).
+export function retargetEverywhere(
+  state: ChatsState,
+  kind: ChatRef['kind'],
+  oldId: number,
+  next: { id: number; title: string; url: string | null },
+): ChatsState {
+  return state.conversations.reduce(
+    (current, chat) => retargetRef(current, chat.id, kind, oldId, next),
+    state,
+  );
+}
+
+// Bring every link's remembered name and address up to date with the workspace.
+// `lookup` gives the latest for an item, or null if it no longer exists (then the
+// last remembered copy is kept). Returns the same state if nothing changed.
+export function refreshRefs(
+  state: ChatsState,
+  lookup: (
+    kind: ChatRef['kind'],
+    id: number,
+  ) => { title: string; url: string | null } | null,
+): ChatsState {
+  let changed = false;
+  const conversations = state.conversations.map((chat) => {
+    let chatChanged = false;
+    const refs = chat.refs.map((ref) => {
+      const latest = lookup(ref.kind, ref.id);
+      if (!latest) return ref;
+      const title = latest.title.slice(0, MAX_REF_TITLE);
+      const url =
+        ref.kind === 'tab' && isWebUrl(latest.url) ? latest.url : ref.url;
+      if (title === ref.title && url === ref.url) return ref;
+      chatChanged = true;
+      return { ...ref, title, url };
+    });
+    if (!chatChanged) return chat;
+    changed = true;
+    return { ...chat, refs };
+  });
+  return changed ? { ...state, conversations } : state;
 }
 
 export function removeMessage(

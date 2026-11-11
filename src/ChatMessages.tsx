@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { MentionToken } from './LinkChips';
 import { errorMessage } from './openrouter';
-import type { ChatMessage } from './types';
+import type { ChatMessage, SpaceInfo, TabInfo } from './types';
 
 // ---- Getting a chat's messages ----------------------------------------------------
 
@@ -214,14 +215,50 @@ function ThinkingBlock({ message }: { message: ChatMessage }) {
 // One message. Everything is drawn as plain text: a model's reply is never turned
 // into markup, so it cannot do anything but be read. (Richer content, such as
 // buttons or diagrams, will come later in a safe, sandboxed form.)
+// Your message text, with each "@name" you picked drawn as a small token.
+function withTokens(
+  message: ChatMessage,
+  chatId: number,
+  tabs: TabInfo[],
+  spaces: SpaceInfo[],
+) {
+  const tags = message.mentions
+    .map((m) => m.tag)
+    .filter((t) => t !== '')
+    .sort((a, b) => b.length - a.length);
+  if (tags.length === 0) return message.content;
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = message.content.split(
+    new RegExp(`(${tags.map(escape).join('|')})`),
+  );
+  return parts.map((part, i) => {
+    const mention = message.mentions.find((m) => m.tag === part);
+    return mention ? (
+      <MentionToken
+        key={i}
+        chatId={chatId}
+        mention={mention}
+        tabs={tabs}
+        spaces={spaces}
+      />
+    ) : (
+      part
+    );
+  });
+}
+
 function MessageView({
   message,
   isLast,
   chatId,
+  tabs,
+  spaces,
 }: {
   message: ChatMessage;
   isLast: boolean;
   chatId: number;
+  tabs: TabInfo[];
+  spaces: SpaceInfo[];
 }) {
   const text: CSSProperties = {
     whiteSpace: 'pre-wrap',
@@ -232,11 +269,14 @@ function MessageView({
   };
 
   if (message.role === 'user') {
+    // Pages attached without an "@name" (the Add page button) sit under the text.
+    const attached = message.mentions.filter((m) => m.tag === '');
     return (
       <div
         style={{
           display: 'flex',
-          justifyContent: 'flex-end',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
           margin: '10px 0',
         }}
       >
@@ -249,8 +289,30 @@ function MessageView({
             borderRadius: 14,
           }}
         >
-          {message.content}
+          {withTokens(message, chatId, tabs, spaces)}
         </div>
+        {attached.length > 0 && (
+          <div
+            style={{
+              maxWidth: '85%',
+              marginTop: 6,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              justifyContent: 'flex-end',
+            }}
+          >
+            {attached.map((m) => (
+              <MentionToken
+                key={`${m.kind}:${m.id}`}
+                chatId={chatId}
+                mention={m}
+                tabs={tabs}
+                spaces={spaces}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -305,7 +367,15 @@ function MessageView({
 
 // The conversation. It stays scrolled to the bottom as a reply arrives, unless you
 // have scrolled up to read something (then it leaves you where you are).
-export function MessageList({ chatId }: { chatId: number }) {
+export function MessageList({
+  chatId,
+  tabs,
+  spaces,
+}: {
+  chatId: number;
+  tabs: TabInfo[];
+  spaces: SpaceInfo[];
+}) {
   const messages = useChatMessages(chatId);
   const box = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -341,6 +411,8 @@ export function MessageList({ chatId }: { chatId: number }) {
           message={m}
           isLast={m.id === lastId}
           chatId={chatId}
+          tabs={tabs}
+          spaces={spaces}
         />
       ))}
     </div>

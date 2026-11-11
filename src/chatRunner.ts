@@ -32,6 +32,8 @@ export interface RunnerDeps {
 export interface RunContext {
   model: string;
   systemPrompt: string | null;
+  // What the chat has linked (titles and addresses), already cleaned; or null.
+  linked?: string | null;
 }
 
 export type StartResult =
@@ -58,6 +60,7 @@ export function createChatRunner(deps: RunnerDeps) {
       chats.findConversation(deps.getState(), chatId)?.messages ?? [];
     const messages = buildMessages({
       systemPrompt: context.systemPrompt,
+      linkedContext: context.linked ?? null,
       history,
     });
 
@@ -123,7 +126,12 @@ export function createChatRunner(deps: RunnerDeps) {
     runningChats: () => [...running.keys()],
 
     // Add your message to the chat and start the reply.
-    send(chatId: number, text: string, context: RunContext): StartResult {
+    send(
+      chatId: number,
+      text: string,
+      context: RunContext,
+      mentions: { kind: string; id: number; tag: string }[] = [],
+    ): StartResult {
       if (running.has(chatId)) return { ok: false, reason: 'busy' };
       if (!chats.findConversation(deps.getState(), chatId)) {
         return { ok: false, reason: 'unknown-chat' };
@@ -133,6 +141,7 @@ export function createChatRunner(deps: RunnerDeps) {
         chatId,
         text,
         deps.now(),
+        mentions,
       );
       if (!added) return { ok: false, reason: 'empty' };
       const reply = chats.startAssistantMessage(

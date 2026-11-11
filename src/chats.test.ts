@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   activeConversation,
+  addRef,
   addUserMessage,
   appendReasoning,
   appendToMessage,
@@ -11,11 +12,16 @@ import {
   deleteConversation,
   finishMessage,
   findMessage,
+  MAX_LINKS,
   MAX_USER_CHARS,
   newConversation,
   parseChats,
+  refreshRefs,
   removeMessage,
+  removeRef,
   renameConversation,
+  retargetEverywhere,
+  retargetRef,
   setActiveConversation,
   setConversationModel,
   startAssistantMessage,
@@ -89,7 +95,9 @@ test('parseChats repairs ids, titles, messages and links', () => {
       [6, DEFAULT_CHAT_TITLE],
     ],
   );
-  assert.deepEqual(state.conversations[0].refs, [{ kind: 'space', id: 3 }]);
+  assert.deepEqual(state.conversations[0].refs, [
+    { kind: 'space', id: 3, title: '', url: null },
+  ]);
   assert.deepEqual(
     state.conversations[0].messages.map((m) => m.id),
     [9],
@@ -356,6 +364,211 @@ test('thinking is stored apart from the answer, and is capped and validated', ()
   assert.deepEqual(reasonings, [4, 0, 50_000, 0]);
 });
 
+// ---- Links ---------------------------------------------------------------------
+
+const link = (
+  kind: 'tab' | 'space',
+  id: number,
+  title = '',
+  url: string | null = null,
+) => ({
+  kind,
+  id,
+  title,
+  url,
+});
+
+test('linking adds a Space or tab, updates an existing link, and respects the limit', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(
+    state,
+    chatId,
+    link('tab', 5, 'Docs', 'https://docs.example.com/x'),
+  );
+  state = addRef(state, chatId, link('space', 5, 'Research'));
+  assert.deepEqual(
+    state.conversations[0].refs.map((r) => [r.kind, r.id, r.title]),
+    [
+      ['tab', 5, 'Docs'],
+      ['space', 5, 'Research'],
+    ], // a tab and a Space may share an id
+  );
+  // The same item again updates what is remembered, without adding a second link.
+  state = addRef(
+    state,
+    chatId,
+    link('tab', 5, 'Docs (new title)', 'https://docs.example.com/y'),
+  );
+  assert.equal(state.conversations[0].refs.length, 2);
+  assert.deepEqual(
+    [state.conversations[0].refs[0].title, state.conversations[0].refs[0].url],
+    ['Docs (new title)', 'https://docs.example.com/y'],
+  );
+
+  // Up to MAX_LINKS; beyond that nothing is added (but existing ones still update).
+  let full = defaultChats(NOW);
+  for (let i = 1; i <= MAX_LINKS + 5; i++)
+    full = addRef(full, chatId, link('tab', i, `t${i}`));
+  assert.equal(full.conversations[0].refs.length, MAX_LINKS);
+  assert.equal(
+    addRef(full, chatId, link('tab', 1, 'renamed')).conversations[0].refs[0]
+      .title,
+    'renamed',
+  );
+});
+
+test('bad links are refused: unknown chat, bad id or kind; odd addresses are dropped', () => {
+  const state = defaultChats(NOW);
+  const chatId = state.activeId;
+  assert.equal(addRef(state, 9999, link('tab', 1)), state);
+  assert.equal(addRef(state, chatId, link('tab', 0)), state);
+  assert.equal(addRef(state, chatId, link('tab', 1.5)), state);
+  assert.equal(
+    addRef(state, chatId, {
+      kind: 'file' as never,
+      id: 1,
+      title: '',
+      url: null,
+    }),
+    state,
+  );
+  // Only web addresses are kept, and only for tabs.
+  const odd = addRef(state, chatId, link('tab', 1, 't', 'file:///C:/secret'));
+  assert.equal(odd.conversations[0].refs[0].url, null);
+  assert.equal(
+    addRef(state, chatId, link('space', 2, 's', 'https://x.example/'))
+      .conversations[0].refs[0].url,
+    null,
+  );
+  // Long titles are cut.
+  assert.equal(
+    addRef(state, chatId, link('tab', 1, 'x'.repeat(500))).conversations[0]
+      .refs[0].title.length,
+    200,
+  );
+});
+
+test('unlinking removes only that link', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(
+    addRef(state, chatId, link('tab', 1, 'a')),
+    chatId,
+    link('space', 1, 'b'),
+  );
+  state = removeRef(state, chatId, 'tab', 1);
+  assert.deepEqual(
+    state.conversations[0].refs.map((r) => [r.kind, r.id]),
+    [['space', 1]],
+  );
+  assert.equal(
+    removeRef(state, chatId, 'tab', 99).conversations[0].refs.length,
+    1,
+  );
+});
+
+test('a reopened tab is a new tab: the link follows it', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(state, chatId, link('tab', 1, 'Old', 'https://old.example/'));
+  state = retargetRef(state, chatId, 'tab', 1, {
+    id: 50,
+    title: 'Old',
+    url: 'https://old.example/',
+  });
+  assert.deepEqual(
+    state.conversations[0].refs.map((r) => r.id),
+    [50],
+  );
+  // Unknown old link: nothing changes. Target already linked: just drops the old link.
+  assert.equal(
+    retargetRef(state, chatId, 'tab', 99, { id: 60, title: 'x', url: null }),
+    state,
+  );
+  let twice = addRef(
+    addRef(defaultChats(NOW), chatId, link('tab', 1)),
+    chatId,
+    link('tab', 2),
+  );
+  twice = retargetRef(twice, chatId, 'tab', 1, {
+    id: 2,
+    title: 'x',
+    url: null,
+  });
+  assert.deepEqual(
+    twice.conversations[0].refs.map((r) => r.id),
+    [2],
+  );
+});
+
+test('remembered names follow the workspace, and closed items keep their last copy', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(
+    addRef(state, chatId, link('tab', 1, 'Old title', 'https://a.example/')),
+    chatId,
+    link('tab', 2, 'Closed one', 'https://b.example/'),
+  );
+  const lookup = (kind: 'tab' | 'space', id: number) =>
+    kind === 'tab' && id === 1
+      ? { title: 'New title', url: 'https://a.example/new' }
+      : null;
+  const refreshed = refreshRefs(state, lookup);
+  assert.deepEqual(
+    refreshed.conversations[0].refs.map((r) => [r.id, r.title, r.url]),
+    [
+      [1, 'New title', 'https://a.example/new'],
+      [2, 'Closed one', 'https://b.example/'],
+    ],
+  );
+  // Nothing changed: the very same state comes back (cheap to detect).
+  assert.equal(refreshRefs(refreshed, lookup), refreshed);
+  assert.equal(
+    refreshRefs(state, () => null),
+    state,
+  );
+});
+
+test('links with remembered names survive a round trip, and bad ones are repaired', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(
+    state,
+    chatId,
+    link('tab', 3, 'Docs', 'https://docs.example.com/'),
+  );
+  assert.deepEqual(parseChats(JSON.parse(JSON.stringify(state)), NOW), state);
+  const repaired = parseChats(
+    {
+      conversations: [
+        {
+          id: 1,
+          refs: [
+            { kind: 'tab', id: 1, title: 'ok', url: 'https://ok.example/' },
+            { kind: 'tab', id: 2, title: 7, url: 'file:///C:/x' },
+            {
+              kind: 'space',
+              id: 3,
+              title: 'S',
+              url: 'https://not-for-spaces.example/',
+            },
+          ],
+        },
+      ],
+    },
+    NOW,
+  );
+  assert.deepEqual(
+    repaired.conversations[0].refs.map((r) => [r.id, r.title, r.url]),
+    [
+      [1, 'ok', 'https://ok.example/'],
+      [2, '', null],
+      [3, 'S', null],
+    ],
+  );
+});
+
 test('a chat can use its own model, validated', () => {
   const state = defaultChats(NOW);
   const id = state.activeId;
@@ -460,4 +673,95 @@ test('a chat with messages survives a JSON round trip unchanged', () => {
   );
   state = setConversationModel(state, chatId, 'openai/gpt-4o');
   assert.deepEqual(parseChats(JSON.parse(JSON.stringify(state)), NOW), state);
+});
+
+test('a message keeps tokens for what it mentioned, even after the link is removed', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(state, chatId, link('tab', 1, 'Old', 'https://old.example/'));
+  const sent = addUserMessage(state, chatId, 'see @Old and @Other', NOW, [
+    { kind: 'tab', id: 1, tag: '@Old' },
+    // Not linked, not in the text, and junk: all dropped.
+    { kind: 'tab', id: 2, tag: '@Other' },
+    { kind: 'tab', id: 1, tag: '@Missing' },
+    { kind: 'bad', id: 3, tag: '@Old' },
+  ]);
+  assert.ok(sent);
+  state = sent.state;
+  const expected = [
+    {
+      kind: 'tab',
+      id: 1,
+      tag: '@Old',
+      title: 'Old',
+      url: 'https://old.example/',
+    },
+  ];
+  assert.deepEqual(state.conversations[0].messages[0].mentions, expected);
+
+  // Removing the link leaves the token in the old message.
+  state = removeRef(state, chatId, 'tab', 1);
+  assert.deepEqual(state.conversations[0].refs, []);
+  assert.deepEqual(state.conversations[0].messages[0].mentions, expected);
+
+  // Reopening follows the token to the new tab, and survives a save and load.
+  state = retargetRef(state, chatId, 'tab', 1, {
+    id: 50,
+    title: 'Old',
+    url: 'https://old.example/',
+  });
+  assert.equal(state.conversations[0].messages[0].mentions[0].id, 50);
+  const again = parseChats(JSON.parse(JSON.stringify(state)), NOW);
+  assert.deepEqual(again.conversations[0].messages[0].mentions, [
+    { ...expected[0], id: 50 },
+  ]);
+});
+
+test('links added without an @name are attached to the next message once', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(state, chatId, link('tab', 1, 'A', 'https://a.example/'));
+  state = addUserMessage(state, chatId, 'first', NOW, [])!.state;
+  assert.deepEqual(
+    state.conversations[0].messages[0].mentions.map((m) => [m.id, m.tag]),
+    [[1, '']],
+  );
+  // Still linked, but already shown: the next message does not repeat it.
+  state = addUserMessage(state, chatId, 'second', NOW, [])!.state;
+  const users = state.conversations[0].messages.filter(
+    (m) => m.role === 'user',
+  );
+  assert.deepEqual(users[1].mentions, []);
+  // A newly added link shows up on the message after that.
+  state = addRef(state, chatId, link('space', 2, 'S'));
+  state = addUserMessage(state, chatId, 'third', NOW, [])!.state;
+  const third = state.conversations[0].messages.filter(
+    (m) => m.role === 'user',
+  )[2];
+  assert.deepEqual(
+    third.mentions.map((m) => [m.kind, m.id]),
+    [['space', 2]],
+  );
+});
+
+test('a reopened page is picked up by every chat that used it (a removed link stays removed)', () => {
+  let state = defaultChats(NOW);
+  const first = state.activeId;
+  state = addRef(state, first, link('tab', 1, 'A', 'https://a.example/'));
+  state = addUserMessage(state, first, 'hi', NOW, [])!.state;
+  state = removeRef(state, first, 'tab', 1); // link gone, token stays
+  const second = newConversation(state, NOW);
+  state = second.state;
+  state = addRef(state, second.id, link('tab', 1, 'A', 'https://a.example/'));
+
+  const next = { id: 9, title: 'A', url: 'https://a.example/' };
+  state = retargetEverywhere(state, 'tab', 1, next);
+
+  const [c1, c2] = state.conversations;
+  assert.deepEqual(c1.refs, []);
+  assert.equal(c1.messages[0].mentions[0].id, 9);
+  assert.deepEqual(
+    c2.refs.map((r) => r.id),
+    [9],
+  );
 });
