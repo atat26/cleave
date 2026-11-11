@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  setSidebarWidth,
   addSpace,
   addTab,
   defaultState,
@@ -237,6 +241,31 @@ test('setSpaceColor and setSpaceCollapsed change only that Space', () => {
   assert.equal(setSpaceColor(state, spaceId, 'plaid' as never), state);
   const collapsed = setSpaceCollapsed(state, spaceId, true);
   assert.equal(collapsed.spaces.find((s) => s.id === spaceId)?.collapsed, true);
+});
+
+test('sidebar width is clamped, remembered, and validated on load', () => {
+  const state = defaultState();
+  assert.equal(state.settings.sidebarWidth, SIDEBAR_DEFAULT_WIDTH);
+  assert.equal(setSidebarWidth(state, 300).settings.sidebarWidth, 300);
+  assert.equal(
+    setSidebarWidth(state, 5).settings.sidebarWidth,
+    SIDEBAR_MIN_WIDTH,
+  );
+  assert.equal(
+    setSidebarWidth(state, 9999).settings.sidebarWidth,
+    SIDEBAR_MAX_WIDTH,
+  );
+  assert.equal(setSidebarWidth(state, Number.NaN), state);
+  // A tampered or old save file cannot set a silly width.
+  assert.equal(
+    parseState({ settings: { sidebarWidth: 1e9 } }).settings.sidebarWidth,
+    SIDEBAR_MAX_WIDTH,
+  );
+  assert.equal(
+    parseState({ settings: { sidebarWidth: 'wide' } }).settings.sidebarWidth,
+    SIDEBAR_DEFAULT_WIDTH,
+  );
+  assert.equal(parseState({}).settings.sidebarWidth, SIDEBAR_DEFAULT_WIDTH);
 });
 
 test('setActive ignores things that do not exist', () => {

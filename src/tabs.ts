@@ -8,10 +8,11 @@ import {
 } from 'electron';
 import path from 'node:path';
 import {
+  SIDEBAR_ANIMATION_MS,
+  SIDEBAR_CLOSE_MARGIN,
   SIDEBAR_COLLAPSED_WIDTH,
-  SIDEBAR_EXPANDED_WIDTH,
+  SIDEBAR_SNAP_WIDTH,
   TOOLBAR_HEIGHT,
-  contentLeft,
 } from './layout';
 import { spaceMenu, tabMenu } from './menus';
 import type { MenuActions } from './menus';
@@ -28,6 +29,8 @@ export const NEW_TAB_URL = 'https://duckduckgo.com';
 const isId = (value: unknown): value is number => Number.isInteger(value);
 const isIdOrNull = (value: unknown): value is number | null =>
   value === null || isId(value);
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
 
 // Manages all tabs and Spaces of one window.
 //
@@ -52,10 +55,13 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   const views = new Map<number, WebContentsView>();
   const saver = createSaver(file, () => state);
 
-  // The mouse is over the sidebar (so it is open even if not pinned), and a
-  // right-click menu is currently showing (the sidebar must not close under it).
+  // The sidebar is open without being pinned because the mouse is on it.
   let hover = false;
-  let menuOpen = false;
+  // How many menus / dialogs are open (the sidebar must not close under them).
+  let busy = 0;
+  // While the sidebar's edge is being dragged: where the edge is now.
+  let dragWidth: number | null = null;
+  let dragStartedPinned = false;
 
   const pinned = () => state.settings.sidebarPinned;
   const expanded = () => pinned() || hover;
@@ -79,9 +85,42 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   sidebar.setWindowOpenHandler(() => ({ action: 'deny' }));
   sidebar.on('will-navigate', (event) => event.preventDefault());
 
+  // ---- Layout ----------------------------------------------------------------
+  //
+  // Two numbers describe the layout, and both can be in the middle of sliding:
+  //   sidebarNow: how wide the sidebar view is
+  //   pageNow:    where the toolbar and web pages start (they are only pushed
+  //               aside by a PINNED sidebar; an opened-by-hover one overlays)
+
+  const sidebarTarget = () =>
+    dragWidth ??
+    (expanded() ? state.settings.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH);
+  const pageTarget = () => {
+    if (dragWidth !== null) {
+      return dragStartedPinned ? dragWidth : SIDEBAR_COLLAPSED_WIDTH;
+    }
+    return pinned() ? state.settings.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH;
+  };
+
+  let sidebarNow = sidebarTarget();
+  let pageNow = pageTarget();
+
+  // The area for web pages: right of the sidebar strip (or of a pinned sidebar),
+  // below the toolbar.
+  const pageBounds = () => {
+    const [width, height] = win.getContentSize();
+    const left = Math.round(pageNow);
+    return {
+      x: left,
+      y: TOOLBAR_HEIGHT,
+      width: Math.max(0, width - left),
+      height: Math.max(0, height - TOOLBAR_HEIGHT),
+    };
+  };
+
   // ---- Telling the UI pages what changed -----------------------------------
 
-  // A UI page can only be sent state after it has finished loading.
+  // A UI page can only be sent messages after it has finished loading.
   const ready = new Set<Electron.WebContents>();
   const watchUi = (contents: Electron.WebContents) => {
     contents.on('did-finish-load', () => {
@@ -95,6 +134,14 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       if (ready.has(contents) && !contents.isDestroyed()) {
         contents.send(channel, ...args);
       }
+    }
+  };
+
+  // Tell the toolbar/overview page where it should start (it follows the
+  // sidebar while that slides).
+  const sendLayout = () => {
+    if (ready.has(win.webContents) && !win.webContents.isDestroyed()) {
+      win.webContents.send('ui:layout', Math.round(pageNow));
     }
   };
 
@@ -125,6 +172,7 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       sidebarExpanded: expanded(),
     };
     sendToUi('ui:state', ui);
+    sendLayout();
   };
 
   // Change the model, save soon, and refresh the UI.
@@ -134,65 +182,114 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     sendState();
   };
 
-  // ---- Layout -------------------------------------------------------------
+  // ---- Moving things into place, smoothly -----------------------------------
 
-  // Every tab's view gets the same area: right of the sidebar's reserved strip
-  // (or right of the whole sidebar when pinned), below the toolbar.
-  const pageBounds = () => {
-    const [width, height] = win.getContentSize();
-    const left = contentLeft(pinned());
-    return {
-      x: left,
-      y: TOOLBAR_HEIGHT,
-      width: Math.max(0, width - left),
-      height: Math.max(0, height - TOOLBAR_HEIGHT),
-    };
-  };
-
-  // Size the sidebar (it overlays the page when open but not pinned) and the
-  // web pages. Called whenever the window or the sidebar changes.
-  const applyLayout = () => {
+  // Put the sidebar and the visible web page where sidebarNow / pageNow say.
+  const render = () => {
+    if (win.isDestroyed()) return;
     const [, height] = win.getContentSize();
     sidebarView.setBounds({
       x: 0,
       y: 0,
-      width: expanded() ? SIDEBAR_EXPANDED_WIDTH : SIDEBAR_COLLAPSED_WIDTH,
+      width: Math.round(sidebarNow),
       height,
     });
-    const bounds = pageBounds();
-    for (const view of views.values()) view.setBounds(bounds);
+    const id = activeTabId();
+    if (id !== null) views.get(id)?.setBounds(pageBounds());
+    sendLayout();
+  };
+
+  let animation: ReturnType<typeof setInterval> | null = null;
+  const stopAnimation = () => {
+    if (animation !== null) clearInterval(animation);
+    animation = null;
+  };
+
+  // Slide (or, with animate = false, jump) to wherever the layout should be now.
+  const applyLayout = (animate: boolean) => {
+    stopAnimation();
+    const toSidebar = sidebarTarget();
+    const toPage = pageTarget();
+    if (!animate || (sidebarNow === toSidebar && pageNow === toPage)) {
+      sidebarNow = toSidebar;
+      pageNow = toPage;
+      render();
+      return;
+    }
+    const fromSidebar = sidebarNow;
+    const fromPage = pageNow;
+    const started = Date.now();
+    animation = setInterval(() => {
+      const t = Math.min(1, (Date.now() - started) / SIDEBAR_ANIMATION_MS);
+      const eased = 1 - (1 - t) ** 3; // Starts fast, settles gently.
+      sidebarNow = fromSidebar + (toSidebar - fromSidebar) * eased;
+      pageNow = fromPage + (toPage - fromPage) * eased;
+      render();
+      if (t >= 1) stopAnimation();
+    }, 8);
+  };
+
+  // ---- Opening and closing the sidebar by mouse ---------------------------------
+
+  // Where is the mouse, relative to the window's content area?
+  const cursorInWindow = () => {
+    const point = screen.getCursorScreenPoint();
+    const bounds = win.getContentBounds();
+    return {
+      x: point.x - bounds.x,
+      y: point.y - bounds.y,
+      height: bounds.height,
+    };
+  };
+
+  // Is the mouse over the open sidebar, or within `margin` pixels of it?
+  const cursorNearSidebar = (margin: number) => {
+    const { x, y, height } = cursorInWindow();
+    return (
+      x >= -margin &&
+      x < state.settings.sidebarWidth + margin &&
+      y >= -margin / 2 &&
+      y < height + margin / 2
+    );
+  };
+
+  // A sidebar opened by hover closes by itself, but only once the mouse has
+  // moved well past its right edge for a moment (not the instant it leaves).
+  let watcher: ReturnType<typeof setInterval> | null = null;
+  let awayTicks = 0;
+  const stopWatching = () => {
+    if (watcher !== null) clearInterval(watcher);
+    watcher = null;
+  };
+  const startWatching = () => {
+    awayTicks = 0;
+    if (watcher !== null) return;
+    watcher = setInterval(() => {
+      if (!hover || pinned() || dragWidth !== null || busy > 0) {
+        awayTicks = 0;
+        return;
+      }
+      if (cursorNearSidebar(SIDEBAR_CLOSE_MARGIN)) awayTicks = 0;
+      else if (++awayTicks >= 4) setHover(false);
+    }, 60);
   };
 
   const setHover = (value: boolean) => {
     if (value === hover) return;
-    if (!value && menuOpen) return; // Stay open while a menu is showing.
     hover = value;
-    applyLayout();
+    if (value) startWatching();
+    else stopWatching();
+    applyLayout(true);
     sendState();
   };
 
-  // Is the mouse pointer currently over the sidebar? (Checked after a menu or
-  // dialog closes, when the page was not told the mouse left.)
-  const cursorInSidebar = (width: number) => {
-    const point = screen.getCursorScreenPoint();
-    const bounds = win.getContentBounds();
-    const x = point.x - bounds.x;
-    const y = point.y - bounds.y;
-    return x >= 0 && x < width && y >= 0 && y < bounds.height;
-  };
-
+  // Show a right-click menu without letting the sidebar close under it.
   const popupMenu = (menu: Electron.Menu | null) => {
     if (!menu) return;
-    menuOpen = true;
+    busy++;
     menu.popup({
       window: win,
-      callback: () => {
-        menuOpen = false;
-        const width = expanded()
-          ? SIDEBAR_EXPANDED_WIDTH
-          : SIDEBAR_COLLAPSED_WIDTH;
-        if (!cursorInSidebar(width)) setHover(false);
-      },
+      callback: () => void (busy = Math.max(0, busy - 1)),
     });
   };
 
@@ -258,7 +355,11 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
     if (tab) ensureView(tab);
-    for (const [tabId, view] of views) view.setVisible(tabId === id);
+    for (const [tabId, view] of views) {
+      // Hidden pages are not resized while the layout slides, so catch up now.
+      if (tabId === id) view.setBounds(pageBounds());
+      view.setVisible(tabId === id);
+    }
     if (id !== null) views.get(id)?.webContents.focus();
     else win.webContents.focus();
     sendState();
@@ -303,15 +404,21 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     const count = state.tabs.filter((tab) => tab.spaceId === id).length;
     // Nothing to lose in an empty Space; otherwise ask first.
     if (count > 0) {
-      const { response } = await dialog.showMessageBox(win, {
-        type: 'warning',
-        title: 'Delete Space',
-        message: `Delete “${space.name}”?`,
-        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
-        buttons: ['Delete Space and close tabs', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-      });
+      busy++;
+      let response: number;
+      try {
+        ({ response } = await dialog.showMessageBox(win, {
+          type: 'warning',
+          title: 'Delete Space',
+          message: `Delete “${space.name}”?`,
+          detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
+          buttons: ['Delete Space and close tabs', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+        }));
+      } finally {
+        busy = Math.max(0, busy - 1);
+      }
       if (response !== 0) return;
     }
     // The Space may have changed while the dialog was open.
@@ -329,7 +436,7 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     closeTab,
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
-      setHover(true);
+      if (!pinned()) setHover(true);
       if (sidebar.isDestroyed()) return;
       sidebar.send('space:begin-rename', spaceId);
       sidebar.focus(); // So the rename box can take keyboard input.
@@ -429,17 +536,42 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
       if (isId(id) && typeof name === 'string')
         commit(model.renameSpace(state, id, name));
     },
-    'sidebar:hover': (hovering) => {
-      if (typeof hovering === 'boolean') setHover(hovering);
+    'sidebar:hover': () => {
+      if (!pinned() && dragWidth === null) setHover(true);
     },
-    'sidebar:pin': (isPinned) => {
-      if (typeof isPinned !== 'boolean') return;
-      state = model.setSidebarPinned(state, isPinned);
-      // Pinned: hover no longer matters. Unpinned: stay open only if the mouse
-      // is still over the open sidebar (it just clicked the button there).
-      hover = isPinned ? false : cursorInSidebar(SIDEBAR_EXPANDED_WIDTH);
+    // Dragging the sidebar's edge. While dragging the sidebar follows the mouse
+    // exactly. On release: near the left edge it becomes the icon strip, anywhere
+    // else it pins open at that width (which is remembered).
+    'sidebar:drag-start': () => {
+      if (dragWidth !== null) return;
+      stopAnimation();
+      dragStartedPinned = pinned();
+      dragWidth = sidebarNow;
+    },
+    'sidebar:drag': (width) => {
+      if (dragWidth === null || !isNumber(width)) return;
+      dragWidth = Math.min(
+        model.SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_COLLAPSED_WIDTH, width),
+      );
+      applyLayout(false);
+    },
+    'sidebar:drag-end': (width) => {
+      if (dragWidth === null) return;
+      const finalWidth = isNumber(width) ? width : dragWidth;
+      dragWidth = null;
+      hover = false;
+      stopWatching();
+      if (finalWidth < SIDEBAR_SNAP_WIDTH) {
+        state = model.setSidebarPinned(state, false);
+      } else {
+        state = model.setSidebarWidth(
+          model.setSidebarPinned(state, true),
+          finalWidth,
+        );
+      }
       saver.schedule();
-      applyLayout();
+      applyLayout(true);
       sendState();
     },
     'tab:menu': (id) => {
@@ -459,7 +591,7 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
     return { channel, listener };
   });
 
-  win.on('resize', applyLayout);
+  win.on('resize', () => applyLayout(false));
   win.webContents.on('before-input-event', handleShortcut);
   sidebar.on('before-input-event', handleShortcut);
 
@@ -473,10 +605,12 @@ export async function createTabs(win: BrowserWindow): Promise<void> {
   // Save for sure when the window closes (a plain write might not finish).
   win.on('close', () => saver.flushSync());
   win.on('closed', () => {
+    stopAnimation();
+    stopWatching();
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);
   });
 
-  applyLayout();
+  applyLayout(false);
   showActive();
 }

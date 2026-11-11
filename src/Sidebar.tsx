@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { SPACE_COLOR_HEX } from './colors';
+import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import type { SpaceInfo, TabInfo, UiState } from './types';
 
 const iconButtonStyle: CSSProperties = {
@@ -110,7 +115,6 @@ function SpaceGroup({
   active,
   renameRequest,
   onRenameHandled,
-  onRenameDone,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
@@ -118,7 +122,6 @@ function SpaceGroup({
   // Set when "Rename Space" was chosen from this Space's right-click menu.
   renameRequest: number | null;
   onRenameHandled: () => void;
-  onRenameDone: () => void;
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -141,7 +144,6 @@ function SpaceGroup({
     if (value.trim() !== '' && value !== space.name) {
       window.browserApi.renameSpace(space.id, value);
     }
-    onRenameDone();
   };
 
   return (
@@ -176,10 +178,7 @@ function SpaceGroup({
             onBlur={(e) => finishRename(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();
-              if (e.key === 'Escape') {
-                setEditing(false);
-                onRenameDone();
-              }
+              if (e.key === 'Escape') setEditing(false);
             }}
             style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}
           />
@@ -248,12 +247,10 @@ function FullSidebar({
   state,
   renameRequest,
   onRenameHandled,
-  onRenameDone,
 }: {
   state: UiState;
   renameRequest: number | null;
   onRenameHandled: () => void;
-  onRenameDone: () => void;
 }) {
   const ungrouped = state.tabs.filter((tab) => tab.spaceId === null);
 
@@ -273,27 +270,6 @@ function FullSidebar({
         }}
       >
         <span style={{ flex: 1 }}>Tabs</span>
-        <button
-          type="button"
-          aria-label={state.sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
-          title={
-            state.sidebarPinned
-              ? 'Unpin (collapse when not in use)'
-              : 'Pin open'
-          }
-          onClick={() =>
-            window.browserApi.setSidebarPinned(!state.sidebarPinned)
-          }
-          style={{
-            ...iconButtonStyle,
-            width: 'auto',
-            padding: '0 8px',
-            fontSize: 12,
-            background: state.sidebarPinned ? '#ffffff' : 'transparent',
-          }}
-        >
-          {state.sidebarPinned ? 'Pinned' : 'Pin'}
-        </button>
         <button
           type="button"
           aria-label="New Space"
@@ -335,7 +311,6 @@ function FullSidebar({
             active={state.active}
             renameRequest={renameRequest}
             onRenameHandled={onRenameHandled}
-            onRenameDone={onRenameDone}
           />
         ))}
       </div>
@@ -478,12 +453,83 @@ function Strip({ state }: { state: UiState }) {
 }
 
 // ---------------------------------------------------------------------------
-// The sidebar page: opens when you hover it, closes when you leave (unless
-// pinned). It fills its own view, which the main process sizes and layers.
+// The sidebar page: opens when you rest the mouse on it, and can be dragged
+// wider or narrower. It fills its own view, which the main process sizes and
+// layers above the web pages.
 // ---------------------------------------------------------------------------
 
 const OPEN_DELAY_MS = 150;
-const CLOSE_DELAY_MS = 350;
+
+// How wide is this page right now? The app resizes the sidebar's view (sliding
+// it open or closed, or following a drag), so the page simply looks at its own
+// width to decide whether to draw the full list or just icons.
+function useViewWidth(): number {
+  const [width, setWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return width;
+}
+
+// A thin grab handle on the sidebar's right edge. Drag it to resize the sidebar.
+// While you drag, the app moves the sidebar's edge to follow the mouse; when you
+// let go it either snaps to the icon strip (dragged all the way left) or pins
+// open at that width.
+function ResizeHandle() {
+  const drag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const lastWidth = useRef(0);
+  const frame = useRef<number | undefined>(undefined);
+
+  const widthFor = (event: ReactPointerEvent) =>
+    (drag.current?.startWidth ?? 0) +
+    event.screenX -
+    (drag.current?.startX ?? 0);
+
+  const finish = (event: ReactPointerEvent) => {
+    if (drag.current === null) return;
+    window.cancelAnimationFrame(frame.current ?? 0);
+    lastWidth.current = widthFor(event);
+    drag.current = null;
+    window.browserApi.endSidebarDrag(lastWidth.current);
+  };
+
+  return (
+    <div
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        // screenX does not change when the view resizes under the mouse, so it
+        // is a steady way to measure how far the mouse has moved.
+        drag.current = { startX: event.screenX, startWidth: window.innerWidth };
+        lastWidth.current = window.innerWidth;
+        window.browserApi.startSidebarDrag();
+      }}
+      onPointerMove={(event) => {
+        if (drag.current === null) return;
+        lastWidth.current = widthFor(event);
+        // At most one update per screen refresh.
+        if (frame.current !== undefined)
+          window.cancelAnimationFrame(frame.current);
+        frame.current = window.requestAnimationFrame(() =>
+          window.browserApi.dragSidebar(lastWidth.current),
+        );
+      }}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+      title="Drag to resize. Drag all the way left to collapse."
+      style={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: 8,
+        cursor: 'col-resize',
+        zIndex: 10,
+      }}
+    />
+  );
+}
 
 export function Sidebar({
   state,
@@ -494,33 +540,29 @@ export function Sidebar({
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
-  const rootRef = useRef<HTMLElement>(null);
-  const timer = useRef<number | undefined>(undefined);
+  const width = useViewWidth();
+  const full = width >= SIDEBAR_FULL_MIN_WIDTH;
+  const hoverTimer = useRef<number | undefined>(undefined);
 
-  // Ask the app to open/close after a short delay, so just passing the mouse
-  // over the strip does not make it flicker.
-  const requestHover = (hovering: boolean) => {
+  // Resting the mouse on the strip opens the sidebar after a short delay, so
+  // just passing over it does not make it flicker. (Closing is decided by the
+  // app, from how far the mouse has moved away.)
+  const onMouseEnter = () => {
     if (state.sidebarPinned) return;
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(
-      () => window.browserApi.setSidebarHover(hovering),
-      hovering ? OPEN_DELAY_MS : CLOSE_DELAY_MS,
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(
+      () => window.browserApi.hoverSidebar(),
+      OPEN_DELAY_MS,
     );
   };
+  const onMouseLeave = () => window.clearTimeout(hoverTimer.current);
 
-  // After a rename the mouse may be elsewhere (e.g. it was started from a
-  // menu on the overview page), so close if the mouse is not over us.
-  const closeIfMouseAway = () => {
-    if (!rootRef.current?.matches(':hover')) requestHover(false);
-  };
-
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
 
   return (
     <nav
-      ref={rootRef}
-      onMouseEnter={() => requestHover(true)}
-      onMouseLeave={() => requestHover(false)}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{
         position: 'fixed',
         inset: 0,
@@ -529,24 +571,25 @@ export function Sidebar({
         boxSizing: 'border-box',
         background: '#e8eaed',
         borderRight: '1px solid #d0d0d0',
+        // A shadow shows it floating over the page (when it is open but not pinned).
         boxShadow:
-          state.sidebarExpanded && !state.sidebarPinned
+          full && !state.sidebarPinned
             ? '2px 0 8px rgba(0, 0, 0, 0.25)'
             : 'none',
         userSelect: 'none',
         overflow: 'hidden',
       }}
     >
-      {state.sidebarExpanded ? (
+      {full ? (
         <FullSidebar
           state={state}
           renameRequest={renameRequest}
           onRenameHandled={onRenameHandled}
-          onRenameDone={closeIfMouseAway}
         />
       ) : (
         <Strip state={state} />
       )}
+      <ResizeHandle />
     </nav>
   );
 }

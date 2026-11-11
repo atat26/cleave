@@ -17,13 +17,9 @@ function hostOf(url: string): string {
 export function LeadView({
   space,
   tabs,
-  left,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
-  // Where the overview starts: right of the sidebar's strip (or of the whole
-  // sidebar when it is pinned).
-  left: number;
 }) {
   const color = SPACE_COLOR_HEX[space.color];
   const [editing, setEditing] = useState(false);
@@ -40,7 +36,9 @@ export function LeadView({
       style={{
         position: 'fixed',
         top: TOOLBAR_HEIGHT,
-        left,
+        // Starts right of the sidebar; the app keeps this up to date while the
+        // sidebar slides (see App.tsx).
+        left: 'var(--content-left, 48px)',
         right: 0,
         bottom: 0,
         overflowY: 'auto',

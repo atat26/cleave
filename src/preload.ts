@@ -17,8 +17,19 @@ const browserApi: BrowserApi = {
   setSpaceCollapsed: (id, collapsed) =>
     ipcRenderer.send('space:collapse', id, collapsed),
   renameSpace: (id, name) => ipcRenderer.send('space:rename', id, name),
-  setSidebarHover: (hovering) => ipcRenderer.send('sidebar:hover', hovering),
-  setSidebarPinned: (pinned) => ipcRenderer.send('sidebar:pin', pinned),
+  hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
+  startSidebarDrag: () => ipcRenderer.send('sidebar:drag-start'),
+  dragSidebar: (width) => ipcRenderer.send('sidebar:drag', width),
+  endSidebarDrag: (width) => ipcRenderer.send('sidebar:drag-end', width),
+
+  onLayout: (callback) => {
+    const listener = (_event: unknown, contentLeft: number) =>
+      callback(contentLeft);
+    ipcRenderer.on('ui:layout', listener);
+    return () => {
+      ipcRenderer.removeListener('ui:layout', listener);
+    };
+  },
   showTabMenu: (id) => ipcRenderer.send('tab:menu', id),
   showSpaceMenu: (id) => ipcRenderer.send('space:menu', id),
 

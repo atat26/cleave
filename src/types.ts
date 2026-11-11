@@ -49,9 +49,16 @@ export interface BrowserApi {
   newSpace: () => void;
   setSpaceCollapsed: (id: number, collapsed: boolean) => void;
   renameSpace: (id: number, name: string) => void;
-  // The mouse is over (true) or has left (false) the sidebar.
-  setSidebarHover: (hovering: boolean) => void;
-  setSidebarPinned: (pinned: boolean) => void;
+  // The mouse rested on the sidebar's icon strip: please open it. (Closing is
+  // decided by the app, by watching how far the mouse has moved away.)
+  hoverSidebar: () => void;
+  // Dragging the sidebar's edge. The width is where the edge is now, in pixels.
+  startSidebarDrag: () => void;
+  dragSidebar: (width: number) => void;
+  endSidebarDrag: (width: number) => void;
+  // Called with how far from the left edge the toolbar and web pages start,
+  // including while the sidebar is sliding. Returns an unsubscribe function.
+  onLayout: (callback: (contentLeft: number) => void) => () => void;
   // Right-click menus. The app shows a native menu and performs the choice.
   showTabMenu: (id: number) => void;
   showSpaceMenu: (id: number) => void;

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { contentLeft } from './layout';
 import { LeadView } from './LeadView';
 import { Sidebar } from './Sidebar';
 import { Toolbar } from './Toolbar';
@@ -19,6 +18,16 @@ export function App() {
   useEffect(() => window.browserApi.onState(setState), []);
   useEffect(() => window.browserApi.onRenameRequest(setRenameRequest), []);
 
+  // The main page starts to the right of the sidebar. While the sidebar slides
+  // or is dragged, the app sends the new position many times a second; a CSS
+  // variable moves everything without re-drawing the whole page each time.
+  useEffect(() => {
+    if (IS_SIDEBAR) return;
+    return window.browserApi.onLayout((left) =>
+      document.documentElement.style.setProperty('--content-left', `${left}px`),
+    );
+  }, []);
+
   if (state === null) return null;
 
   if (IS_SIDEBAR) {
@@ -31,7 +40,6 @@ export function App() {
     );
   }
 
-  const left = contentLeft(state.sidebarPinned);
   const active = state.active;
   const activeTab =
     active?.kind === 'tab'
@@ -49,14 +57,12 @@ export function App() {
         canGoBack={state.canGoBack}
         canGoForward={state.canGoForward}
         disabled={activeTab === undefined}
-        left={left}
       />
       {leadSpace && (
         <LeadView
           key={leadSpace.id}
           space={leadSpace}
           tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
-          left={left}
         />
       )}
     </>

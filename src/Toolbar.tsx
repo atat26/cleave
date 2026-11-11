@@ -18,9 +18,6 @@ interface ToolbarProps {
   canGoForward: boolean;
   // True when no web page is selected (e.g. on a Space's Overview).
   disabled: boolean;
-  // Where the toolbar starts: to the right of the sidebar's strip (or of the
-  // whole sidebar when it is pinned).
-  left: number;
 }
 
 // The strip along the top: back/forward buttons and the address bar. It always
@@ -30,7 +27,6 @@ export function Toolbar({
   canGoBack,
   canGoForward,
   disabled,
-  left,
 }: ToolbarProps) {
   const [text, setText] = useState(url);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -50,7 +46,8 @@ export function Toolbar({
     <form
       onSubmit={submit}
       style={{
-        marginLeft: left,
+        // The app keeps this up to date while the sidebar slides (see App.tsx).
+        marginLeft: 'var(--content-left, 48px)',
         height: TOOLBAR_HEIGHT,
         boxSizing: 'border-box',
         display: 'flex',

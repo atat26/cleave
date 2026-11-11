@@ -45,10 +45,22 @@ export interface SavedState {
   // Order in this list is the order within a group in the sidebar.
   tabs: SavedTab[];
   active: ActiveRef | null;
-  settings: { sidebarPinned: boolean };
+  settings: {
+    sidebarPinned: boolean;
+    // Width of the sidebar when it is open (pinned, or opened by hovering).
+    sidebarWidth: number;
+  };
   // Source of new ids for both tabs and Spaces.
   nextId: number;
 }
+
+// Limits for the open sidebar's width, in pixels.
+export const SIDEBAR_MIN_WIDTH = 160;
+export const SIDEBAR_MAX_WIDTH = 480;
+export const SIDEBAR_DEFAULT_WIDTH = 240;
+
+const clampSidebarWidth = (width: number) =>
+  Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
 
 const MAX_TABS = 1000;
 const MAX_SPACES = 200;
@@ -75,7 +87,7 @@ export function defaultState(): SavedState {
     spaces: [],
     tabs: [],
     active: null,
-    settings: { sidebarPinned: false },
+    settings: { sidebarPinned: false, sidebarWidth: SIDEBAR_DEFAULT_WIDTH },
     nextId: 1,
   };
 }
@@ -138,6 +150,10 @@ export function parseState(raw: unknown): SavedState {
 
   if (isRecord(raw.settings)) {
     state.settings.sidebarPinned = raw.settings.sidebarPinned === true;
+    const width = raw.settings.sidebarWidth;
+    if (typeof width === 'number' && Number.isFinite(width)) {
+      state.settings.sidebarWidth = clampSidebarWidth(width);
+    }
   }
 
   const active = isRecord(raw.active) ? raw.active : null;
@@ -406,6 +422,14 @@ export function deleteSpace(
         ? pickNeighbor(before, state.active, navOrder(next))
         : state.active,
     },
+  };
+}
+
+export function setSidebarWidth(state: SavedState, width: number): SavedState {
+  if (!Number.isFinite(width)) return state;
+  return {
+    ...state,
+    settings: { ...state.settings, sidebarWidth: clampSidebarWidth(width) },
   };
 }
 
