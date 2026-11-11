@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import { createTab } from './tab';
+import { createTabs } from './tabs';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -37,8 +37,8 @@ const createWindow = () => {
     );
   }
 
-  // The one web page tab, below the toolbar.
-  createTab(mainWindow);
+  // The web page tabs, to the right of the sidebar and below the toolbar.
+  createTabs(mainWindow);
 
   // Open the DevTools only while developing, never in a packaged app.
   if (!app.isPackaged) {
