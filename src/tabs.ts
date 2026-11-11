@@ -83,8 +83,7 @@ export const NEW_TAB_URL = 'https://duckduckgo.com';
 const isId = (value: unknown): value is number => Number.isInteger(value);
 const isIdOrNull = (value: unknown): value is number | null =>
   value === null || isId(value);
-const isLinkKind = (value: unknown): value is 'tab' | 'space' =>
-  value === 'tab' || value === 'space';
+const isLinkKind = chatsModel.isLinkKind;
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const isResizeKind = (value: unknown): value is ResizeKind =>
@@ -151,6 +150,12 @@ export async function createTabs(
       spaceId: t.spaceId,
     })),
     spaces: state.spaces.map((s) => ({ id: s.id, name: s.name })),
+    artifacts: artifacts.artifacts.map((a) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      spaceId: a.spaceId,
+    })),
   });
 
   // Keep each chat link's remembered name and address current. Done just before
@@ -680,6 +685,7 @@ export async function createTabs(
     ) {
       return;
     }
+    syncLinkSnapshots(); // Chats' links to it remember its name.
     commitArtifacts(artifactsModel.deleteArtifact(artifacts, id));
   };
 
@@ -1357,6 +1363,8 @@ export async function createTabs(
         select({ kind: 'tab', id });
       } else if (kind === 'space' && model.findSpace(state, id)) {
         select({ kind: 'lead', spaceId: id });
+      } else if (kind === 'artifact') {
+        openArtifact(id);
       }
     },
     // Bring a closed tab back (as a new, ungrouped tab) and point every chat's

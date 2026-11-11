@@ -6,7 +6,13 @@ import { ChatSwitcher } from './ChatSwitcher';
 import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ResizeHandle } from './ResizeHandle';
-import type { ChatsInfo, LlmInfo, SpaceInfo, TabInfo } from './types';
+import type {
+  ArtifactInfo,
+  ChatsInfo,
+  LlmInfo,
+  SpaceInfo,
+  TabInfo,
+} from './types';
 
 const smallButton: CSSProperties = {
   border: 'none',
@@ -32,6 +38,7 @@ export function ChatBar({
   llm,
   tabs,
   spaces,
+  artifacts,
   activeTabId,
   renameRequest,
   onRenameHandled,
@@ -43,6 +50,7 @@ export function ChatBar({
   // The Spaces and tabs (for linking them), and the tab you are looking at.
   tabs: TabInfo[];
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
   activeTabId: number | null;
   renameRequest: number | null;
   onRenameHandled: () => void;
@@ -121,6 +129,7 @@ export function ChatBar({
             generating={chat?.generating ?? false}
             tabs={tabs}
             spaces={spaces}
+            artifacts={artifacts}
           />
         )}
         {chat && (
@@ -130,6 +139,7 @@ export function ChatBar({
             refs={chats.refs}
             tabs={tabs}
             spaces={spaces}
+            artifacts={artifacts}
             activeTabId={activeTabId}
             compact={!full}
             before={

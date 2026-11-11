@@ -1,11 +1,11 @@
-import type { ChatMessage, ChatRef, MessagePart } from './chats';
+import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 import type { ArtifactKind } from './artifacts';
 
-export type { ChatMessage, ChatRef, MessagePart, ModelInfo };
+export type { ChatMessage, ChatRef, LinkKind, MessagePart, ModelInfo };
 
 // A tab as the UI sees it.
 export interface TabInfo {
@@ -268,7 +268,7 @@ export interface BrowserApi {
   chatSend: (
     chatId: number,
     text: string,
-    mentions: { kind: 'space' | 'tab'; id: number; tag: string }[],
+    mentions: { kind: LinkKind; id: number; tag: string }[],
   ) => Promise<ChatSendResult>;
   // Try again: the last reply (after a failure or a stop), or, with a message id,
   // from that earlier message of yours (even if it went fine).
@@ -290,10 +290,10 @@ export interface BrowserApi {
   // Put text on the clipboard (the app does it, so it works the same everywhere).
   chatCopy: (text: string) => void;
   // Linking Spaces and tabs to a chat (so the model knows what the chat is about).
-  chatLink: (chatId: number, kind: 'tab' | 'space', id: number) => void;
-  chatUnlink: (chatId: number, kind: 'tab' | 'space', id: number) => void;
+  chatLink: (chatId: number, kind: LinkKind, id: number) => void;
+  chatUnlink: (chatId: number, kind: LinkKind, id: number) => void;
   // Jump to a linked tab, or to a linked Space's overview.
-  chatOpenLink: (kind: 'tab' | 'space', id: number) => void;
+  chatOpenLink: (kind: LinkKind, id: number) => void;
   // Bring back a linked tab that was closed.
   chatReopenLink: (chatId: number, tabId: number) => void;
   // Shows a menu of your pinned models to switch this chat to.

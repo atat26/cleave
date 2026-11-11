@@ -132,6 +132,7 @@ export function App() {
           llm={state.llm}
           tabs={state.tabs}
           spaces={state.spaces}
+          artifacts={state.artifacts}
           activeTabId={activeTab?.id ?? null}
           renameRequest={chatRenameRequest}
           onRenameHandled={clearChatRenameRequest}

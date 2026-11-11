@@ -373,7 +373,7 @@ test('thinking is stored apart from the answer, and is capped and validated', ()
 // ---- Links ---------------------------------------------------------------------
 
 const link = (
-  kind: 'tab' | 'space',
+  kind: 'tab' | 'space' | 'artifact',
   id: number,
   title = '',
   url: string | null = null,
@@ -516,7 +516,7 @@ test('remembered names follow the workspace, and closed items keep their last co
     chatId,
     link('tab', 2, 'Closed one', 'https://b.example/'),
   );
-  const lookup = (kind: 'tab' | 'space', id: number) =>
+  const lookup = (kind: string, id: number) =>
     kind === 'tab' && id === 1
       ? { title: 'New title', url: 'https://a.example/new' }
       : null;
@@ -992,4 +992,24 @@ test('what a tool found is kept with the call, cut to a limit, and survives a sa
   });
   const cut = findMessage(state, chatId, reply.id)!.parts[0];
   assert.equal(cut.type === 'tool' && cut.details.length, MAX_DETAILS);
+});
+
+test('an artifact can be linked to a chat; it keeps no address and is saved and loaded', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addRef(
+    state,
+    chatId,
+    link('artifact', 4, 'Notes', 'https://sneaky.example/'),
+  );
+  assert.deepEqual(state.conversations[0].refs, [
+    { kind: 'artifact', id: 4, title: 'Notes', url: null },
+  ]);
+  const loaded = parseChats(JSON.parse(JSON.stringify(state)));
+  assert.deepEqual(loaded.conversations[0].refs, state.conversations[0].refs);
+  // A tab and an artifact with the same number are different links.
+  state = addRef(state, chatId, link('tab', 4, 'Tab'));
+  assert.equal(state.conversations[0].refs.length, 2);
+  // Unknown kinds are still refused.
+  assert.equal(addRef(state, chatId, link('widget' as never, 5)), state);
 });

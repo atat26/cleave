@@ -3,7 +3,13 @@ import type { CSSProperties, ReactNode } from 'react';
 import { MentionToken } from './LinkChips';
 import { Markdown } from './MarkdownView';
 import { errorMessage } from './openrouter';
-import type { ChatMessage, MessagePart, SpaceInfo, TabInfo } from './types';
+import type {
+  ArtifactInfo,
+  ChatMessage,
+  MessagePart,
+  SpaceInfo,
+  TabInfo,
+} from './types';
 
 // ---- Getting a chat's messages ----------------------------------------------------
 
@@ -496,6 +502,7 @@ function withTokens(
   chatId: number,
   tabs: TabInfo[],
   spaces: SpaceInfo[],
+  artifacts: ArtifactInfo[],
 ) {
   const tags = message.mentions
     .map((m) => m.tag)
@@ -515,6 +522,7 @@ function withTokens(
         mention={mention}
         tabs={tabs}
         spaces={spaces}
+        artifacts={artifacts}
       />
     ) : (
       part
@@ -530,6 +538,7 @@ function MessageView({
   chatId,
   tabs,
   spaces,
+  artifacts,
 }: {
   message: ChatMessage;
   isLast: boolean;
@@ -540,6 +549,7 @@ function MessageView({
   chatId: number;
   tabs: TabInfo[];
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
 }) {
   const [retryNote, setRetryNote] = useState('');
   const retry = async () => {
@@ -582,7 +592,7 @@ function MessageView({
             borderRadius: 14,
           }}
         >
-          {withTokens(message, chatId, tabs, spaces)}
+          {withTokens(message, chatId, tabs, spaces, artifacts)}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {retryNote && (
@@ -628,6 +638,7 @@ function MessageView({
                 mention={m}
                 tabs={tabs}
                 spaces={spaces}
+                artifacts={artifacts}
               />
             ))}
           </div>
@@ -761,12 +772,14 @@ export function MessageList({
   generating,
   tabs,
   spaces,
+  artifacts,
 }: {
   chatId: number;
   // A reply is being written in this chat right now.
   generating: boolean;
   tabs: TabInfo[];
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
 }) {
   const messages = useChatMessages(chatId);
   const box = useRef<HTMLDivElement>(null);
@@ -810,6 +823,7 @@ export function MessageList({
           chatId={chatId}
           tabs={tabs}
           spaces={spaces}
+          artifacts={artifacts}
         />
       ))}
     </div>
