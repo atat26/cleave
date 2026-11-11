@@ -1,0 +1,229 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import {
+  addSpace,
+  addTab,
+  defaultState,
+  deleteSpace,
+  moveTab,
+  navOrder,
+  parseState,
+  removeTab,
+  renameSpace,
+  setActive,
+  ungroupSpace,
+  updateTab,
+} from './model.ts';
+import type { SavedState } from './model.ts';
+
+// Build a state: tab ids come back so tests can refer to them.
+function build() {
+  let state: SavedState = defaultState();
+  const free = addTab(state, { url: 'https://free.example' });
+  state = free.state;
+  const space = addSpace(state, 'Work');
+  state = space.state;
+  const a = addTab(state, { url: 'https://a.example', spaceId: space.id });
+  state = a.state;
+  const b = addTab(state, { url: 'https://b.example', spaceId: space.id });
+  state = b.state;
+  return { state, freeId: free.id, spaceId: space.id, aId: a.id, bId: b.id };
+}
+
+test('parseState survives garbage input', () => {
+  for (const junk of [
+    null,
+    undefined,
+    42,
+    'text',
+    [],
+    { spaces: 'no', tabs: 7 },
+  ]) {
+    const state = parseState(junk);
+    assert.deepEqual(state.spaces, []);
+    assert.deepEqual(state.tabs, []);
+    assert.equal(state.active, null);
+  }
+});
+
+test('parseState drops non-web addresses from a tampered file', () => {
+  const state = parseState({
+    tabs: [
+      {
+        id: 1,
+        url: 'file:///C:/Windows/win.ini',
+        title: 'x',
+        favicon: null,
+        spaceId: null,
+      },
+      {
+        id: 2,
+        url: 'javascript:alert(1)',
+        title: 'x',
+        favicon: null,
+        spaceId: null,
+      },
+      {
+        id: 3,
+        url: 'https://ok.example',
+        title: 'ok',
+        favicon: 'file:///icon.png',
+        spaceId: null,
+      },
+    ],
+  });
+  assert.deepEqual(
+    state.tabs.map((t) => t.id),
+    [3],
+  );
+  assert.equal(state.tabs[0].favicon, null);
+});
+
+test('parseState repairs orphan tabs, duplicate ids and bad active', () => {
+  const state = parseState({
+    spaces: [
+      { id: 5, name: 'A', color: 'blue', collapsed: false },
+      { id: 5, name: 'Dup', color: 'red', collapsed: false },
+    ],
+    tabs: [
+      {
+        id: 6,
+        url: 'https://x.example',
+        title: '',
+        favicon: null,
+        spaceId: 99,
+      },
+      {
+        id: 6,
+        url: 'https://dup.example',
+        title: '',
+        favicon: null,
+        spaceId: 5,
+      },
+    ],
+    active: { kind: 'tab', id: 12345 },
+    nextId: 1,
+  });
+  assert.equal(state.spaces.length, 1);
+  assert.equal(state.tabs.length, 1);
+  assert.equal(state.tabs[0].spaceId, null); // Space 99 does not exist
+  assert.deepEqual(state.active, { kind: 'tab', id: 6 }); // fell back to first item
+  assert.ok(state.nextId > 6); // ids never collide with existing ones
+});
+
+test('parseState clamps unknown colours and long names', () => {
+  const state = parseState({
+    spaces: [
+      { id: 1, name: 'x'.repeat(500), color: 'plaid', collapsed: 'yes' },
+    ],
+  });
+  assert.equal(state.spaces[0].color, 'grey');
+  assert.equal(state.spaces[0].name.length, 60);
+  assert.equal(state.spaces[0].collapsed, false);
+});
+
+test('a state survives a JSON round trip unchanged', () => {
+  const { state } = build();
+  const round = parseState(JSON.parse(JSON.stringify(state)));
+  assert.deepEqual(round, state);
+});
+
+test('navOrder lists ungrouped tabs, then each Space with its Lead tab first', () => {
+  const { state, freeId, spaceId, aId, bId } = build();
+  assert.deepEqual(navOrder(state), [
+    { kind: 'tab', id: freeId },
+    { kind: 'lead', spaceId },
+    { kind: 'tab', id: aId },
+    { kind: 'tab', id: bId },
+  ]);
+});
+
+test('addSpace gives default names, cycles colours and trims names', () => {
+  let state = defaultState();
+  state = addSpace(state).state;
+  state = addSpace(state, '  Research  ').state;
+  assert.equal(state.spaces[0].name, 'Space 1');
+  assert.equal(state.spaces[1].name, 'Research');
+  assert.notEqual(state.spaces[0].color, state.spaces[1].color);
+  assert.equal(
+    renameSpace(state, state.spaces[0].id, '   ').spaces[0].name,
+    'Space 1',
+  );
+});
+
+test('addTab ignores an unknown Space and can skip activating', () => {
+  const { state } = build();
+  const added = addTab(state, {
+    url: 'https://c.example',
+    spaceId: 9999,
+    activate: false,
+  });
+  assert.equal(added.state.tabs.at(-1)?.spaceId, null);
+  assert.deepEqual(added.state.active, state.active);
+});
+
+test('removeTab selects the neighbour that takes its place', () => {
+  const { state, aId, bId } = build();
+  const active = setActive(state, { kind: 'tab', id: aId });
+  const after = removeTab(active, aId);
+  assert.deepEqual(after.active, { kind: 'tab', id: bId });
+  const last = removeTab(after, bId);
+  assert.ok(last.active !== null); // falls back to something still present
+});
+
+test('removeTab of the only tab leaves nothing active', () => {
+  const added = addTab(defaultState(), { url: 'https://only.example' });
+  assert.equal(removeTab(added.state, added.id).active, null);
+});
+
+test('moveTab moves in and out of Spaces and rejects unknown ones', () => {
+  const { state, freeId, spaceId } = build();
+  const moved = moveTab(state, freeId, spaceId);
+  assert.equal(moved.tabs.find((t) => t.id === freeId)?.spaceId, spaceId);
+  assert.equal(
+    moveTab(moved, freeId, null).tabs.find((t) => t.id === freeId)?.spaceId,
+    null,
+  );
+  assert.equal(moveTab(state, freeId, 9999), state);
+});
+
+test('ungroupSpace keeps the tabs and moves selection off the Lead tab', () => {
+  const { state, spaceId } = build();
+  const onLead = setActive(state, { kind: 'lead', spaceId });
+  const after = ungroupSpace(onLead, spaceId);
+  assert.equal(after.spaces.length, 0);
+  assert.equal(after.tabs.length, 3);
+  assert.ok(after.tabs.every((t) => t.spaceId === null));
+  assert.equal(after.active?.kind, 'tab');
+});
+
+test('deleteSpace removes its tabs and reports which', () => {
+  const { state, freeId, spaceId, aId, bId } = build();
+  const onB = setActive(state, { kind: 'tab', id: bId });
+  const result = deleteSpace(onB, spaceId);
+  assert.deepEqual(result.removedTabIds.sort(), [aId, bId].sort());
+  assert.deepEqual(
+    result.state.tabs.map((t) => t.id),
+    [freeId],
+  );
+  assert.deepEqual(result.state.active, { kind: 'tab', id: freeId });
+});
+
+test('updateTab accepts web addresses only', () => {
+  const { state, freeId } = build();
+  const updated = updateTab(state, freeId, {
+    url: 'file:///secret',
+    title: 'Hello',
+    favicon: 'javascript:1',
+  });
+  const tab = updated.tabs.find((t) => t.id === freeId);
+  assert.equal(tab?.url, 'https://free.example');
+  assert.equal(tab?.title, 'Hello');
+  assert.equal(tab?.favicon, null);
+});
+
+test('setActive ignores things that do not exist', () => {
+  const { state } = build();
+  assert.equal(setActive(state, { kind: 'tab', id: 9999 }), state);
+  assert.equal(setActive(state, { kind: 'lead', spaceId: 9999 }), state);
+});
