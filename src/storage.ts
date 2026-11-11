@@ -4,6 +4,8 @@
 // on disk is untrusted data and goes through a `parse` function first.
 import { mkdirSync, promises as fs, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { defaultArtifacts, parseArtifacts } from './artifacts.ts';
+import type { ArtifactsState } from './artifacts.ts';
 import { parseChats } from './chats.ts';
 import type { ChatsState } from './chats.ts';
 import { defaultState, parseState } from './model.ts';
@@ -64,6 +66,9 @@ export const loadChats = (file: string): Promise<ChatsState> =>
     (raw) => parseChats(raw),
     () => parseChats(null),
   );
+
+export const loadArtifacts = (file: string): Promise<ArtifactsState> =>
+  loadJson(file, parseArtifacts, defaultArtifacts);
 
 // Saves a little after the last change, so a burst of changes is one write.
 // flush() writes right away (use it when the app is quitting).
