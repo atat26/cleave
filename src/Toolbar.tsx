@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { PAGE_INSET, TOOLBAR_HEIGHT } from './layout';
+import { PAGE_INSET, TOOLBAR_HEIGHT, WINDOW_CONTROLS_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { describeSite } from './site';
 import type { ChatsInfo } from './types';
@@ -133,97 +133,107 @@ export function Toolbar({
   const chatOnly = viewMode === 'chat';
 
   return (
-    <form
-      className="toolbar"
-      data-loading={loading && !chatOnly ? 'on' : 'off'}
-      role="toolbar"
-      aria-label="Browser toolbar"
-      onSubmit={submit}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 'var(--left)',
-        right: 'calc(var(--rail) + var(--panel))',
-        height: TOOLBAR_HEIGHT,
-        boxSizing: 'border-box',
-        padding: `0 ${PAGE_INSET}px`,
-      }}
-    >
-      {chatOnly ? (
-        <>
-          <div className="tb-chat">
-            <ChatTitle chats={chats} />
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="tb-nav">
-            <IconButton
-              icon="arrow-left"
-              label="Back"
-              disabled={!canGoBack}
-              onClick={() => window.browserApi.goBack()}
-            />
-            <IconButton
-              icon="arrow-right"
-              label="Forward"
-              disabled={!canGoForward}
-              onClick={() => window.browserApi.goForward()}
-            />
-            <IconButton
-              icon={loading ? 'x' : 'reload'}
-              label={loading ? 'Stop loading' : 'Reload'}
-              disabled={disabled}
-              onClick={() =>
-                loading
-                  ? window.browserApi.stopLoading()
-                  : window.browserApi.reloadPage()
-              }
-            />
-          </div>
-          <div className="addressbar" role="search">
-            {site && (
-              <span
-                className="site"
-                title={
-                  site.secure
-                    ? 'The connection to this site is secure'
-                    : 'The connection to this site is not secure'
+    <>
+      {/* The top strip you drag the window by (the buttons and boxes in the toolbar
+        opt out; see .toolbar in components.css). */}
+      <div
+        className="drag-strip"
+        aria-hidden="true"
+        style={{ height: TOOLBAR_HEIGHT }}
+      />
+      <form
+        className="toolbar"
+        data-loading={loading && !chatOnly ? 'on' : 'off'}
+        role="toolbar"
+        aria-label="Browser toolbar"
+        onSubmit={submit}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 'var(--left)',
+          // Ends before the window's own buttons when no panel is open.
+          right: `max(calc(var(--rail) + var(--panel)), ${WINDOW_CONTROLS_WIDTH}px)`,
+          height: TOOLBAR_HEIGHT,
+          boxSizing: 'border-box',
+          padding: `0 ${PAGE_INSET}px`,
+        }}
+      >
+        {chatOnly ? (
+          <>
+            <div className="tb-chat">
+              <ChatTitle chats={chats} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="tb-nav">
+              <IconButton
+                icon="arrow-left"
+                label="Back"
+                disabled={!canGoBack}
+                onClick={() => window.browserApi.goBack()}
+              />
+              <IconButton
+                icon="arrow-right"
+                label="Forward"
+                disabled={!canGoForward}
+                onClick={() => window.browserApi.goForward()}
+              />
+              <IconButton
+                icon={loading ? 'x' : 'reload'}
+                label={loading ? 'Stop loading' : 'Reload'}
+                disabled={disabled}
+                onClick={() =>
+                  loading
+                    ? window.browserApi.stopLoading()
+                    : window.browserApi.reloadPage()
                 }
-              >
-                <Icon name={site.secure ? 'lock' : 'warn'} />
-                <span className="truncate">{site.host}</span>
-              </span>
-            )}
-            <input
-              ref={inputRef}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onFocus={(e) => e.target.select()}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                const box = event.currentTarget;
-                window.browserApi.showEditMenu(
-                  'address',
-                  event.clientX,
-                  event.clientY,
-                  box.selectionStart !== box.selectionEnd,
-                );
-              }}
-              disabled={disabled}
-              aria-label="Address or search"
-              placeholder={
-                disabled ? 'Space overview' : 'Search or enter address'
-              }
-              spellCheck={false}
-            />
-          </div>
-        </>
-      )}
-      <div className="tb-actions">
-        <ViewSwitch viewMode={viewMode} />
-      </div>
-      <div className="loadbar" aria-hidden="true" />
-    </form>
+              />
+            </div>
+            <div className="addressbar" role="search">
+              {site && (
+                <span
+                  className="site"
+                  title={
+                    site.secure
+                      ? 'The connection to this site is secure'
+                      : 'The connection to this site is not secure'
+                  }
+                >
+                  <Icon name={site.secure ? 'lock' : 'warn'} />
+                  <span className="truncate">{site.host}</span>
+                </span>
+              )}
+              <input
+                ref={inputRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  const box = event.currentTarget;
+                  window.browserApi.showEditMenu(
+                    'address',
+                    event.clientX,
+                    event.clientY,
+                    box.selectionStart !== box.selectionEnd,
+                  );
+                }}
+                disabled={disabled}
+                aria-label="Address or search"
+                placeholder={
+                  disabled ? 'Space overview' : 'Search or enter address'
+                }
+                spellCheck={false}
+              />
+            </div>
+          </>
+        )}
+        <div className="tb-actions">
+          <ViewSwitch viewMode={viewMode} />
+        </div>
+        <div className="loadbar" aria-hidden="true" />
+      </form>
+    </>
   );
 }

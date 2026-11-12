@@ -27,6 +27,8 @@ import { nextRegion } from './regions';
 import type { Region } from './regions';
 import {
   FRAME_ANIMATION_MS,
+  CONTROLS_SYMBOL,
+  CONTROLS_SYMBOL_DARK,
   FRAME_COLOR,
   FRAME_COLOR_DARK,
   PAGE_RADIUS,
@@ -168,9 +170,13 @@ export async function createTabs(
   // otherwise): keep it the frame's colour in either theme.
   const paintWindow = () => {
     if (win.isDestroyed()) return;
-    win.setBackgroundColor(
-      nativeTheme.shouldUseDarkColors ? FRAME_COLOR_DARK : FRAME_COLOR,
-    );
+    const dark = nativeTheme.shouldUseDarkColors;
+    win.setBackgroundColor(dark ? FRAME_COLOR_DARK : FRAME_COLOR);
+    // The window buttons' colours follow the theme too.
+    win.setTitleBarOverlay({
+      color: dark ? FRAME_COLOR_DARK : FRAME_COLOR,
+      symbolColor: dark ? CONTROLS_SYMBOL_DARK : CONTROLS_SYMBOL,
+    });
   };
   paintWindow();
   nativeTheme.on('updated', paintWindow);
