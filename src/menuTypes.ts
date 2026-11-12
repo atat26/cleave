@@ -17,6 +17,9 @@ export interface MenuEntry {
   swatch?: string;
   // Ticked: this is the current choice. Drawn as a check at the right.
   checked?: boolean;
+  // For a menu opened from a control (a button that shows the current choice):
+  // this row is lined up with that control, and starts selected.
+  anchor?: boolean;
   // Drawn red: this throws something away.
   danger?: boolean;
   // Drawn grey and cannot be chosen.

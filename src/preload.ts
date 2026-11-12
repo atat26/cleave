@@ -105,7 +105,8 @@ const browserApi: BrowserApi = {
   selectChat: (id) => ipcRenderer.send('chats:select', id),
   renameChat: (id, title) => ipcRenderer.send('chats:rename', id, title),
   deleteChat: (id) => ipcRenderer.send('chats:delete', id),
-  showChatMenu: (id, x, y) => ipcRenderer.send('chats:menu', id ?? null, x, y),
+  showChatMenu: (id, x, y, alignCenter) =>
+    ipcRenderer.send('chats:menu', id ?? null, x, y, alignCenter),
   onChatRenameRequest: (callback) => {
     const listener = (_event: unknown, chatId: number) => callback(chatId);
     ipcRenderer.on('chats:begin-rename', listener);

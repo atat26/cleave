@@ -315,6 +315,7 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
         id: `chat.select:${chat.id}`,
         label: shortTitle(chat.title),
         icon: chat.id === active ? 'check' : undefined,
+        anchor: chat.id === active,
       }),
     ),
     { type: 'separator' },

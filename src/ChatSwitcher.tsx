@@ -71,7 +71,14 @@ export function ChatSwitcher({
           aria-label="Chats"
           onClick={(event) => {
             const box = event.currentTarget.getBoundingClientRect();
-            window.browserApi.showChatMenu(undefined, box.left, box.bottom + 4);
+            // The open chat in the list lines up with the name, and the list
+            // runs down from there.
+            window.browserApi.showChatMenu(
+              undefined,
+              box.left,
+              box.bottom,
+              (box.top + box.bottom) / 2,
+            );
           }}
           style={{
             ...buttonStyle,

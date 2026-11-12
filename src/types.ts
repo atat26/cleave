@@ -264,7 +264,12 @@ export interface BrowserApi {
   // The popup layer (see PopupApp.tsx): the page asks for it to show a menu at a
   // place in the window, and reports what was chosen. Only that page uses these.
   onPopupShow: (
-    callback: (menu: { items: MenuItem[]; x: number; y: number }) => void,
+    callback: (menu: {
+      items: MenuItem[];
+      x: number;
+      y: number;
+      alignCenter?: number;
+    }) => void,
   ) => () => void;
   onPopupHide: (callback: () => void) => () => void;
   popupReady: () => void;
@@ -351,7 +356,14 @@ export interface BrowserApi {
   // Shows a native menu. Without an id it is the chat title's menu (switch
   // chats, new chat, rename or delete the current one); with an id it is the
   // right-click menu for that one chat (rename, delete).
-  showChatMenu: (id: number | undefined, x: number, y: number) => void;
+  // alignCenter: the vertical middle of the control that opened the menu. The
+  // menu lines its current choice up with it, and runs down from there.
+  showChatMenu: (
+    id: number | undefined,
+    x: number,
+    y: number,
+    alignCenter?: number,
+  ) => void;
   // Called when "Rename chat" is chosen from a menu: show that chat's rename box.
   onChatRenameRequest: (callback: (chatId: number) => void) => () => void;
   // Open one of the right panels, or close it if it is already the open one.

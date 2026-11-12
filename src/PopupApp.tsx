@@ -11,6 +11,7 @@ interface Shown {
   items: MenuItem[];
   x: number;
   y: number;
+  alignCenter?: number;
 }
 
 export function PopupApp() {
@@ -51,6 +52,7 @@ export function PopupApp() {
           items={shown.items}
           x={shown.x}
           y={shown.y}
+          alignCenter={shown.alignCenter}
           onClose={close}
           onChoose={(id) => {
             setShown(null);

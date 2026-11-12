@@ -556,11 +556,12 @@ export async function createTabs(
     y: number,
     choose: (id: string) => void,
     opener: Electron.WebContents,
+    alignCenter?: number,
   ) => {
     if (openMenu) closeMenu(false);
     openMenu = { items, choose, opener };
     busy++;
-    const send = () => popup.send('popup:show', { items, x, y });
+    const send = () => popup.send('popup:show', { items, x, y, alignCenter });
     const size = windowSize();
     popupView.setBounds({ x: 0, y: 0, width: size.width, height: size.height });
     popupView.setVisible(true);
@@ -1150,8 +1151,8 @@ export async function createTabs(
     },
     onMeta: sendState,
     openSettings,
-    showMenu: (items, x, y, choose, opener) =>
-      showMenu(items, x, y, choose, opener),
+    showMenu: (items, x, y, choose, opener, alignCenter) =>
+      showMenu(items, x, y, choose, opener, alignCenter),
   });
   llm
     .then((context) => {
@@ -1697,7 +1698,7 @@ export async function createTabs(
       if (isId(id)) void deleteChat(id);
     },
     // The chat-name menu (no id) or the menu of one chat in the list.
-    'chats:menu': (id, x, y) => {
+    'chats:menu': (id, x, y, alignCenter) => {
       if (!isNumber(x) || !isNumber(y)) return;
       const items =
         id === undefined || id === null
@@ -1712,6 +1713,7 @@ export async function createTabs(
         y,
         (choice) => runChatChoice(choice),
         requestSender ?? win.webContents,
+        isNumber(alignCenter) ? alignCenter : undefined,
       );
     },
     'tab:menu': (id, x, y) => {

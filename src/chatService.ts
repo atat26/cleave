@@ -126,6 +126,7 @@ export function createChatService(options: {
     y: number,
     choose: (id: string) => void,
     opener: Electron.WebContents,
+    alignCenter?: number,
   ): void;
 }): ChatService {
   const { win } = options;

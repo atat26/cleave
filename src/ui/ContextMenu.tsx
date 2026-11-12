@@ -24,6 +24,8 @@ function MenuList({
   onChoose,
   onCloseAll,
   onCloseSelf,
+  maxHeight,
+  scrollTo,
 }: {
   items: MenuItem[];
   depth: number;
@@ -31,9 +33,18 @@ function MenuList({
   onCloseAll: () => void;
   // Close just this list (a submenu), returning to its parent.
   onCloseSelf: () => void;
+  // The most room the list may take (it scrolls beyond that).
+  maxHeight?: number;
+  // Scroll the list to this much from its top.
+  scrollTo?: number;
 }) {
   const list = useRef<HTMLUListElement>(null);
-  const [active, setActive] = useState(-1);
+  // A menu opened from a control starts on the row that lines up with it.
+  const [active, setActive] = useState(() =>
+    depth === 0
+      ? items.findIndex((item) => item.type === 'item' && item.anchor)
+      : -1,
+  );
   const [open, setOpen] = useState(-1);
   const anyIcon = items.some(
     (item) => item.type === 'item' && (item.icon || item.swatch),
@@ -68,10 +79,16 @@ function MenuList({
 
   // Moving with the keyboard keeps the chosen item in view.
   useLayoutEffect(() => {
-    if (active < 0) return;
+    if (active < 0 || scrollTo !== undefined) return;
     const rows = list.current?.querySelectorAll(':scope > li');
     rows?.[active]?.scrollIntoView({ block: 'nearest' });
-  }, [active]);
+  }, [active, scrollTo]);
+
+  // A menu lined up with its control is scrolled so the row stays lined up.
+  useLayoutEffect(() => {
+    if (scrollTo !== undefined && list.current)
+      list.current.scrollTop = scrollTo;
+  }, [scrollTo, maxHeight]);
 
   const step = (direction: 1 | -1) => {
     const can = reachable(items);
@@ -146,7 +163,10 @@ function MenuList({
       style={{
         outline: 'none',
         ...(scrolls
-          ? { maxHeight: window.innerHeight - 2 * MARGIN, overflowY: 'auto' }
+          ? {
+              maxHeight: maxHeight ?? window.innerHeight - 2 * MARGIN,
+              overflowY: 'auto',
+            }
           : {}),
       }}
     >
@@ -256,36 +276,95 @@ function MenuRow({
 
 // The menu itself, placed at (x, y) in the window and kept inside it. `onClose`
 // is called for Escape; choosing an item calls `onChoose` with its id.
+//
+// A menu opened from a control that shows the current choice (the chat's name, the
+// model chip) gives `alignCenter`, the middle of that control: the row marked
+// `anchor` is lined up with it and the menu runs down from there to the bottom of
+// the window, scrolling if it is longer.
 export function ContextMenu({
   items,
   x,
   y,
+  alignCenter,
   onChoose,
   onClose,
 }: {
   items: MenuItem[];
   x: number;
   y: number;
+  alignCenter?: number;
   onChoose: (id: string) => void;
   onClose: () => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState({ left: x, top: y });
+  const [at, setAt] = useState<{
+    left: number;
+    top: number;
+    maxHeight?: number;
+    scrollTo?: number;
+  }>({ left: x, top: y });
 
-  // Once its size is known, flip to the other side of the pointer if it would run
-  // off an edge, and never go past the window.
   useLayoutEffect(() => {
     const element = holder.current;
     if (!element) return;
-    const { width, height } = element.getBoundingClientRect();
+    const list = element.firstElementChild as HTMLElement | null;
+    const { width, height: shown } = element.getBoundingClientRect();
+    const natural = Math.max(shown, list?.scrollHeight ?? 0);
+
     let left = x;
-    let top = y;
     if (left + width > window.innerWidth - MARGIN) left = x - width;
-    if (top + height > window.innerHeight - MARGIN) top = y - height;
     left = Math.max(MARGIN, Math.min(left, window.innerWidth - width - MARGIN));
-    top = Math.max(MARGIN, Math.min(top, window.innerHeight - height - MARGIN));
+
+    const index = items.findIndex(
+      (item) => item.type === 'item' && item.anchor,
+    );
+    const row =
+      alignCenter !== undefined && index >= 0
+        ? list?.querySelectorAll<HTMLElement>(':scope > li')[index]
+        : undefined;
+
+    if (row && list && alignCenter !== undefined) {
+      // Line the chosen row up with the control, and run down from there.
+      const rowMiddle = row.offsetTop + row.offsetHeight / 2;
+      const room = window.innerHeight - 2 * MARGIN;
+      const wanted = alignCenter - rowMiddle;
+      if (wanted >= MARGIN) {
+        const top = wanted;
+        const fits = natural <= window.innerHeight - MARGIN - top;
+        setAt({
+          left,
+          top,
+          maxHeight: fits ? undefined : window.innerHeight - MARGIN - top,
+        });
+      } else {
+        // The rows above it do not fit above the control: start at the top of the
+        // window and scroll so the chosen row stays lined up as well as it can.
+        const scrollTo = Math.max(
+          0,
+          Math.min(
+            rowMiddle - (alignCenter - MARGIN),
+            Math.max(0, natural - room),
+          ),
+        );
+        setAt({
+          left,
+          top: MARGIN,
+          maxHeight: natural > room ? room : undefined,
+          scrollTo: natural > room ? scrollTo : undefined,
+        });
+      }
+      return;
+    }
+
+    // Any other menu: open at the point, or flip above it, and stay in the window.
+    let top = y;
+    if (top + natural > window.innerHeight - MARGIN) top = y - natural;
+    top = Math.max(
+      MARGIN,
+      Math.min(top, window.innerHeight - natural - MARGIN),
+    );
     setAt({ left, top });
-  }, [x, y, items]);
+  }, [x, y, alignCenter, items]);
 
   return (
     <div
@@ -298,6 +377,8 @@ export function ContextMenu({
         onChoose={onChoose}
         onCloseAll={onClose}
         onCloseSelf={onClose}
+        maxHeight={at.maxHeight}
+        scrollTo={at.scrollTo}
       />
     </div>
   );
