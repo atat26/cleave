@@ -449,7 +449,12 @@ function FullSidebar({
 function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      aria-label={labelFor(tab)}
       onClick={() => window.browserApi.selectTab(tab.id)}
+      onKeyDown={rowKeys(() => window.browserApi.selectTab(tab.id))}
       onContextMenu={showTabMenu(tab)}
       title={labelFor(tab)}
       style={{
@@ -477,7 +482,12 @@ function StripArtifact({
 }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      aria-label={tab.title}
       onClick={() => window.browserApi.artifactSelect(tab.id)}
+      onKeyDown={rowKeys(() => window.browserApi.artifactSelect(tab.id))}
       title={tab.title}
       style={stripButton(active)}
     >
@@ -514,7 +524,12 @@ function StripSpace({
       }}
     >
       <div
+        role="button"
+        tabIndex={0}
+        aria-current={leadActive || undefined}
+        aria-label={`${space.name} overview`}
         onClick={() => window.browserApi.selectLead(space.id)}
+        onKeyDown={rowKeys(() => window.browserApi.selectLead(space.id))}
         onContextMenu={openMenu}
         title={`${space.name} overview`}
         style={{ ...stripButton(leadActive), color, fontSize: 14 }}
@@ -539,7 +554,13 @@ function StripSpace({
         ))}
       {space.collapsed && tabs.length > 0 && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label={`Show ${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
           onClick={() => window.browserApi.setSpaceCollapsed(space.id, false)}
+          onKeyDown={rowKeys(() =>
+            window.browserApi.setSpaceCollapsed(space.id, false),
+          )}
           onContextMenu={openMenu}
           title={`${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
           style={{

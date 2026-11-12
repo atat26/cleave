@@ -23,6 +23,8 @@ import {
 } from './frame';
 import type { FrameSizes, Size } from './frame';
 import type { ChatNeed } from './layout';
+import { nextRegion } from './regions';
+import type { Region } from './regions';
 import {
   FRAME_ANIMATION_MS,
   FRAME_COLOR,
@@ -1822,6 +1824,33 @@ export async function createTabs(
     event: { preventDefault: () => void },
     input: Electron.Input,
   ) => {
+    // F6 / Shift+F6: move the keyboard to the next part of the app.
+    if (
+      input.type === 'keyDown' &&
+      input.key === 'F6' &&
+      !input.control &&
+      !input.alt &&
+      !input.meta
+    ) {
+      event.preventDefault();
+      const id = activeTabId();
+      const pageView = id === null ? undefined : views.get(id)?.webContents;
+      const here: Region | null = sidebar.isFocused()
+        ? 'sidebar'
+        : win.webContents.isFocused()
+          ? 'window'
+          : pageView?.isFocused()
+            ? 'page'
+            : null;
+      const next = nextRegion(here, input.shift, pageIsShown() && !!pageView);
+      if (next === 'sidebar') {
+        // A hovering sidebar must be open to be used.
+        if (!pinnedNow()) setHover(true);
+        sidebar.focus();
+      } else if (next === 'page') pageView?.focus();
+      else win.webContents.focus();
+      return;
+    }
     if (input.type !== 'keyDown' || !input.control || input.alt || input.meta)
       return;
     const key = input.key.toLowerCase();
