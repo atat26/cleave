@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import {
   blendSizes,
   chatHeightWhileDragging,
+  centreWidth,
   easeOutCubic,
+  fitCentre,
   maxChatHeight,
   maxPanelWidth,
   pageRect,
@@ -15,6 +17,8 @@ import {
 } from './frame.ts';
 import type { FrameSizes } from './frame.ts';
 import {
+  CHAT_ACTIVITY_HEIGHT,
+  CHAT_APPROVAL_HEIGHT,
   CHAT_COMPACT_HEIGHT,
   CHAT_SNAP_HEIGHT,
   MIN_PAGE_HEIGHT,
@@ -23,6 +27,7 @@ import {
   PANEL_SNAP_WIDTH,
   RAIL_WIDTH,
   TOOLBAR_HEIGHT,
+  MIN_CENTRE_WIDTH,
 } from './layout.ts';
 import { CHAT_MIN_HEIGHT, PANEL_MIN_WIDTH } from './model.ts';
 
@@ -77,7 +82,12 @@ test('blendSizes moves every part together, and easing starts fast', () => {
 
 test('the chat is limited so the page always keeps some height', () => {
   const max = maxChatHeight(WINDOW);
-  assert.equal(max, 800 - TOOLBAR_HEIGHT - PAGE_INSET - MIN_PAGE_HEIGHT);
+  // The room left for the page, but never more than 70% of the window.
+  assert.equal(
+    max,
+    Math.min(800 - TOOLBAR_HEIGHT - PAGE_INSET - MIN_PAGE_HEIGHT, 560),
+  );
+  assert.equal(maxChatHeight({ width: 1200, height: 1000 }), 700);
   assert.equal(chatHeightWhileDragging(5, WINDOW), CHAT_COMPACT_HEIGHT);
   assert.equal(chatHeightWhileDragging(99999, WINDOW), max);
   assert.equal(chatHeightWhileDragging(300, WINDOW), 300);
@@ -130,7 +140,7 @@ test('page-only closes the chat; chat-only gives it the whole middle', () => {
 
 test('the right panel is limited so the page always keeps some width', () => {
   const max = maxPanelWidth(rest, WINDOW);
-  assert.equal(max, 640); // capped by the panel maximum on a wide window
+  assert.equal(max, 560); // capped by the panel maximum on a wide window
   const narrow = { width: 700, height: 800 };
   assert.equal(
     maxPanelWidth(rest, narrow),
@@ -138,7 +148,7 @@ test('the right panel is limited so the page always keeps some width', () => {
   );
   assert.equal(maxPanelWidth(rest, { width: 100, height: 800 }), 0);
   assert.equal(panelWidthWhileDragging(-20, rest, WINDOW), 0);
-  assert.equal(panelWidthWhileDragging(99999, rest, WINDOW), 640);
+  assert.equal(panelWidthWhileDragging(99999, rest, WINDOW), 560);
 });
 
 test('letting go of the panel edge: narrow closes it, otherwise it stays', () => {
@@ -158,5 +168,106 @@ test('the panel at rest is 0 when closed, and fits the window when open', () => 
   assert.equal(
     restingPanelWidth(true, 600, rest, { width: 700, height: 800 }),
     maxPanelWidth(rest, { width: 700, height: 800 }),
+  );
+});
+
+// ---- Keeping the middle wide enough --------------------------------------------
+
+const fit = (
+  window: { width: number; height: number },
+  sidebarPinned: boolean,
+  panelOpen: boolean,
+  sidebarWidth = 248,
+  panelWidth = 340,
+) => fitCentre({ window, sidebarPinned, sidebarWidth, panelOpen, panelWidth });
+
+test('with room to spare, nothing is changed', () => {
+  assert.deepEqual(fit({ width: 1600, height: 900 }, true, true), {
+    left: 248,
+    panel: 340,
+    sidebarCollapsed: false,
+  });
+  // Nothing pinned and no panel: just the strip and nothing.
+  assert.deepEqual(fit({ width: 1100, height: 700 }, false, false), {
+    left: 48,
+    panel: 0,
+    sidebarCollapsed: false,
+  });
+});
+
+test('at the smallest window, a pinned sidebar and the panel together still leave 420', () => {
+  // 1100 - 248 - 340 - 48 = 464: just enough, as in the design.
+  const both = fit({ width: 1100, height: 700 }, true, true);
+  assert.equal(
+    centreWidth({ width: 1100, height: 700 }, both.left, both.panel),
+    464,
+  );
+  assert.equal(both.sidebarCollapsed, false);
+  // A wider sidebar would not fit: it goes to the strip first, the panel stays.
+  const wide = fit({ width: 1100, height: 700 }, true, true, 360);
+  assert.deepEqual(wide, { left: 48, panel: 340, sidebarCollapsed: true });
+});
+
+test('the sidebar collapses first, then the panel narrows, never below its minimum', () => {
+  // 900 wide: pinned 248 + panel 340 + rail 48 leaves 264 (too narrow).
+  const step1 = fit({ width: 900, height: 700 }, true, true);
+  assert.equal(step1.sidebarCollapsed, true);
+  assert.equal(step1.left, 48);
+  // With the sidebar a strip, 900 - 48 - 48 - 340 = 464: the panel can stay as wide.
+  assert.equal(step1.panel, 340);
+  // 700 wide: even the strip leaves too little, so the panel narrows to what is left.
+  const step2 = fit({ width: 700, height: 700 }, true, true);
+  assert.equal(step2.panel, 280); // never below its minimum
+  assert.ok(
+    centreWidth({ width: 700, height: 700 }, step2.left, step2.panel) >= 0,
+  );
+  // 800 wide, strip sidebar: the panel gives up exactly what it must.
+  const step3 = fit({ width: 800, height: 700 }, false, true, 248, 560);
+  assert.equal(step3.panel, 800 - 48 - 48 - MIN_CENTRE_WIDTH);
+  // It is never made wider than it was.
+  assert.equal(
+    fit({ width: 1400, height: 800 }, false, true, 248, 300).panel,
+    300,
+  );
+});
+
+test('a sidebar that was only hover-opened is never "collapsed" by this rule', () => {
+  assert.equal(
+    fit({ width: 900, height: 700 }, false, true).sidebarCollapsed,
+    false,
+  );
+});
+
+test('a slim chat grows to show a reply being written, and any chat opens for an approval', () => {
+  // Nothing going on: as before.
+  assert.equal(
+    restingChatHeight('both', false, 500, WINDOW, 'none'),
+    CHAT_COMPACT_HEIGHT,
+  );
+  // A reply being written: the slim bar gets room for one more line.
+  assert.equal(
+    restingChatHeight('both', false, 500, WINDOW, 'activity'),
+    CHAT_ACTIVITY_HEIGHT,
+  );
+  assert.ok(CHAT_ACTIVITY_HEIGHT > CHAT_COMPACT_HEIGHT);
+  // An expanded chat is left as it is while a reply is written.
+  assert.equal(restingChatHeight('both', true, 500, WINDOW, 'activity'), 500);
+  // An approval is waiting: even the slim bar opens up, but a taller chat stays.
+  assert.equal(
+    restingChatHeight('both', false, 500, WINDOW, 'approval'),
+    CHAT_APPROVAL_HEIGHT,
+  );
+  assert.equal(restingChatHeight('both', true, 500, WINDOW, 'approval'), 500);
+  // It never takes more than the window allows.
+  const short = { width: 1200, height: 400 };
+  assert.equal(
+    restingChatHeight('both', false, 500, short, 'approval'),
+    maxChatHeight(short),
+  );
+  // With the chat closed there is nothing to make room for; chat only already fills the room.
+  assert.equal(restingChatHeight('page', false, 500, WINDOW, 'approval'), 0);
+  assert.equal(
+    restingChatHeight('chat', false, 500, WINDOW, 'approval'),
+    restingChatHeight('chat', false, 500, WINDOW, 'none'),
   );
 });

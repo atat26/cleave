@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
@@ -23,32 +23,9 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
   code: 'Code',
 };
 
-const smallButton: CSSProperties = {
-  border: '1px solid #d0d0d0',
-  background: '#ffffff',
-  borderRadius: 14,
-  fontSize: 12,
-  padding: '3px 10px',
-  cursor: 'pointer',
-  color: '#202124',
-};
-
-const sectionTitle: CSSProperties = {
-  margin: '0 0 10px',
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#5f6368',
-};
-
-const grid: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-  gap: 12,
-  marginBottom: 24,
-};
-
-// One item on the overview: a card you click to open, with its own buttons.
-function Card({
+// One item on the overview: a card you click to open, with its own buttons. A
+// closed one is lighter and dashed. The Space's colour runs along its top edge.
+function OverviewCard({
   color,
   icon,
   title,
@@ -62,7 +39,7 @@ function Card({
   icon: ReactNode;
   title: string;
   subtitle: string;
-  // Open as a tab right now. Closed ones are drawn lighter.
+  // Open as a tab right now.
   open: boolean;
   onOpen: () => void;
   onContextMenu?: (event: React.MouseEvent) => void;
@@ -70,49 +47,33 @@ function Card({
 }) {
   return (
     <div
+      className={open ? 'card ov-card' : 'card ov-card is-closed'}
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      onContextMenu={onContextMenu}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        padding: 12,
-        border: '1px solid #d0d0d0',
-        borderTop: `3px solid ${color}`,
-        borderRadius: 8,
-        cursor: 'pointer',
-        opacity: open ? 1 : 0.7,
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
       }}
+      onContextMenu={onContextMenu}
+      style={{ borderTop: `3px solid ${color}` }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="row-flex" style={{ gap: 10 }}>
         {icon}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+        <div className="grow">
+          <div className="truncate" style={{ fontWeight: 600 }}>
             {title}
           </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: '#5f6368',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <div className="truncate muted" style={{ fontSize: 'var(--fs-xs)' }}>
             {subtitle}
           </div>
         </div>
       </div>
       <div
-        style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+        className="ov-actions"
         // Buttons here must not also open the card.
         onClick={(event) => event.stopPropagation()}
       >
@@ -163,10 +124,11 @@ export function LeadView({
         right: `calc(var(--rail) + var(--panel) + ${PAGE_INSET}px)`,
         bottom: `calc(var(--chat) + ${PAGE_INSET}px)`,
         overflowY: 'auto',
-        background: '#ffffff',
+        background: 'var(--c-surface)',
         borderRadius: PAGE_RADIUS,
-        padding: 24,
+        padding: 'var(--s-6)',
         boxSizing: 'border-box',
+        color: 'var(--c-text)',
       }}
     >
       <div
@@ -187,10 +149,12 @@ export function LeadView({
         }}
       >
         <span
-          style={{ width: 14, height: 14, borderRadius: 7, background: color }}
+          aria-hidden="true"
+          style={{ width: 14, height: 14, borderRadius: 4, background: color }}
         />
         {editing ? (
           <input
+            className="input"
             autoFocus
             defaultValue={space.name}
             maxLength={60}
@@ -201,35 +165,28 @@ export function LeadView({
               if (e.key === 'Enter') finishRename(e.currentTarget.value);
               if (e.key === 'Escape') setEditing(false);
             }}
-            style={{ fontSize: 22, fontWeight: 600, minWidth: 0, width: 280 }}
+            style={{
+              fontSize: 'var(--fs-xl)',
+              fontWeight: 600,
+              minWidth: 0,
+              width: 280,
+              height: 36,
+            }}
           />
         ) : (
-          <>
-            <h1
-              onClick={() => setEditing(true)}
-              title="Click to rename"
-              style={{ margin: 0, fontSize: 22, cursor: 'text' }}
-            >
-              {space.name}
-            </h1>
-            <button
-              type="button"
-              aria-label="Rename Space"
-              title="Rename Space"
-              onClick={() => setEditing(true)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: 16,
-                color: '#5f6368',
-              }}
-            >
-              ✎
-            </button>
-          </>
+          <h1
+            onClick={() => setEditing(true)}
+            title="Click to rename"
+            style={{
+              margin: 0,
+              fontSize: 'var(--fs-xl)',
+              cursor: 'text',
+            }}
+          >
+            {space.name}
+          </h1>
         )}
-        <span style={{ color: '#5f6368', fontSize: 14 }}>
+        <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
           {tabs.length} {tabs.length === 1 ? 'page' : 'pages'} ({openCount}{' '}
           open) · {artifacts.length}{' '}
           {artifacts.length === 1 ? 'artifact' : 'artifacts'}
@@ -255,16 +212,19 @@ export function LeadView({
         </Button>
       </div>
 
-      <h2 style={sectionTitle}>Web pages</h2>
+      <h2 className="sect-title ov-title">Web pages</h2>
       {tabs.length === 0 ? (
-        <p style={{ color: '#5f6368', marginTop: 0, marginBottom: 24 }}>
+        <p
+          className="muted"
+          style={{ marginTop: 0, marginBottom: 'var(--s-6)' }}
+        >
           No pages in this Space yet. Use the +, or Ctrl+T while you are in this
           Space.
         </p>
       ) : (
-        <div style={grid}>
+        <div className="ov-grid">
           {tabs.map((tab) => (
-            <Card
+            <OverviewCard
               key={tab.id}
               color={color}
               icon={<Favicon tab={tab} />}
@@ -284,52 +244,50 @@ export function LeadView({
               }}
             >
               {tab.closed ? (
-                <button
-                  type="button"
-                  style={smallButton}
+                <Button
+                  size="sm"
                   onClick={() => window.browserApi.reopenTab(tab.id)}
                 >
                   Open
-                </button>
+                </Button>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  size="sm"
                   title="Close the tab but keep the page here"
-                  style={smallButton}
                   onClick={() => window.browserApi.closeTab(tab.id)}
                 >
                   Close
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
+              <Button
+                size="sm"
+                variant="danger"
                 title="Delete this page from the Space for good"
                 aria-label={`Delete ${labelFor(tab)}`}
-                style={{ ...smallButton, color: '#b3261e' }}
                 onClick={() => window.browserApi.removeTab(tab.id)}
               >
                 Delete
-              </button>
-            </Card>
+              </Button>
+            </OverviewCard>
           ))}
         </div>
       )}
 
-      <h2 style={sectionTitle}>Artifacts</h2>
+      <h2 className="sect-title ov-title">Artifacts</h2>
       {artifacts.length === 0 ? (
-        <p style={{ color: '#5f6368', marginTop: 0 }}>
+        <p className="muted" style={{ marginTop: 0 }}>
           No artifacts in this Space yet. Use the + to make one or add one you
           have.
         </p>
       ) : (
-        <div style={grid}>
+        <div className="ov-grid">
           {artifacts.map((a) => {
             const open = openArtifactIds.includes(a.id);
             return (
-              <Card
+              <OverviewCard
                 key={a.id}
                 color={color}
-                icon={<span style={{ fontSize: 16 }}>📄</span>}
+                icon={<Icon name="doc" large />}
                 title={a.title}
                 subtitle={`${KIND_WORDS[a.kind]} · ${open ? 'open' : 'closed'}`}
                 open={open}
@@ -344,33 +302,31 @@ export function LeadView({
                 }}
               >
                 {open && (
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
                     title="Close the tab but keep the artifact here"
-                    style={smallButton}
                     onClick={() => window.browserApi.artifactClose(a.id)}
                   >
                     Close
-                  </button>
+                  </Button>
                 )}
-                <button
-                  type="button"
+                <Button
+                  size="sm"
                   title="Keep the artifact, but take it out of this Space"
-                  style={smallButton}
                   onClick={() => window.browserApi.artifactMove(a.id, null)}
                 >
                   Take out
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
                   title="Delete the artifact for good"
                   aria-label={`Delete ${a.title}`}
-                  style={{ ...smallButton, color: '#b3261e' }}
                   onClick={() => window.browserApi.artifactDelete(a.id)}
                 >
                   Delete
-                </button>
-              </Card>
+                </Button>
+              </OverviewCard>
             );
           })}
         </div>

@@ -308,21 +308,12 @@ export function chatRowMenuItems(
   ];
 }
 
-// The menu under the chat's name: switch chat (newest first), new, rename, delete.
+// The menu under the chat's name: new, rename and delete at the top, then the
+// chats to switch to (newest first).
 export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
   const active = chats.activeId;
   return [
-    { type: 'header', label: 'Switch chat' },
-    ...[...chats.conversations].reverse().map(
-      (chat): MenuItem => ({
-        type: 'item',
-        id: `chat.select:${chat.id}`,
-        label: shortTitle(chat.title),
-        icon: chat.id === active ? 'check' : undefined,
-        anchor: chat.id === active,
-      }),
-    ),
-    { type: 'separator' },
+    // The things you do to chats come first; the list of chats to switch to follows.
     { type: 'item', id: 'chat.new', label: 'New chat', icon: 'plus' },
     {
       type: 'item',
@@ -337,6 +328,17 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
       icon: 'trash',
       danger: true,
     },
+    { type: 'separator' },
+    { type: 'header', label: 'Switch chat' },
+    ...[...chats.conversations].reverse().map(
+      (chat): MenuItem => ({
+        type: 'item',
+        id: `chat.select:${chat.id}`,
+        label: shortTitle(chat.title),
+        icon: chat.id === active ? 'check' : undefined,
+        anchor: chat.id === active,
+      }),
+    ),
   ];
 }
 
@@ -696,8 +698,8 @@ export type MessageChoice =
   | { action: 'branch' };
 
 // Copy (the selected text, else the whole message), and for one of your own
-// messages Retry (only the newest, when no reply is being written) or Branch (the
-// older ones).
+// messages Retry (only the newest, when no reply is being written) and Branch
+// (any of them).
 export function messageMenuItems(options: {
   role: 'user' | 'assistant';
   hasSelection: boolean;
@@ -728,7 +730,6 @@ export function messageMenuItems(options: {
         id: 'msg.branch',
         label: 'Branch from here',
         icon: 'branch',
-        disabled: options.isNewestUser,
       },
     );
   }

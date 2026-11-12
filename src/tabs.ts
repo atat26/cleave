@@ -4,6 +4,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  nativeTheme,
   screen,
   session,
   WebContentsView,
@@ -13,16 +14,21 @@ import {
   blendSizes,
   chatHeightWhileDragging,
   easeOutCubic,
+  fitCentre,
   pageRect,
   panelWidthWhileDragging,
   restingChatHeight,
-  restingPanelWidth,
   settleChat,
   settlePanel,
 } from './frame';
 import type { FrameSizes, Size } from './frame';
+import type { ChatNeed } from './layout';
+import { nextRegion } from './regions';
+import type { Region } from './regions';
 import {
   FRAME_ANIMATION_MS,
+  FRAME_COLOR,
+  FRAME_COLOR_DARK,
   PAGE_RADIUS,
   SIDEBAR_CLOSE_MARGIN,
   SIDEBAR_COLLAPSED_WIDTH,
@@ -64,6 +70,11 @@ import {
   loadJson,
   loadState,
 } from './storage';
+import {
+  defaultThemeSettings,
+  isThemeChoice,
+  parseThemeSettings,
+} from './themeSettings';
 import { isApprovalLevel } from './toolPolicy';
 import {
   defaultToolSettings,
@@ -145,6 +156,26 @@ export async function createTabs(
     defaultToolSettings,
   );
   const toolsSaver = createSaver(toolsFile, () => toolSettings);
+  // Light, dark or follow the computer. Every window (and web pages) follow it.
+  const themeFile = path.join(app.getPath('userData'), 'theme.json');
+  let themeSettings = await loadJson(
+    themeFile,
+    parseThemeSettings,
+    defaultThemeSettings,
+  );
+  nativeTheme.themeSource = themeSettings.theme;
+  // The window's own background shows at its edges (a thin line at the top
+  // otherwise): keep it the frame's colour in either theme.
+  const paintWindow = () => {
+    if (win.isDestroyed()) return;
+    win.setBackgroundColor(
+      nativeTheme.shouldUseDarkColors ? FRAME_COLOR_DARK : FRAME_COLOR,
+    );
+  };
+  paintWindow();
+  nativeTheme.on('updated', paintWindow);
+  win.on('closed', () => nativeTheme.off('updated', paintWindow));
+  const themeSaver = createSaver(themeFile, () => themeSettings);
   if (win.isDestroyed()) return;
 
   // Artifact tabs only make sense for artifacts that still exist.
@@ -204,7 +235,19 @@ export async function createTabs(
     null;
 
   const pinned = () => state.settings.sidebarPinned;
-  const expanded = () => pinned() || hover;
+  // A pinned sidebar goes back to the icon strip while the window is too narrow to
+  // leave the middle wide enough (see fitCentre); it comes back when there is room.
+  const stripForced = () =>
+    fitCentre({
+      window: windowSize(),
+      sidebarPinned: state.settings.sidebarPinned,
+      sidebarWidth: state.settings.sidebarWidth,
+      panelOpen: state.settings.rightPanel !== null,
+      panelWidth: state.settings.panelWidth,
+    }).sidebarCollapsed;
+  // Is the sidebar pinned open right now (as opposed to only opened by hovering)?
+  const pinnedNow = () => pinned() && !stripForced();
+  const expanded = () => pinnedNow() || hover;
 
   const activeTabId = () =>
     state.active?.kind === 'tab' ? state.active.id : null;
@@ -278,21 +321,32 @@ export async function createTabs(
     return { width, height };
   };
 
+  // What the chat on screen needs (a reply being written, an approval waiting): the
+  // chat page tells us, and the frame makes room for it.
+  let chatNeed: ChatNeed = 'none';
+
   // Where each part of the frame should be right now.
   const targetSizes = (): FrameSizes => {
     const s = state.settings;
     const window = windowSize();
-    const left = pinned() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH;
+    const fit = fitCentre({
+      window,
+      sidebarPinned: s.sidebarPinned,
+      sidebarWidth: s.sidebarWidth,
+      panelOpen: s.rightPanel !== null,
+      panelWidth: s.panelWidth,
+    });
     const sizes: FrameSizes = {
       sidebar: expanded() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH,
-      left,
-      panel: restingPanelWidth(
-        s.rightPanel !== null,
-        s.panelWidth,
-        { left },
+      left: fit.left,
+      panel: fit.panel,
+      chat: restingChatHeight(
+        s.viewMode,
+        s.chatExpanded,
+        s.chatHeight,
         window,
+        chatNeed,
       ),
-      chat: restingChatHeight(s.viewMode, s.chatExpanded, s.chatHeight, window),
     };
     // The part being dragged follows the mouse exactly.
     if (drag?.kind === 'sidebar') {
@@ -407,6 +461,8 @@ export async function createTabs(
         closed: tab.closed,
       })),
       active: state.active,
+      loading:
+        id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
       canGoForward: history?.canGoForward() ?? false,
       sidebarPinned: pinned(),
@@ -543,7 +599,7 @@ export async function createTabs(
     awayTicks = 0;
     if (watcher !== null) return;
     watcher = setInterval(() => {
-      if (!hover || pinned() || drag !== null || busy > 0) {
+      if (!hover || pinnedNow() || drag !== null || busy > 0) {
         awayTicks = 0;
         return;
       }
@@ -637,6 +693,9 @@ export async function createTabs(
       return { action: 'deny' };
     });
     contents.on('before-input-event', handleShortcut);
+    // The reload button turns into Stop while the page loads.
+    contents.on('did-start-loading', () => sendState());
+    contents.on('did-stop-loading', () => sendState());
     // Right-click in the page: a menu for what is under the pointer.
     contents.on('context-menu', (_event, params) =>
       showPageMenu(tab.id, view, contents, params),
@@ -1211,7 +1270,7 @@ export async function createTabs(
       const inSidebar = state.settings.viewMode === 'chat';
       const target = inSidebar ? sidebar : win.webContents;
       if (target.isDestroyed()) return;
-      if (inSidebar && !pinned()) setHover(true);
+      if (inSidebar && !pinnedNow()) setHover(true);
       target.send('chats:begin-rename', id);
       target.focus(); // So the box can take keyboard input.
     },
@@ -1225,7 +1284,7 @@ export async function createTabs(
     },
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
-      if (!pinned()) setHover(true);
+      if (!pinnedNow()) setHover(true);
       if (sidebar.isDestroyed()) return;
       sidebar.send('space:begin-rename', spaceId);
       sidebar.focus(); // So the rename box can take keyboard input.
@@ -1765,12 +1824,43 @@ export async function createTabs(
     event: { preventDefault: () => void },
     input: Electron.Input,
   ) => {
+    // F6 / Shift+F6: move the keyboard to the next part of the app.
+    if (
+      input.type === 'keyDown' &&
+      input.key === 'F6' &&
+      !input.control &&
+      !input.alt &&
+      !input.meta
+    ) {
+      event.preventDefault();
+      const id = activeTabId();
+      const pageView = id === null ? undefined : views.get(id)?.webContents;
+      const here: Region | null = sidebar.isFocused()
+        ? 'sidebar'
+        : win.webContents.isFocused()
+          ? 'window'
+          : pageView?.isFocused()
+            ? 'page'
+            : null;
+      const next = nextRegion(here, input.shift, pageIsShown() && !!pageView);
+      if (next === 'sidebar') {
+        // A hovering sidebar must be open to be used.
+        if (!pinnedNow()) setHover(true);
+        sidebar.focus();
+      } else if (next === 'page') pageView?.focus();
+      else win.webContents.focus();
+      return;
+    }
     if (input.type !== 'keyDown' || !input.control || input.alt || input.meta)
       return;
     const key = input.key.toLowerCase();
     if (key === 't') {
       event.preventDefault();
       openTab(NEW_TAB_URL, currentSpaceId());
+    } else if (key === 'r') {
+      event.preventDefault();
+      const id = activeTabId();
+      if (id !== null) views.get(id)?.webContents.reload();
     } else if (key === 'w') {
       event.preventDefault();
       const id = activeTabId();
@@ -1805,6 +1895,22 @@ export async function createTabs(
       void views.get(id)?.webContents.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
       commitAndShow(revealPage(state));
+    },
+    // The chat says what it needs: a line of a reply being written, or room for
+    // an approval. The frame slides to fit.
+    'chat:need': (need) => {
+      if (need !== 'none' && need !== 'activity' && need !== 'approval') return;
+      if (need === chatNeed) return;
+      chatNeed = need;
+      applyLayout(true);
+    },
+    'tab:reload': () => {
+      const id = activeTabId();
+      if (id !== null) views.get(id)?.webContents.reload();
+    },
+    'tab:stop': () => {
+      const id = activeTabId();
+      if (id !== null) views.get(id)?.webContents.stop();
     },
     'tab:back': () => {
       const id = activeTabId();
@@ -1904,7 +2010,7 @@ export async function createTabs(
       }
     },
     'sidebar:hover': () => {
-      if (!pinned() && drag === null) setHover(true);
+      if (!pinnedNow() && drag === null) setHover(true);
     },
     // Asked for from the chat itself: keep the keyboard in the chat, rather than
     // moving it to the web page (so typing carries on where it was).
@@ -1954,7 +2060,7 @@ export async function createTabs(
             : kind === 'chat'
               ? now.chat
               : now.panel,
-        startedPinned: pinned(),
+        startedPinned: pinnedNow(),
       };
     },
     'resize:move': (kind, size) => {
@@ -2208,6 +2314,19 @@ export async function createTabs(
   // change applies from the assistant's next reply.
   const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
     event.sender === win.webContents;
+  ipcMain.handle('theme:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return themeSettings.theme;
+  });
+  ipcMain.handle('theme:set', (event, choice: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (isThemeChoice(choice)) {
+      themeSettings = { ...themeSettings, theme: choice };
+      nativeTheme.themeSource = choice;
+      themeSaver.schedule();
+    }
+    return themeSettings.theme;
+  });
   ipcMain.handle('tools:list', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return describeTools(toolSettings);

@@ -6,28 +6,28 @@ import { SPACE_COLOR_HEX } from './colors';
 import type { ArtifactInfo, SpaceInfo } from './types';
 
 const muted: CSSProperties = {
-  color: '#5f6368',
+  color: 'var(--c-text-2)',
   fontSize: 12,
   lineHeight: 1.45,
 };
 
 const field: CSSProperties = {
-  border: '1px solid #d0d0d0',
+  border: '1px solid var(--c-border-strong)',
   borderRadius: 8,
   fontSize: 13,
   padding: '5px 8px',
-  background: '#ffffff',
+  background: 'var(--c-surface)',
   minWidth: 0,
 };
 
 const smallButton: CSSProperties = {
-  border: '1px solid #d0d0d0',
-  background: '#ffffff',
+  border: '1px solid var(--c-border-strong)',
+  background: 'var(--c-surface)',
   borderRadius: 14,
   fontSize: 12,
   padding: '3px 10px',
   cursor: 'pointer',
-  color: '#202124',
+  color: 'var(--c-text)',
 };
 
 const KIND_WORDS: Record<ArtifactKind, string> = {
@@ -124,7 +124,7 @@ function EditableTitle({
           cursor: 'pointer',
           fontSize: 12,
           padding: 0,
-          color: '#5f6368',
+          color: 'var(--c-text-2)',
           opacity: hover ? 1 : 0,
         }}
       >
@@ -203,7 +203,7 @@ export function ArtifactsPanel({
         alignItems: 'center',
         gap: 6,
         padding: '8px 0',
-        borderTop: '1px solid #eeeeee',
+        borderTop: '1px solid var(--c-border)',
       }}
     >
       <div
@@ -242,24 +242,6 @@ export function ArtifactsPanel({
           <span>
             {KIND_WORDS[a.kind]} · {sizeWords(a.size)}
           </span>
-          <select
-            aria-label={`Move ${a.title}`}
-            value={a.spaceId === null ? '' : String(a.spaceId)}
-            onChange={(e) =>
-              window.browserApi.artifactMove(
-                a.id,
-                e.target.value === '' ? null : Number(e.target.value),
-              )
-            }
-            style={{ ...field, padding: '2px 6px', fontSize: 12 }}
-          >
-            <option value="">No space</option>
-            {spaces.map((s) => (
-              <option key={s.id} value={String(s.id)}>
-                {s.name}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
       <button
@@ -274,7 +256,7 @@ export function ArtifactsPanel({
           fontSize: 18,
           lineHeight: 1,
           padding: '0 4px',
-          color: '#5f6368',
+          color: 'var(--c-text-2)',
         }}
       >
         ×
@@ -296,7 +278,7 @@ export function ArtifactsPanel({
           +
         </button>
         <span style={muted}>
-          Documents made in the browser. Opening one in a tab is coming next.
+          Documents made in the browser. Click a name to open it.
         </span>
       </div>
       {choosing && (
@@ -307,7 +289,7 @@ export function ArtifactsPanel({
             gap: 6,
             margin: '10px 0 4px',
             padding: 10,
-            background: '#f6f8fc',
+            background: 'var(--c-surface-2)',
             borderRadius: 10,
           }}
         >
@@ -355,9 +337,9 @@ export function ArtifactsPanel({
               onClick={() => void create()}
               style={{
                 ...smallButton,
-                background: '#1a73e8',
-                color: '#ffffff',
-                borderColor: '#1a73e8',
+                background: 'var(--c-accent)',
+                color: 'var(--c-on-accent)',
+                borderColor: 'var(--c-accent)',
               }}
             >
               Create
@@ -379,7 +361,7 @@ export function ArtifactsPanel({
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
-                  color: '#5f6368',
+                  color: 'var(--c-text-2)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,

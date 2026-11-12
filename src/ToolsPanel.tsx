@@ -7,19 +7,19 @@ import type { ToolRow } from './toolSettings';
 import type { SearchStatus } from './types';
 
 const muted: CSSProperties = {
-  color: '#5f6368',
+  color: 'var(--c-text-2)',
   fontSize: 12,
   lineHeight: 1.45,
 };
 
 const button: CSSProperties = {
-  border: '1px solid #d0d0d0',
-  background: '#ffffff',
+  border: '1px solid var(--c-border-strong)',
+  background: 'var(--c-surface)',
   borderRadius: 14,
   fontSize: 12,
   padding: '4px 12px',
   cursor: 'pointer',
-  color: '#202124',
+  color: 'var(--c-text)',
 };
 
 const GROUPS: ToolGroup[] = ['look', 'act', 'artifacts', 'chat'];
@@ -76,7 +76,9 @@ export function ToolsPanel() {
       <div style={{ ...muted, display: 'grid', gap: 2 }}>
         {APPROVAL_LEVELS.map((level) => (
           <div key={level}>
-            <strong style={{ color: '#202124' }}>{LEVEL_WORDS[level]}:</strong>{' '}
+            <strong style={{ color: 'var(--c-text)' }}>
+              {LEVEL_WORDS[level]}:
+            </strong>{' '}
             {LEVEL_HELP[level]}
           </div>
         ))}
@@ -94,10 +96,13 @@ export function ToolsPanel() {
                 <div
                   key={row.name}
                   style={{
-                    border: '1px solid #e3e3e3',
+                    border: '1px solid var(--c-border)',
                     borderRadius: 8,
                     padding: '8px 10px',
-                    background: row.level === 'never' ? '#f8f9fa' : '#ffffff',
+                    background:
+                      row.level === 'never'
+                        ? 'var(--c-surface-2)'
+                        : 'var(--c-surface)',
                   }}
                 >
                   <div
@@ -108,7 +113,10 @@ export function ToolsPanel() {
                         style={{
                           fontSize: 13,
                           fontWeight: 600,
-                          color: row.level === 'never' ? '#80868b' : '#202124',
+                          color:
+                            row.level === 'never'
+                              ? 'var(--c-text-3)'
+                              : 'var(--c-text)',
                         }}
                       >
                         {row.title}
@@ -119,7 +127,9 @@ export function ToolsPanel() {
                           style={{
                             ...muted,
                             whiteSpace: 'nowrap',
-                            color: search.hasKey ? '#188038' : '#b3261e',
+                            color: search.hasKey
+                              ? 'var(--c-ok)'
+                              : 'var(--c-danger)',
                           }}
                         >
                           {search.hasKey
@@ -138,8 +148,8 @@ export function ToolsPanel() {
                             ...button,
                             marginTop: 4,
                             padding: '2px 10px',
-                            color: '#1a73e8',
-                            borderColor: '#c6dafc',
+                            color: 'var(--c-accent)',
+                            borderColor: 'var(--c-border)',
                           }}
                         >
                           Return to default
@@ -165,8 +175,8 @@ export function ToolsPanel() {
                           fontSize: 12,
                           padding: '4px 6px',
                           borderRadius: 8,
-                          border: '1px solid #d0d0d0',
-                          background: '#ffffff',
+                          border: '1px solid var(--c-border-strong)',
+                          background: 'var(--c-surface)',
                         }}
                       >
                         {APPROVAL_LEVELS.map((level) => (
@@ -186,8 +196,8 @@ export function ToolsPanel() {
                             ...button,
                             padding: '0 7px',
                             fontSize: 11,
-                            color: '#1a73e8',
-                            borderColor: '#c6dafc',
+                            color: 'var(--c-accent)',
+                            borderColor: 'var(--c-border)',
                           }}
                         >
                           Settings
@@ -202,10 +212,10 @@ export function ToolsPanel() {
                       style={{
                         marginTop: 8,
                         padding: '8px 10px',
-                        background: '#fef7e0',
+                        background: 'var(--c-warn-tint)',
                         borderRadius: 8,
                         fontSize: 12,
-                        color: '#202124',
+                        color: 'var(--c-text)',
                         lineHeight: 1.45,
                       }}
                     >
@@ -219,8 +229,8 @@ export function ToolsPanel() {
                           onClick={() => void apply(row.name, 'always')}
                           style={{
                             ...button,
-                            background: '#b3261e',
-                            color: '#ffffff',
+                            background: 'var(--c-danger)',
+                            color: 'var(--c-on-accent)',
                             border: 'none',
                           }}
                         >
@@ -246,7 +256,7 @@ export function ToolsPanel() {
         style={{
           ...muted,
           padding: '8px 10px',
-          background: '#f1f3f4',
+          background: 'var(--c-surface-3)',
           borderRadius: 8,
         }}
       >

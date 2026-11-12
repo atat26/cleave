@@ -1,8 +1,10 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
 import type { LinkKind } from './chats';
 import { onInsert } from './composerBus';
+import { Banner, Button } from './ui/controls';
+import { Icon } from './ui/Icon';
 import { AddMenuButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
 import type {
@@ -13,21 +15,6 @@ import type {
   SpaceInfo,
   TabInfo,
 } from './types';
-
-const chipStyle: CSSProperties = {
-  border: '1px solid #d0d0d0',
-  background: '#ffffff',
-  borderRadius: 14,
-  fontSize: 12,
-  padding: '4px 10px',
-  cursor: 'pointer',
-  color: '#202124',
-  maxWidth: 140,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  flexShrink: 0,
-};
 
 // The last part of a model name ("openai/gpt-4o" -> "gpt-4o") for the small chip.
 const shortModel = (id: string) => id.split('/').pop() ?? id;
@@ -55,9 +42,9 @@ function makePill(item: PickerItem): HTMLSpanElement {
     display: 'inline-block',
     padding: '0 8px',
     margin: '0 1px',
-    border: '1px solid #c6dafc',
-    background: '#e8f0fe',
-    color: '#1a56c4',
+    border: '1px solid var(--c-border)',
+    background: 'var(--c-accent-tint)',
+    color: 'var(--c-accent)',
     borderRadius: '10px',
     fontSize: '12px',
     lineHeight: '18px',
@@ -383,60 +370,48 @@ export function ChatComposer({
   };
 
   return (
-    <div>
+    <div className="chat-foot">
       {setup !== null && (
-        <div
-          style={{
-            margin: '0 0 6px',
-            padding: '6px 10px',
-            background: '#fef7e0',
-            borderRadius: 8,
-            fontSize: 12,
-            color: '#5f6368',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span style={{ flex: 1 }}>
+        <div>
+          <Banner
+            tone="warn"
+            actions={
+              <Button
+                size="sm"
+                onClick={() => window.browserApi.openSettings()}
+              >
+                Open Settings
+              </Button>
+            }
+          >
             {setup === 'key'
               ? 'Add your OpenRouter key in Settings to start chatting.'
               : 'Choose a model in Settings to start chatting.'}
-          </span>
-          <button
-            type="button"
-            onClick={() => window.browserApi.openSettings()}
-            style={{ ...chipStyle, maxWidth: 'none' }}
-          >
-            Open Settings
-          </button>
+          </Banner>
         </div>
       )}
       {refs.length > 0 && llm.activeModelSupportsTools === false && (
-        <div
-          style={{
-            margin: '0 0 6px',
-            padding: '6px 10px',
-            background: '#fef7e0',
-            borderRadius: 8,
-            fontSize: 12,
-            color: '#5f6368',
-          }}
-        >
-          This model can't read pages, so it only sees the titles and addresses
-          of your linked tabs. Pick another model to let it read them.
+        <div>
+          <Banner tone="warn">
+            This model can't read pages, so it only sees the titles and
+            addresses of your linked tabs. Pick another model to let it read
+            them.
+          </Banner>
         </div>
       )}
       {notice && (
-        <div
-          role="alert"
-          style={{ margin: '0 0 6px', fontSize: 12, color: '#b3261e' }}
-        >
-          {notice}
+        <div>
+          <Banner tone="error">{notice}</Banner>
         </div>
       )}
+      {/* The Add button and the linked things share ONE row (it scrolls sideways
+          if there are many), so they never push the conversation out of view. */}
       {!compact && (
-        <>
+        <div className="chips chips-row">
+          <AddMenuButton
+            onAddPage={() => openFromButton('page')}
+            onAddArtifact={() => openFromButton('artifact')}
+          />
           <LinkChips
             chatId={chat.id}
             refs={refs}
@@ -444,61 +419,24 @@ export function ChatComposer({
             spaces={spaces}
             artifacts={artifacts}
           />
-          <AddMenuButton
-            onAddPage={() => openFromButton('page')}
-            onAddArtifact={() => openFromButton('artifact')}
-          />
-        </>
+        </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+      <div className="composer">
         {before}
         {compact && refs.length > 0 && (
           <button
             type="button"
+            className="model-chip"
             onClick={() => window.browserApi.toggleChat()}
             title="Open the chat to see what is linked"
-            style={chipStyle}
           >
             {refs.length} link{refs.length === 1 ? '' : 's'}
           </button>
         )}
-        <button
-          type="button"
-          title={
-            model ? `Using ${model}. Click to switch models.` : 'Choose a model'
-          }
-          onClick={(event) => {
-            if (!model) {
-              window.browserApi.openSettings();
-              return;
-            }
-            // Opens just above the chip (it moves itself if there is no room).
-            const box = event.currentTarget.getBoundingClientRect();
-            window.browserApi.showModelMenu(chat.id, box.left, box.top - 4);
-          }}
-          style={chipStyle}
-        >
-          {model ? shortModel(model) : 'Choose model'}
-        </button>
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           {empty && (
-            <span
-              aria-hidden="true"
-              style={{
-                position: 'absolute',
-                left: 15,
-                right: 14,
-                top: 7,
-                fontSize: 13,
-                lineHeight: '18px',
-                color: '#9aa0a6',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              Ask anything, or type @ to link a tab or Space
+            <span aria-hidden="true" className="composer-hint">
+              Ask anything, or type @ to link a tab, Space or artifact
             </span>
           )}
           <div
@@ -558,55 +496,51 @@ export function ChatComposer({
                 syncText();
               }
             }}
+            className="composer-field"
             style={{
-              boxSizing: 'border-box',
-              minHeight: 32,
-              maxHeight: compact ? 32 : 140,
+              maxHeight: compact ? 34 : 140,
               overflowY: compact ? 'hidden' : 'auto',
-              padding: '6px 14px',
-              border: '1px solid #d0d0d0',
-              borderRadius: 16,
-              fontSize: 13,
-              lineHeight: '18px',
-              background: '#ffffff',
-              outline: 'none',
               whiteSpace: compact ? 'pre' : 'pre-wrap',
-              overflowWrap: 'anywhere',
             }}
           />
         </div>
+        <button
+          type="button"
+          className="model-chip"
+          title={
+            model ? `Using ${model}. Click to switch models.` : 'Choose a model'
+          }
+          aria-haspopup="menu"
+          onClick={(event) => {
+            if (!model) {
+              window.browserApi.openSettings();
+              return;
+            }
+            // Opens just above the chip (it moves itself if there is no room).
+            const box = event.currentTarget.getBoundingClientRect();
+            window.browserApi.showModelMenu(chat.id, box.left, box.top - 4);
+          }}
+        >
+          <span className="truncate">
+            {model ? shortModel(model) : 'Choose model'}
+          </span>
+          <Icon name="chev-d" />
+        </button>
         {chat.generating ? (
-          <button
-            type="button"
-            onClick={stop}
-            title="Stop (Esc)"
-            style={{
-              ...chipStyle,
-              background: '#3c4043',
-              color: '#ffffff',
-              border: 'none',
-              height: 32,
-            }}
-          >
+          <Button size="sm" icon="stop" onClick={stop} title="Stop (Esc)">
             Stop
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
+            icon="send"
             onClick={() => void send()}
             disabled={empty || sending}
             title="Send (Enter)"
-            style={{
-              ...chipStyle,
-              height: 32,
-              background: empty ? '#f1f3f4' : '#1a73e8',
-              color: empty ? '#9aa0a6' : '#ffffff',
-              border: 'none',
-              cursor: empty ? 'default' : 'pointer',
-            }}
           >
             Send
-          </button>
+          </Button>
         )}
         {after}
       </div>

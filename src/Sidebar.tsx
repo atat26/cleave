@@ -8,7 +8,7 @@ import { IconButton } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { ChatList, ChatStrip } from './ChatHistory';
 import { SPACE_COLOR_HEX } from './colors';
-import { FRAME_COLOR, SIDEBAR_FULL_MIN_WIDTH } from './layout';
+import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
 import { iconButtonStyle, stripButton } from './sidebarStyles';
 import type { ArtifactTabInfo, SpaceInfo, TabInfo, UiState } from './types';
@@ -38,7 +38,7 @@ export function Favicon({ tab }: { tab: TabInfo }) {
         width: 16,
         height: 16,
         borderRadius: 8,
-        background: '#b0b4ba',
+        background: 'var(--c-text-3)',
         flexShrink: 0,
       }}
     />
@@ -65,8 +65,8 @@ function WorkingDot() {
         width: 8,
         height: 8,
         borderRadius: 4,
-        background: '#1a73e8',
-        boxShadow: '0 0 0 3px rgba(26, 115, 232, 0.25)',
+        background: 'var(--c-accent)',
+        boxShadow: '0 0 0 3px var(--c-accent-tint)',
         flexShrink: 0,
       }}
     />
@@ -449,7 +449,12 @@ function FullSidebar({
 function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      aria-label={labelFor(tab)}
       onClick={() => window.browserApi.selectTab(tab.id)}
+      onKeyDown={rowKeys(() => window.browserApi.selectTab(tab.id))}
       onContextMenu={showTabMenu(tab)}
       title={labelFor(tab)}
       style={{
@@ -477,7 +482,12 @@ function StripArtifact({
 }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      aria-label={tab.title}
       onClick={() => window.browserApi.artifactSelect(tab.id)}
+      onKeyDown={rowKeys(() => window.browserApi.artifactSelect(tab.id))}
       title={tab.title}
       style={stripButton(active)}
     >
@@ -514,7 +524,12 @@ function StripSpace({
       }}
     >
       <div
+        role="button"
+        tabIndex={0}
+        aria-current={leadActive || undefined}
+        aria-label={`${space.name} overview`}
         onClick={() => window.browserApi.selectLead(space.id)}
+        onKeyDown={rowKeys(() => window.browserApi.selectLead(space.id))}
         onContextMenu={openMenu}
         title={`${space.name} overview`}
         style={{ ...stripButton(leadActive), color, fontSize: 14 }}
@@ -539,13 +554,19 @@ function StripSpace({
         ))}
       {space.collapsed && tabs.length > 0 && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label={`Show ${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
           onClick={() => window.browserApi.setSpaceCollapsed(space.id, false)}
+          onKeyDown={rowKeys(() =>
+            window.browserApi.setSpaceCollapsed(space.id, false),
+          )}
           onContextMenu={openMenu}
           title={`${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
           style={{
             ...stripButton(false),
             fontSize: 11,
-            color: '#5f6368',
+            color: 'var(--c-text-2)',
           }}
         >
           {tabs.length}
@@ -682,7 +703,7 @@ export function Sidebar({
         flexDirection: 'column',
         boxSizing: 'border-box',
         // Same colour as the rest of the frame, so it reads as part of it.
-        background: FRAME_COLOR,
+        background: 'var(--c-frame)',
         // A shadow shows it floating over the page (when it is open but not pinned).
         boxShadow:
           full && !state.sidebarPinned

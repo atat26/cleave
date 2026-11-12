@@ -12,6 +12,17 @@ import { App } from './App';
 import { KitPage } from './KitPage';
 import { PopupApp } from './PopupApp';
 
+// Light or dark: the app asks the computer (which follows your Appearance choice,
+// set in the main process) and marks the page so the dark colours apply.
+const dark = window.matchMedia('(prefers-color-scheme: dark)');
+const applyTheme = () =>
+  document.documentElement.setAttribute(
+    'data-theme',
+    dark.matches ? 'dark' : 'light',
+  );
+applyTheme();
+dark.addEventListener('change', applyTheme);
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {/* #kit shows every shared control (for checking the look). */}

@@ -6,6 +6,8 @@ import type {
 } from 'react';
 import { MentionToken } from './LinkChips';
 import { Markdown } from './MarkdownView';
+import { Badge, Banner, Button } from './ui/controls';
+import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import type {
   ArtifactInfo,
@@ -73,7 +75,7 @@ export function useChatMessages(chatId: number): ChatMessage[] {
 
 // ---- Showing them -------------------------------------------------------------------
 
-const muted: CSSProperties = { color: '#5f6368', fontSize: 12 };
+const muted: CSSProperties = { color: 'var(--c-text-2)', fontSize: 12 };
 
 // "12 tokens · $0.0021" (or "free"), as far as the provider told us.
 function usageText(message: ChatMessage): string {
@@ -95,16 +97,6 @@ function usageText(message: ChatMessage): string {
   }
   return parts.join(' · ');
 }
-
-const smallButton: CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  fontSize: 12,
-  padding: '2px 6px',
-  borderRadius: 6,
-  cursor: 'pointer',
-  color: '#5f6368',
-};
 
 // A reply that failed: what went wrong (our own wording), with a way to fix it.
 function FailedReply({
@@ -128,48 +120,36 @@ function FailedReply({
   };
 
   return (
-    <div
-      role="alert"
-      style={{
-        marginTop: 6,
-        padding: '8px 10px',
-        background: '#fce8e6',
-        borderRadius: 8,
-        color: '#b3261e',
-        fontSize: 13,
-      }}
-    >
-      {errorMessage(kind)}
-      <div
-        style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}
+    <div style={{ marginTop: 6 }}>
+      <Banner
+        tone="error"
+        actions={
+          <>
+            {isLast && (
+              <Button size="sm" onClick={() => void retry()}>
+                Try again
+              </Button>
+            )}
+            {needsSettings && (
+              <Button
+                size="sm"
+                onClick={() => window.browserApi.openSettings()}
+              >
+                Open Settings
+              </Button>
+            )}
+            {note && <span style={muted}>{note}</span>}
+          </>
+        }
       >
-        {isLast && (
-          <button
-            type="button"
-            onClick={() => void retry()}
-            style={{ ...smallButton, color: '#b3261e' }}
-          >
-            Try again
-          </button>
-        )}
-        {needsSettings && (
-          <button
-            type="button"
-            onClick={() => window.browserApi.openSettings()}
-            style={{ ...smallButton, color: '#b3261e' }}
-          >
-            Open Settings
-          </button>
-        )}
-        {note && <span style={muted}>{note}</span>}
-      </div>
+        {errorMessage(kind)}
+      </Banner>
     </div>
   );
 }
 
-// Buttons the assistant offered. Clicking one puts its text in your message box
-// (so you can send it as it is, or change it first). They are drawn here from plain
-// text: the assistant cannot send anything that runs.
+// Buttons the assistant offered. Clicking one sends its text as your reply. They
+// are drawn here from plain text: the assistant cannot send anything that runs.
 function ChoiceButtons({
   chatId,
   question,
@@ -193,31 +173,23 @@ function ChoiceButtons({
       {question !== '' && (
         <div style={{ ...muted, margin: '0 0 4px' }}>{question}</div>
       )}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <div className="choices">
         {options.map((option) => (
-          <button
+          <Button
             key={option}
-            type="button"
             disabled={busy}
             title="Send this as your reply"
             onClick={() => void choose(option)}
-            style={{
-              ...approveButton,
-              cursor: busy ? 'default' : 'pointer',
-              opacity: busy ? 0.6 : 1,
-              borderColor: '#c6dafc',
-              color: '#1a56c4',
-              background: '#f4f8ff',
-              textAlign: 'left',
-              overflowWrap: 'anywhere',
-            }}
+            style={{ textAlign: 'left', overflowWrap: 'anywhere' }}
           >
             {option}
-          </button>
+          </Button>
         ))}
       </div>
       {note && (
-        <div style={{ ...muted, color: '#b3261e', marginTop: 4 }}>{note}</div>
+        <div style={{ ...muted, color: 'var(--c-danger)', marginTop: 4 }}>
+          {note}
+        </div>
       )}
     </div>
   );
@@ -238,40 +210,6 @@ function ActiveRow({ children }: { children: ReactNode }) {
   );
 }
 
-const approveButton: CSSProperties = {
-  border: '1px solid #d0d0d0',
-  background: '#ffffff',
-  borderRadius: 14,
-  fontSize: 12,
-  padding: '4px 10px',
-  cursor: 'pointer',
-  color: '#202124',
-};
-
-const blockButton: CSSProperties = {
-  ...smallButton,
-  padding: '2px 0',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 4,
-  fontSize: 12,
-  textAlign: 'left',
-};
-
-const blockBody: CSSProperties = {
-  margin: '4px 0',
-  padding: '4px 10px',
-  borderLeft: '3px solid #dadce0',
-  color: '#5f6368',
-  fontSize: 13,
-  lineHeight: 1.45,
-  maxHeight: 240,
-  overflowY: 'auto',
-  whiteSpace: 'pre-wrap',
-  overflowWrap: 'anywhere',
-  userSelect: 'text',
-};
-
 // One stretch of the model's thinking, in a block you can open. While the model
 // is still thinking (this is the newest part of a reply being written) it is
 // labelled "Thinking…" and shows its text live if open; afterwards it is the
@@ -288,19 +226,19 @@ function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
   }, [open, live, text]);
 
   return (
-    <div style={{ margin: '0 0 6px' }}>
+    <div className="think">
       <button
         type="button"
+        className="think-summary"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         title={open ? 'Hide the thinking' : 'Show the thinking'}
-        style={blockButton}
       >
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <Icon name={open ? 'chev-d' : 'chev-r'} />
         {live ? 'Thinking…' : 'Thought process'}
       </button>
       {open && (
-        <div ref={box} style={blockBody}>
+        <div ref={box} className="think-body">
           {text}
         </div>
       )}
@@ -321,6 +259,15 @@ function showArguments(raw: string): string {
 
 type ToolPart = Extract<MessagePart, { type: 'tool' }>;
 
+// The icon that says how a tool call went (shape as well as colour).
+const STATUS_ICON = {
+  running: 'spinner',
+  waiting: 'clock',
+  ok: 'check',
+  declined: 'ban',
+  error: 'circle-x',
+} as const;
+
 // A tool the assistant used, in its place in the reply. The line says what it did;
 // open it to see exactly what was called (the tool and its arguments) and how it
 // ended. What a page said is not kept, only what was called.
@@ -334,16 +281,6 @@ function ToolBlock({
   messageId: number;
 }) {
   const [open, setOpen] = useState(false);
-  const icon =
-    part.status === 'running'
-      ? '…'
-      : part.status === 'waiting'
-        ? '?'
-        : part.status === 'ok'
-          ? '✓'
-          : part.status === 'declined'
-            ? '⊘'
-            : '✕';
   const decide = (decision: 'allow' | 'allow-rest' | 'deny') =>
     window.browserApi.chatDecide(chatId, messageId, part.id, decision);
 
@@ -353,145 +290,107 @@ function ToolBlock({
       <div
         role="group"
         aria-label="Approve this action"
-        style={{
-          margin: '0 0 8px',
-          padding: '8px 10px',
-          background: '#fef7e0',
-          border: '1px solid #f0d58c',
-          borderRadius: 8,
-          fontSize: 13,
-        }}
+        className={part.risky ? 'approval risky' : 'approval'}
+        style={{ margin: '0 0 8px' }}
       >
         <div style={{ ...muted }}>The assistant wants to:</div>
-        <div
-          style={{
-            fontWeight: 600,
-            margin: '2px 0 6px',
-            overflowWrap: 'anywhere',
-          }}
-        >
+        <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
           {part.ask}
         </div>
         {part.risky && (
-          <div style={{ fontSize: 12, color: '#b3261e', marginBottom: 6 }}>
-            This kind of action always asks you first.
+          <div>
+            <Badge tone="warn" icon="warn">
+              This kind of action always asks you first
+            </Badge>
           </div>
         )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          <button
-            type="button"
-            onClick={() => decide('allow')}
-            style={{
-              ...approveButton,
-              background: '#1a73e8',
-              color: '#ffffff',
-              border: 'none',
-            }}
-          >
+        <div className="actions">
+          <Button variant="primary" size="sm" onClick={() => decide('allow')}>
             Allow
-          </button>
+          </Button>
           {!part.risky && (
-            <button
-              type="button"
+            <Button
+              size="sm"
               onClick={() => decide('allow-rest')}
               title="Go ahead with the rest of this reply without asking again, except for risky actions"
-              style={approveButton}
             >
               Allow the rest of this reply
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={() => decide('deny')}
-            style={approveButton}
-          >
+          <Button size="sm" onClick={() => decide('deny')}>
             Don't allow
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={() => window.browserApi.chatStop(chatId)}
             title="Stop this reply"
-            style={approveButton}
           >
             Stop
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ margin: '0 0 6px' }}>
+    <div className="tool" data-status={part.status}>
       <button
         type="button"
+        className="tool-summary"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         title={open ? 'Hide what was called' : 'Show what was called'}
-        style={{
-          ...blockButton,
-          color:
-            part.status === 'error'
-              ? '#b3261e'
-              : part.status === 'declined'
-                ? '#80868b'
-                : '#5f6368',
-        }}
       >
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
-        <span aria-hidden="true">{icon}</span>
-        <span style={{ overflowWrap: 'anywhere' }}>{part.label}</span>
+        <span className="st">
+          <Icon name={STATUS_ICON[part.status]} />
+        </span>
+        <span className="truncate grow" style={{ textAlign: 'left' }}>
+          {part.label}
+        </span>
+        <Icon name={open ? 'chev-u' : 'chev-d'} />
       </button>
       {open && (
-        <div
-          style={{
-            ...blockBody,
-            fontFamily: 'ui-monospace, Consolas, monospace',
-            fontSize: 12,
-          }}
-        >
-          <div>
-            <strong>Called:</strong> {part.name || '(unknown)'}
-          </div>
-          <div style={{ marginTop: 4 }}>
-            <strong>Arguments:</strong>
-          </div>
-          <div>{showArguments(part.arguments)}</div>
+        <dl className="tool-detail">
+          <dt>Called</dt>
+          <dd>{part.name || '(unknown)'}</dd>
+          <dt>Arguments</dt>
+          <dd style={{ whiteSpace: 'pre-wrap' }}>
+            {showArguments(part.arguments)}
+          </dd>
           {part.details !== '' && (
-            <div style={{ marginTop: 4 }}>
-              <strong>What it found:</strong>
-              <div
+            <>
+              <dt>Found</dt>
+              <dd
                 style={{
+                  whiteSpace: 'pre-wrap',
                   maxHeight: 220,
                   overflowY: 'auto',
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                  marginTop: 2,
-                  padding: '4px 8px',
-                  background: '#f8f9fa',
-                  borderRadius: 6,
                 }}
               >
                 {part.details}
-              </div>
-            </div>
+              </dd>
+            </>
           )}
           {part.ask !== '' && (
-            <div style={{ marginTop: 4 }}>
-              <strong>You were asked:</strong> {part.ask}
-            </div>
+            <>
+              <dt>Asked</dt>
+              <dd>{part.ask}</dd>
+            </>
           )}
-          <div style={{ marginTop: 4 }}>
-            <strong>Result:</strong>{' '}
+          <dt>Result</dt>
+          <dd>
             {part.status === 'running'
               ? 'still running'
               : part.outcome || (part.status === 'ok' ? 'done' : 'failed')}
-          </div>
+          </dd>
           {part.callId !== '' && (
-            <div style={{ marginTop: 4, color: '#80868b' }}>
-              Call id: {part.callId}
-            </div>
+            <>
+              <dt>Call id</dt>
+              <dd style={{ color: 'var(--c-text-3)' }}>{part.callId}</dd>
+            </>
           )}
-        </div>
+        </dl>
       )}
     </div>
   );
@@ -597,19 +496,12 @@ function MessageView({
       inside ? selected.toString() : '',
     );
   };
-  const text: CSSProperties = {
-    whiteSpace: 'pre-wrap',
-    overflowWrap: 'anywhere',
-    lineHeight: 1.5,
-    fontSize: 14,
-    userSelect: 'text',
-  };
-
   if (message.role === 'user') {
     // Pages attached without an "@name" (the Add page button) sit under the text.
     const attached = message.mentions.filter((m) => m.tag === '');
     return (
       <div
+        className="msg-wrap"
         onContextMenu={openMenu}
         style={{
           display: 'flex',
@@ -618,42 +510,33 @@ function MessageView({
           margin: '10px 0',
         }}
       >
-        <div
-          style={{
-            ...text,
-            maxWidth: '85%',
-            padding: '8px 12px',
-            background: '#e8f0fe',
-            borderRadius: 14,
-          }}
-        >
+        <div className="msg-user">
           {withTokens(message, chatId, tabs, spaces, artifacts)}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="msg-actions">
           {retryNote && (
-            <span style={{ ...muted, color: '#b3261e' }}>{retryNote}</span>
+            <span style={{ color: 'var(--c-danger)' }}>{retryNote}</span>
           )}
-          {isNewestUser ? (
-            !busy && (
-              <button
-                type="button"
-                title="Ask this again and replace the reply"
-                onClick={() => void retry()}
-                style={smallButton}
-              >
-                Retry
-              </button>
-            )
-          ) : (
-            <button
-              type="button"
-              title="Start a new chat from here (this message and its reply). This chat stays as it is."
-              onClick={() => void branch()}
-              style={smallButton}
+          {isNewestUser && !busy && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="retry"
+              title="Ask this again and replace the reply"
+              onClick={() => void retry()}
             >
-              Branch
-            </button>
+              Retry
+            </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="branch"
+            title="Start a new chat from here (this message and its reply). This chat stays as it is."
+            onClick={() => void branch()}
+          >
+            Branch
+          </Button>
         </div>
         {attached.length > 0 && (
           <div
@@ -685,7 +568,11 @@ function MessageView({
   const streaming = message.status === 'streaming';
   const finished = message.status === 'done' || message.status === 'stopped';
   return (
-    <div onContextMenu={openMenu} style={{ margin: '10px 0' }}>
+    <div
+      className="msg-wrap"
+      onContextMenu={openMenu}
+      style={{ margin: '10px 0' }}
+    >
       {/* Everything that happened, in the order it happened. */}
       {message.parts.map((part, i) => {
         const last = i === message.parts.length - 1;
@@ -732,10 +619,7 @@ function MessageView({
           );
         }
         return wrap(
-          <div
-            key={i}
-            style={{ ...text, whiteSpace: 'normal', margin: '0 0 6px' }}
-          >
+          <div key={i} className="msg-ai-text" style={{ margin: '0 0 6px' }}>
             <Markdown text={part.text} />
             {streaming && last && <span aria-hidden="true">▍</span>}
           </div>,
@@ -774,25 +658,18 @@ function MessageView({
       )}
 
       {finished && (
-        <div
-          style={{
-            ...muted,
-            marginTop: 4,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
+        <div className="msg-actions" style={{ marginTop: 4, gap: 6 }}>
           <span>{usageText(message)}</span>
           {message.content !== '' && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="copy"
               title="Copy this reply"
               onClick={() => window.browserApi.chatCopy(message.content)}
-              style={smallButton}
             >
               Copy
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -841,7 +718,12 @@ export function MessageList({
         const el = e.currentTarget;
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       }}
-      style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 4px' }}
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
+        padding: 'var(--s-3) var(--s-4)',
+      }}
     >
       {messages.length === 0 && (
         <p style={{ ...muted, fontSize: 13, margin: '12px 0' }}>

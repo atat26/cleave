@@ -25,8 +25,8 @@ export const rowStyle = (active: boolean): CSSProperties => ({
   borderRadius: 8,
   fontSize: 13,
   cursor: 'pointer',
-  background: active ? '#ffffff' : 'transparent',
-  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.15)' : 'none',
+  background: active ? 'var(--c-surface)' : 'transparent',
+  boxShadow: active ? 'var(--sh-card)' : 'none',
 });
 
 // Text that is cut off with "…" instead of wrapping.
@@ -47,6 +47,6 @@ export const stripButton = (active: boolean): CSSProperties => ({
   margin: '0 auto 2px',
   borderRadius: 8,
   cursor: 'pointer',
-  background: active ? '#ffffff' : 'transparent',
-  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.15)' : 'none',
+  background: active ? 'var(--c-surface)' : 'transparent',
+  boxShadow: active ? 'var(--sh-card)' : 'none',
 });

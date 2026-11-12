@@ -260,10 +260,12 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const second = newConversation(chats);
   chats = renameConversation(second.state, second.state.activeId, 'Second');
   const items = chatSwitchMenuItems(chats);
-  const titles = items
+  // New chat, Rename and Delete chat come first, then the chats, newest first.
+  const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(titles.slice(0, 2), ['Second', 'First']);
+  assert.deepEqual(labels.slice(0, 3), ['New chat', 'Rename', 'Delete chat']);
+  assert.deepEqual(labels.slice(3), ['Second', 'First']);
   const activeId = chats.activeId;
   assert.equal(entry(items, `chat.select:${activeId}`).icon, 'check');
   assert.equal(entry(items, `chat.select:${firstId}`).icon, undefined);
@@ -529,7 +531,7 @@ test('the link menu: open, reopen a page that is gone, show in Space, remove onl
   assert.equal(parseLinkChoice('link.nope'), null);
 });
 
-test('the message menu: copy for all, retry only the newest of yours, branch only older ones', () => {
+test('the message menu: copy for all, retry only the newest of yours, branch for any of yours', () => {
   const assistant = messageMenuItems({
     role: 'assistant',
     hasSelection: false,
@@ -557,7 +559,7 @@ test('the message menu: copy for all, retry only the newest of yours, branch onl
     busy: false,
   });
   assert.notEqual(entry(newest, 'msg.retry').disabled, true);
-  assert.equal(entry(newest, 'msg.branch').disabled, true);
+  assert.notEqual(entry(newest, 'msg.branch').disabled, true);
   const older = messageMenuItems({
     role: 'user',
     hasSelection: false,

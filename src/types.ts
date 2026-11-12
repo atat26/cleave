@@ -1,9 +1,11 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
+import type { ThemeChoice } from './themeSettings';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 import type { ArtifactKind } from './artifacts';
+import type { ChatNeed } from './layout';
 import type { MenuItem } from './menuTypes';
 
 export type { ChatMessage, ChatRef, LinkKind, MessagePart, ModelInfo };
@@ -177,6 +179,8 @@ export interface UiState {
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
+  // The ACTIVE web tab is still loading (its reload button becomes Stop).
+  loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
   canGoBack: boolean;
   canGoForward: boolean;
@@ -214,6 +218,11 @@ export interface BrowserApi {
   navigate: (input: string) => void;
   goBack: () => void;
   goForward: () => void;
+  // Reload the active page, or stop it while it is still loading.
+  reloadPage: () => void;
+  // What the chat needs on screen right now (see layout.ts).
+  setChatNeed: (need: ChatNeed) => void;
+  stopLoading: () => void;
   // New tab inside a Space, or ungrouped when spaceId is null.
   newTab: (spaceId: number | null) => void;
   // Close a tab. In a Space the page is kept as a closed link on the overview.
@@ -237,6 +246,9 @@ export interface BrowserApi {
   searchTest: () => Promise<SearchTestResult>;
   // The Tools panel: every tool with its level, change one level, or put them all
   // back to the defaults. Each answers with the updated list.
+  // The look of the app: light, dark, or follow the computer.
+  themeGet: () => Promise<ThemeChoice>;
+  themeSet: (choice: ThemeChoice) => Promise<ThemeChoice>;
   toolsList: () => Promise<ToolRow[]>;
   toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
   toolsReset: () => Promise<ToolRow[]>;
