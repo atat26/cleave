@@ -119,16 +119,16 @@ export interface SavedSettings {
 }
 
 // Limits for the open sidebar's width, in pixels.
-export const SIDEBAR_MIN_WIDTH = 160;
-export const SIDEBAR_MAX_WIDTH = 480;
-export const SIDEBAR_DEFAULT_WIDTH = 240;
+export const SIDEBAR_MIN_WIDTH = 200;
+export const SIDEBAR_MAX_WIDTH = 360;
+export const SIDEBAR_DEFAULT_WIDTH = 248;
 
 // Limits for the expanded chat's height and the right panel's width.
-export const CHAT_MIN_HEIGHT = 160;
+export const CHAT_MIN_HEIGHT = 200;
 export const CHAT_MAX_HEIGHT = 1200;
-export const CHAT_DEFAULT_HEIGHT = 320;
-export const PANEL_MIN_WIDTH = 260;
-export const PANEL_MAX_WIDTH = 640;
+export const CHAT_DEFAULT_HEIGHT = 360;
+export const PANEL_MIN_WIDTH = 280;
+export const PANEL_MAX_WIDTH = 560;
 export const PANEL_DEFAULT_WIDTH = 340;
 
 const clampTo = (min: number, max: number, value: number) =>

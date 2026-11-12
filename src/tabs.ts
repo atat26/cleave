@@ -13,10 +13,10 @@ import {
   blendSizes,
   chatHeightWhileDragging,
   easeOutCubic,
+  fitCentre,
   pageRect,
   panelWidthWhileDragging,
   restingChatHeight,
-  restingPanelWidth,
   settleChat,
   settlePanel,
 } from './frame';
@@ -204,7 +204,19 @@ export async function createTabs(
     null;
 
   const pinned = () => state.settings.sidebarPinned;
-  const expanded = () => pinned() || hover;
+  // A pinned sidebar goes back to the icon strip while the window is too narrow to
+  // leave the middle wide enough (see fitCentre); it comes back when there is room.
+  const stripForced = () =>
+    fitCentre({
+      window: windowSize(),
+      sidebarPinned: state.settings.sidebarPinned,
+      sidebarWidth: state.settings.sidebarWidth,
+      panelOpen: state.settings.rightPanel !== null,
+      panelWidth: state.settings.panelWidth,
+    }).sidebarCollapsed;
+  // Is the sidebar pinned open right now (as opposed to only opened by hovering)?
+  const pinnedNow = () => pinned() && !stripForced();
+  const expanded = () => pinnedNow() || hover;
 
   const activeTabId = () =>
     state.active?.kind === 'tab' ? state.active.id : null;
@@ -282,16 +294,17 @@ export async function createTabs(
   const targetSizes = (): FrameSizes => {
     const s = state.settings;
     const window = windowSize();
-    const left = pinned() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH;
+    const fit = fitCentre({
+      window,
+      sidebarPinned: s.sidebarPinned,
+      sidebarWidth: s.sidebarWidth,
+      panelOpen: s.rightPanel !== null,
+      panelWidth: s.panelWidth,
+    });
     const sizes: FrameSizes = {
       sidebar: expanded() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH,
-      left,
-      panel: restingPanelWidth(
-        s.rightPanel !== null,
-        s.panelWidth,
-        { left },
-        window,
-      ),
+      left: fit.left,
+      panel: fit.panel,
       chat: restingChatHeight(s.viewMode, s.chatExpanded, s.chatHeight, window),
     };
     // The part being dragged follows the mouse exactly.
@@ -543,7 +556,7 @@ export async function createTabs(
     awayTicks = 0;
     if (watcher !== null) return;
     watcher = setInterval(() => {
-      if (!hover || pinned() || drag !== null || busy > 0) {
+      if (!hover || pinnedNow() || drag !== null || busy > 0) {
         awayTicks = 0;
         return;
       }
@@ -1211,7 +1224,7 @@ export async function createTabs(
       const inSidebar = state.settings.viewMode === 'chat';
       const target = inSidebar ? sidebar : win.webContents;
       if (target.isDestroyed()) return;
-      if (inSidebar && !pinned()) setHover(true);
+      if (inSidebar && !pinnedNow()) setHover(true);
       target.send('chats:begin-rename', id);
       target.focus(); // So the box can take keyboard input.
     },
@@ -1225,7 +1238,7 @@ export async function createTabs(
     },
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
-      if (!pinned()) setHover(true);
+      if (!pinnedNow()) setHover(true);
       if (sidebar.isDestroyed()) return;
       sidebar.send('space:begin-rename', spaceId);
       sidebar.focus(); // So the rename box can take keyboard input.
@@ -1904,7 +1917,7 @@ export async function createTabs(
       }
     },
     'sidebar:hover': () => {
-      if (!pinned() && drag === null) setHover(true);
+      if (!pinnedNow() && drag === null) setHover(true);
     },
     // Asked for from the chat itself: keep the keyboard in the chat, rather than
     // moving it to the web page (so typing carries on where it was).
@@ -1954,7 +1967,7 @@ export async function createTabs(
             : kind === 'chat'
               ? now.chat
               : now.panel,
-        startedPinned: pinned(),
+        startedPinned: pinnedNow(),
       };
     },
     'resize:move': (kind, size) => {

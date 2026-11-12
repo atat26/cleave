@@ -4,11 +4,14 @@
 import {
   CHAT_COMPACT_HEIGHT,
   CHAT_SNAP_HEIGHT,
+  MAX_CHAT_SHARE,
+  MIN_CENTRE_WIDTH,
   MIN_PAGE_HEIGHT,
   MIN_PAGE_WIDTH,
   PAGE_INSET,
   PANEL_SNAP_WIDTH,
   RAIL_WIDTH,
+  SIDEBAR_COLLAPSED_WIDTH,
   TOOLBAR_HEIGHT,
 } from './layout.ts';
 import {
@@ -82,7 +85,8 @@ export const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 // The tallest the chat may be, so the web page always keeps some room.
 export function maxChatHeight(window: Size): number {
   const room = window.height - TOOLBAR_HEIGHT - PAGE_INSET - MIN_PAGE_HEIGHT;
-  return Math.max(CHAT_COMPACT_HEIGHT, Math.min(CHAT_MAX_HEIGHT, room));
+  const share = Math.floor(window.height * MAX_CHAT_SHARE);
+  return Math.max(CHAT_COMPACT_HEIGHT, Math.min(CHAT_MAX_HEIGHT, room, share));
 }
 
 // The chat's height while you are dragging its edge: anywhere from the compact
@@ -166,4 +170,52 @@ export function restingPanelWidth(
 ): number {
   if (!open) return 0;
   return Math.min(savedWidth, maxPanelWidth(sizes, window));
+}
+
+// ---- Keeping the middle wide enough -------------------------------------------
+
+// The room between a pinned sidebar and the right panel (the page and the chat
+// share it). Insets are not counted.
+export const centreWidth = (
+  window: Size,
+  left: number,
+  panel: number,
+): number => window.width - left - RAIL_WIDTH - panel;
+
+// Where the sidebar and panel go at rest when the middle must stay at least
+// MIN_CENTRE_WIDTH wide:
+//   1. a pinned sidebar goes back to the icon strip (it still opens when hovered,
+//      floating over the page, and comes back when the window is wider again);
+//   2. then the panel narrows, but never below PANEL_MIN_WIDTH or wider than it was.
+export function fitCentre(options: {
+  window: Size;
+  sidebarPinned: boolean;
+  sidebarWidth: number;
+  panelOpen: boolean;
+  panelWidth: number;
+}): { left: number; panel: number; sidebarCollapsed: boolean } {
+  const { window } = options;
+  // The panel's width for a given sidebar: as wide as it was, if the page fits.
+  const panelFor = (left: number) =>
+    options.panelOpen
+      ? Math.min(options.panelWidth, maxPanelWidth({ left }, window))
+      : 0;
+  let left = options.sidebarPinned
+    ? options.sidebarWidth
+    : SIDEBAR_COLLAPSED_WIDTH;
+  let panel = panelFor(left);
+  let sidebarCollapsed = false;
+
+  if (centreWidth(window, left, panel) < MIN_CENTRE_WIDTH) {
+    if (options.sidebarPinned) {
+      left = SIDEBAR_COLLAPSED_WIDTH;
+      sidebarCollapsed = true;
+      panel = panelFor(left);
+    }
+    if (panel > 0 && centreWidth(window, left, panel) < MIN_CENTRE_WIDTH) {
+      const room = window.width - left - RAIL_WIDTH - MIN_CENTRE_WIDTH;
+      panel = Math.min(panel, Math.max(PANEL_MIN_WIDTH, room));
+    }
+  }
+  return { left, panel, sidebarCollapsed };
 }

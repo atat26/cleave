@@ -36,7 +36,7 @@ export const RAIL_WIDTH = 48;
 
 // Right panel: opens left of the rail. Drag it narrower than this and, on
 // release, it closes.
-export const PANEL_SNAP_WIDTH = 200;
+export const PANEL_SNAP_WIDTH = 220;
 
 // Bottom chat: a compact bar (one or two lines), or expanded and resizable.
 // Drag it shorter than this and, on release, it shrinks back to the compact bar.
@@ -48,6 +48,18 @@ export const CHAT_FULL_MIN_HEIGHT = 120;
 // The web page is a rounded card inset from the frame by this much.
 export const PAGE_INSET = 6;
 export const PAGE_RADIUS = 10;
+
+// The middle of the window (between the sidebar and the right panel) is never
+// narrower than this. If opening the panel or pinning the sidebar would make it
+// so, the sidebar goes back to the icon strip first, and then the panel narrows.
+export const MIN_CENTRE_WIDTH = 420;
+
+// The window itself is never smaller than this.
+export const MIN_WINDOW_WIDTH = 1100;
+export const MIN_WINDOW_HEIGHT = 700;
+
+// The expanded chat is never taller than this share of the window.
+export const MAX_CHAT_SHARE = 0.7;
 
 // The web page never gets smaller than this, however big the panels are.
 export const MIN_PAGE_WIDTH = 240;
