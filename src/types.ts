@@ -1,10 +1,11 @@
-import type { ChatMessage, ChatRef, MessagePart } from './chats';
+import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
+import type { ArtifactKind } from './artifacts';
 
-export type { ChatMessage, ChatRef, MessagePart, ModelInfo };
+export type { ChatMessage, ChatRef, LinkKind, MessagePart, ModelInfo };
 
 // A tab as the UI sees it.
 export interface TabInfo {
@@ -18,6 +19,44 @@ export interface TabInfo {
   loaded: boolean;
   // True while the assistant is working in this tab.
   working: boolean;
+  // Closed but kept as a link in its Space (no tab, shown on the overview).
+  closed: boolean;
+}
+
+// An artifact as the UI lists it (its text stays in the app until it is opened).
+export interface ArtifactInfo {
+  id: number;
+  title: string;
+  kind: ArtifactKind;
+  // The Space it belongs to, or null for one outside every Space.
+  spaceId: number | null;
+  updatedAt: number;
+  // How many characters it holds.
+  size: number;
+}
+
+// An artifact with its text, for the editor.
+export interface ArtifactDocument {
+  id: number;
+  title: string;
+  kind: ArtifactKind;
+  content: string;
+  // Which version of the text this is (see artifacts.ts).
+  revision: number;
+}
+
+// How saving the editor's text went. A conflict means the text was changed (by
+// the assistant) since the editor loaded it, so nothing was saved.
+export type ArtifactWriteResult =
+  | { ok: true; revision: number }
+  | { ok: false; reason: 'conflict' | 'failed' };
+
+// An artifact that is open as a tab.
+export interface ArtifactTabInfo {
+  id: number;
+  title: string;
+  kind: ArtifactKind;
+  spaceId: number | null;
 }
 
 export interface SpaceInfo {
@@ -131,6 +170,9 @@ export interface UiState {
   chats: ChatsInfo;
   llm: LlmInfo;
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
+  // The artifacts that are open as tabs, in the order they were opened.
+  artifactTabs: ArtifactTabInfo[];
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
@@ -173,7 +215,12 @@ export interface BrowserApi {
   goForward: () => void;
   // New tab inside a Space, or ungrouped when spaceId is null.
   newTab: (spaceId: number | null) => void;
+  // Close a tab. In a Space the page is kept as a closed link on the overview.
   closeTab: (id: number) => void;
+  // Delete a tab for good, including a closed link.
+  removeTab: (id: number) => void;
+  // Open a closed link again.
+  reopenTab: (id: number) => void;
   selectTab: (id: number) => void;
   selectLead: (spaceId: number) => void;
   newSpace: () => void;
@@ -192,6 +239,35 @@ export interface BrowserApi {
   toolsList: () => Promise<ToolRow[]>;
   toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
   toolsReset: () => Promise<ToolRow[]>;
+  // The Artifacts panel: make one (outside every Space when spaceId is null),
+  // rename it, move it into a Space (or null for none), or delete it (the app asks
+  // first). The list itself arrives with the rest of the state.
+  artifactCreate: (
+    kind: ArtifactKind,
+    title: string,
+    spaceId: number | null,
+  ) => Promise<number | null>;
+  // Open an artifact as a tab (or switch to it), switch to an open one, or close
+  // its tab (the artifact is kept).
+  artifactOpen: (id: number) => void;
+  artifactSelect: (id: number) => void;
+  artifactClose: (id: number) => void;
+  // The editor: load an artifact's text, and save changes to it.
+  artifactRead: (id: number) => Promise<ArtifactDocument | null>;
+  // `revision` is the version the text was based on.
+  artifactWrite: (
+    id: number,
+    content: string,
+    revision: number,
+  ) => Promise<ArtifactWriteResult>;
+  // Called when the assistant changed an artifact's text (so an open editor can
+  // show it). Returns an unsubscribe function.
+  onArtifactChanged: (callback: (id: number) => void) => () => void;
+  artifactRename: (id: number, title: string) => void;
+  // Make another artifact with the same text, in a Space (or none).
+  artifactCopy: (id: number, spaceId: number | null) => Promise<number | null>;
+  artifactMove: (id: number, spaceId: number | null) => void;
+  artifactDelete: (id: number) => void;
   // A link in a reply was clicked: open it as a new tab (web addresses only).
   openUrl: (url: string) => void;
   // Ask the app to send the current state (call once listening for it).
@@ -217,7 +293,7 @@ export interface BrowserApi {
   chatSend: (
     chatId: number,
     text: string,
-    mentions: { kind: 'space' | 'tab'; id: number; tag: string }[],
+    mentions: { kind: LinkKind; id: number; tag: string }[],
   ) => Promise<ChatSendResult>;
   // Try again: the last reply (after a failure or a stop), or, with a message id,
   // from that earlier message of yours (even if it went fine).
@@ -239,16 +315,18 @@ export interface BrowserApi {
   // Put text on the clipboard (the app does it, so it works the same everywhere).
   chatCopy: (text: string) => void;
   // Linking Spaces and tabs to a chat (so the model knows what the chat is about).
-  chatLink: (chatId: number, kind: 'tab' | 'space', id: number) => void;
-  chatUnlink: (chatId: number, kind: 'tab' | 'space', id: number) => void;
+  chatLink: (chatId: number, kind: LinkKind, id: number) => void;
+  chatUnlink: (chatId: number, kind: LinkKind, id: number) => void;
   // Jump to a linked tab, or to a linked Space's overview.
-  chatOpenLink: (kind: 'tab' | 'space', id: number) => void;
+  chatOpenLink: (kind: LinkKind, id: number) => void;
   // Bring back a linked tab that was closed.
   chatReopenLink: (chatId: number, tabId: number) => void;
   // Shows a menu of your pinned models to switch this chat to.
   showModelMenu: (chatId: number) => void;
   // Open the Settings panel.
   openSettings: () => void;
+  // Open the Artifacts panel (it stays open if it already is).
+  openArtifacts: () => void;
   // Called with a chat's message whenever it is added or changes (many times a
   // second while a reply streams in). Returns an unsubscribe function.
   onChatMessage: (

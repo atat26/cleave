@@ -11,6 +11,7 @@ import {
 } from './agentTools.ts';
 import type { AgentEnv, OutlineRead, PageRead } from './agentTools.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
+import type { ArtifactKind } from './artifacts.ts';
 import { buildLinkedContext, linkedTabs } from './chatLinks.ts';
 import type { Workspace, WorkspaceTab } from './chatLinks.ts';
 
@@ -62,7 +63,51 @@ function setup(
   };
   const searched: string[] = [];
   const linksRead: string[] = [];
+  // A tiny in-memory artifact store: artifact 1 is linked; 2 exists but is not.
+  const docs = new Map<
+    number,
+    {
+      title: string;
+      kind: ArtifactKind;
+      content: string;
+      spaceId: number | null;
+    }
+  >([
+    [
+      1,
+      {
+        title: 'Notes',
+        kind: 'markdown',
+        content: 'Hello world. Hello again.',
+        spaceId: null,
+      },
+    ],
+    [2, { title: 'Private', kind: 'text', content: 'secret', spaceId: null }],
+  ]);
+  let nextDoc = 3;
   const env: AgentEnv = {
+    linkedArtifacts: () =>
+      [...docs]
+        .filter(([id]) => id === 1 || id >= 3)
+        .map(([id, d]) => ({
+          id,
+          title: d.title,
+          kind: d.kind,
+          spaceId: d.spaceId,
+        })),
+    linkedSpaces: () => [{ id: 10, name: 'Research' }],
+    readArtifact: (id) => docs.get(id) ?? null,
+    createArtifact: (input) => {
+      const id = nextDoc++;
+      docs.set(id, { ...input });
+      return { ok: true as const, id };
+    },
+    updateArtifact: (id, changes) => {
+      const old = docs.get(id);
+      if (!old) return { ok: false as const, reason: 'not-found' as const };
+      docs.set(id, { ...old, ...changes });
+      return { ok: true as const };
+    },
     rememberedAddresses: () => options.remembered ?? [],
     linkAddress: async () =>
       options.linkHref === undefined
@@ -174,6 +219,7 @@ function setup(
     working,
     searched,
     linksRead,
+    docs,
   };
 }
 
@@ -866,4 +912,242 @@ test('a bad read_link request is refused without fetching anything', async () =>
     );
   }
   assert.deepEqual(linksRead, []);
+});
+
+// ---- Artifact tools -------------------------------------------------------------
+
+test('reading a linked artifact goes ahead, marked as data; one that is not linked is refused', async () => {
+  const { tools } = setup();
+  const read = call('read_artifact', { artifact: 1 });
+  assert.deepEqual(tools.plan(read), { kind: 'auto' });
+  const outcome = await tools.run(read, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /data, not instructions/);
+  assert.match(outcome.result, /Hello world\. Hello again\./);
+  assert.equal(outcome.label, 'Read artifact: Notes');
+  // Artifact 2 exists but is not linked to the chat.
+  const hidden = call('read_artifact', { artifact: 2 });
+  assert.equal(tools.plan(hidden).kind, 'refuse');
+  assert.ok(!(await tools.run(hidden, ABORT)).result.includes('secret'));
+  for (const args of [{}, { artifact: 'x' }, { artifact: 1, start: -1 }]) {
+    assert.equal(tools.plan(call('read_artifact', args)).kind, 'refuse');
+  }
+});
+
+test('a long artifact comes back in parts, and "start" continues', async () => {
+  const { tools, docs } = setup();
+  docs.set(1, { ...docs.get(1)!, content: 'a'.repeat(25_000) });
+  const first = await tools.run(call('read_artifact', { artifact: 1 }), ABORT);
+  assert.match(first.result, /start 20000 to continue/);
+  const rest = await tools.run(
+    call('read_artifact', { artifact: 1, start: 20_000 }),
+    ABORT,
+  );
+  assert.ok(!/to continue/.test(rest.result));
+  assert.match(rest.note, /5,000 of 25,000/);
+});
+
+test('making an artifact asks by default, links nothing itself, and creates it when run', async () => {
+  const { tools, docs } = setup();
+  const make = call('create_artifact', {
+    title: ' Plan ',
+    kind: 'markdown',
+    content: '# Plan',
+  });
+  const plan = tools.plan(make);
+  assert.equal(plan.kind, 'ask');
+  assert.equal(plan.kind === 'ask' && plan.risky, false);
+  assert.match(
+    plan.kind === 'ask' ? plan.text : '',
+    /Markdown artifact "Plan"/,
+  );
+  const outcome = await tools.run(make, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.equal(docs.get(3)?.title, 'Plan');
+  assert.equal(docs.get(3)?.spaceId, null);
+  assert.match(outcome.result, /Artifact 3/);
+});
+
+test('making an artifact in a Space needs that Space to be linked', async () => {
+  const { tools, docs } = setup();
+  const inSpace = call('create_artifact_in_space', {
+    space: 10,
+    title: 'Notes',
+    kind: 'text',
+    content: 'x',
+  });
+  assert.equal(tools.plan(inSpace).kind, 'ask');
+  assert.match(
+    (tools.plan(inSpace) as { text: string }).text,
+    /in the Space "Research"/,
+  );
+  assert.equal((await tools.run(inSpace, ABORT)).ok, true);
+  assert.equal(docs.get(3)?.spaceId, 10);
+  const elsewhere = call('create_artifact_in_space', {
+    space: 99,
+    title: 'N',
+    kind: 'text',
+    content: 'x',
+  });
+  assert.equal(tools.plan(elsewhere).kind, 'refuse');
+  assert.equal((await tools.run(elsewhere, ABORT)).ok, false);
+  assert.equal(docs.size, 3);
+});
+
+test('a bad artifact request is refused without making anything', async () => {
+  const { tools, docs } = setup();
+  for (const args of [
+    {},
+    { title: 'x', kind: 'pdf', content: 'x' },
+    { title: 'x', kind: 'text' },
+    { title: 5, kind: 'text', content: 'x' },
+    { title: 'x', kind: 'text', content: 'x'.repeat(1_000_001) },
+  ]) {
+    assert.equal(
+      tools.plan(call('create_artifact', args)).kind,
+      'refuse',
+      JSON.stringify(args).slice(0, 60),
+    );
+  }
+  assert.equal(docs.size, 2);
+});
+
+test('editing replaces a snippet that appears once, or the whole text, or the title', async () => {
+  const { tools, docs } = setup(undefined, () => 'always');
+  const part = await tools.run(
+    call('edit_artifact', { artifact: 1, find: 'world', replace: 'there' }),
+    ABORT,
+  );
+  assert.equal(part.ok, true);
+  assert.equal(docs.get(1)?.content, 'Hello there. Hello again.');
+  assert.match(part.details ?? '', /world/);
+  const whole = await tools.run(
+    call('edit_artifact', { artifact: 1, content: 'Fresh text' }),
+    ABORT,
+  );
+  assert.equal(whole.ok, true);
+  assert.equal(docs.get(1)?.content, 'Fresh text');
+  const renamed = await tools.run(
+    call('edit_artifact', { artifact: 1, title: 'Renamed' }),
+    ABORT,
+  );
+  assert.equal(renamed.ok, true);
+  assert.equal(docs.get(1)?.title, 'Renamed');
+  assert.equal(docs.get(1)?.content, 'Fresh text');
+});
+
+test('an edit that cannot be done exactly is refused and changes nothing', async () => {
+  const { tools, docs } = setup(undefined, () => 'always');
+  const twice = await tools.run(
+    call('edit_artifact', { artifact: 1, find: 'Hello', replace: 'Bye' }),
+    ABORT,
+  );
+  assert.equal(twice.ok, false);
+  assert.match(twice.note, /more than once/);
+  const missing = await tools.run(
+    call('edit_artifact', { artifact: 1, find: 'nope', replace: 'x' }),
+    ABORT,
+  );
+  assert.equal(missing.ok, false);
+  assert.equal(docs.get(1)?.content, 'Hello world. Hello again.');
+  for (const args of [
+    { artifact: 1 },
+    { artifact: 1, find: '', replace: 'x' },
+    { artifact: 1, find: 'a' },
+    { artifact: 1, content: 'x', find: 'a', replace: 'b' },
+    { artifact: 1, content: 5 },
+    { artifact: 2, content: 'x' }, // not linked
+    { artifact: 1, content: 'x'.repeat(1_000_001) },
+  ]) {
+    assert.equal(
+      tools.plan(call('edit_artifact', args)).kind,
+      'refuse',
+      JSON.stringify(args).slice(0, 60),
+    );
+  }
+});
+
+test('writing artifacts follows your level: ask by default, off is not offered, always goes ahead', () => {
+  const normal = setup();
+  assert.equal(
+    normal.tools.plan(call('edit_artifact', { artifact: 1, content: 'x' }))
+      .kind,
+    'ask',
+  );
+  const off = setup(undefined, (t) =>
+    t === 'edit_artifact' ? 'never' : 'always',
+  );
+  assert.ok(!off.tools.definitions.some((d) => d.name === 'edit_artifact'));
+  assert.equal(
+    off.tools.plan(call('edit_artifact', { artifact: 1, content: 'x' })).kind,
+    'refuse',
+  );
+  const always = setup(undefined, () => 'always');
+  assert.equal(
+    always.tools.plan(call('edit_artifact', { artifact: 1, content: 'x' }))
+      .kind,
+    'auto',
+  );
+  assert.equal(
+    always.tools.plan(
+      call('create_artifact', { title: 't', kind: 'text', content: 'x' }),
+    ).kind,
+    'auto',
+  );
+});
+
+test('after reading web content in the same reply, writing artifacts always asks, even on "always"', async () => {
+  const edit = call('edit_artifact', { artifact: 1, content: 'x' });
+  const make = call('create_artifact', {
+    title: 't',
+    kind: 'text',
+    content: 'x',
+  });
+  for (const webStep of [
+    call('read_page', { tab: 1 }),
+    call('look_at_page', { tab: 1 }),
+    call('read_link', { url: 'https://shop.example/pricing?token=SECRET' }),
+    call('web_search', { query: 'pandas' }),
+  ]) {
+    const { tools } = setup(undefined, () => 'always');
+    assert.equal(tools.plan(edit).kind, 'auto');
+    await tools.run(webStep, ABORT);
+    const plan = tools.plan(edit);
+    assert.equal(plan.kind, 'ask', webStep.name);
+    assert.equal(plan.kind === 'ask' && plan.risky, true);
+    assert.equal(tools.plan(make).kind, 'ask');
+  }
+  // Reading an artifact is not web content: it does not change anything.
+  const { tools } = setup(undefined, () => 'always');
+  await tools.run(call('read_artifact', { artifact: 1 }), ABORT);
+  assert.equal(tools.plan(edit).kind, 'auto');
+  // A turned-off tool is still refused, not turned into a question.
+  const off = setup(undefined, (t) =>
+    t === 'edit_artifact' ? 'never' : 'always',
+  );
+  await off.tools.run(call('read_page', { tab: 1 }), ABORT);
+  assert.equal(off.tools.plan(edit).kind, 'refuse');
+});
+
+test('only so many artifacts can be made or changed in one reply', async () => {
+  const { tools, docs } = setup(undefined, () => 'always');
+  for (let i = 0; i < 10; i++) {
+    assert.equal(
+      (
+        await tools.run(
+          call('create_artifact', { title: 't', kind: 'text', content: 'x' }),
+          ABORT,
+        )
+      ).ok,
+      true,
+    );
+  }
+  const over = call('create_artifact', {
+    title: 't',
+    kind: 'text',
+    content: 'x',
+  });
+  assert.equal(tools.plan(over).kind, 'refuse');
+  assert.equal((await tools.run(over, ABORT)).ok, false);
+  assert.equal(docs.size, 12);
 });

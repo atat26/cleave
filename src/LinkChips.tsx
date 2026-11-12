@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { resolveLink } from './chatLinks';
 import type { Workspace } from './chatLinks';
 import { SPACE_COLOR_HEX } from './colors';
 import { labelFor } from './Sidebar';
-import type { Mention } from './chats';
-import type { ChatRef, SpaceInfo, TabInfo } from './types';
+import type { LinkKind, Mention } from './chats';
+import type { ArtifactInfo, ChatRef, SpaceInfo, TabInfo } from './types';
 
 // Linking Spaces and tabs to a chat. This file draws the link chips above the
 // message box, the one-click "this page" chip, and the list that opens when you
@@ -12,7 +13,11 @@ import type { ChatRef, SpaceInfo, TabInfo } from './types';
 // chatLinks.ts (titles and cleaned addresses only).
 
 // The Spaces and tabs in the shape the link helpers want.
-export function toWorkspace(tabs: TabInfo[], spaces: SpaceInfo[]): Workspace {
+export function toWorkspace(
+  tabs: TabInfo[],
+  spaces: SpaceInfo[],
+  artifacts: ArtifactInfo[],
+): Workspace {
   return {
     tabs: tabs.map((t) => ({
       id: t.id,
@@ -21,6 +26,12 @@ export function toWorkspace(tabs: TabInfo[], spaces: SpaceInfo[]): Workspace {
       spaceId: t.spaceId,
     })),
     spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
+    artifacts: artifacts.map((a) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      spaceId: a.spaceId,
+    })),
   };
 }
 
@@ -66,11 +77,21 @@ function LinkIcon({
   favicon,
   color,
 }: {
-  kind: 'tab' | 'space';
+  kind: LinkKind;
   open: boolean;
   favicon: string | null;
   color: string | null;
 }) {
+  if (kind === 'artifact') {
+    return (
+      <span
+        aria-hidden="true"
+        style={{ fontSize: 11, flexShrink: 0, opacity: open ? 1 : 0.4 }}
+      >
+        📄
+      </span>
+    );
+  }
   if (kind === 'tab' && favicon && open) {
     return (
       <img
@@ -103,14 +124,16 @@ export function LinkChips({
   refs,
   tabs,
   spaces,
+  artifacts,
 }: {
   chatId: number;
   refs: ChatRef[];
   tabs: TabInfo[];
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
 }) {
   if (refs.length === 0) return null;
-  const workspace = toWorkspace(tabs, spaces);
+  const workspace = toWorkspace(tabs, spaces, artifacts);
 
   return (
     <div
@@ -133,11 +156,17 @@ export function LinkChips({
         const shared =
           link.kind === 'tab'
             ? `The assistant gets this title${link.address ? ' and address' : ''}, can read the page, and can act on it (click, type) only with your approval.`
-            : "The assistant gets this Space's name and its tabs' titles and addresses, can read those pages, and can act on them only with your approval.";
+            : link.kind === 'artifact'
+              ? "The assistant gets this artifact's title and kind. Reading or changing its text comes with the artifact tools, and asks you first."
+              : "The assistant gets this Space's name, its tabs' titles and addresses, and its artifacts' titles. It can read those pages, and act on them only with your approval.";
         const tip = [
           link.label,
           link.address,
-          link.open ? shared : 'Closed. Nothing is shared for it.',
+          link.open
+            ? shared
+            : link.kind === 'artifact'
+              ? 'Deleted. Nothing is shared for it.'
+              : 'Closed. Nothing is shared for it.',
         ]
           .filter(Boolean)
           .join('\n');
@@ -167,7 +196,11 @@ export function LinkChips({
               }}
             >
               {link.label}
-              {link.open ? '' : ' (closed)'}
+              {link.open
+                ? ''
+                : link.kind === 'artifact'
+                  ? ' (deleted)'
+                  : ' (closed)'}
             </button>
             {!link.open && link.kind === 'tab' && ref.url && (
               <button
@@ -195,7 +228,7 @@ export function LinkChips({
         );
       })}
       <span style={{ fontSize: 11, color: '#5f6368' }}>
-        The assistant can read these pages, and act on them with your approval.
+        The assistant can read linked pages, and act on them with your approval.
       </span>
     </div>
   );
@@ -209,13 +242,15 @@ export function MentionToken({
   mention,
   tabs,
   spaces,
+  artifacts,
 }: {
   chatId: number;
   mention: Mention;
   tabs: TabInfo[];
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
 }) {
-  const link = resolveLink(mention, toWorkspace(tabs, spaces));
+  const link = resolveLink(mention, toWorkspace(tabs, spaces, artifacts));
   const tab =
     link.kind === 'tab' ? tabs.find((t) => t.id === link.id) : undefined;
   const space =
@@ -247,7 +282,7 @@ export function MentionToken({
         style={{ ...chipButton, cursor: link.open ? 'pointer' : 'default' }}
       >
         {mention.tag || link.label}
-        {link.open ? '' : ' (closed)'}
+        {link.open ? '' : link.kind === 'artifact' ? ' (deleted)' : ' (closed)'}
       </button>
       {!link.open && link.kind === 'tab' && mention.url && (
         <button
@@ -264,25 +299,66 @@ export function MentionToken({
 
 // "+ Add page": opens the same list as typing "@", but only attaches the page
 // (it adds nothing to your text).
-export function AddPageButton({ onClick }: { onClick: () => void }) {
+// A "+" that opens two choices in place (not a floating menu, which a web page
+// could cover): add a page, or add an artifact.
+export function AddMenuButton({
+  onAddPage,
+  onAddArtifact,
+}: {
+  onAddPage: () => void;
+  onAddArtifact: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const choice: CSSProperties = {
+    ...chipStyle,
+    padding: '3px 10px',
+    cursor: 'pointer',
+    color: '#1a73e8',
+    borderColor: '#c6dafc',
+  };
+  // Keep the text box focused, so the list's arrow keys work.
+  const keepFocus = (e: React.MouseEvent) => e.preventDefault();
   return (
-    <div style={{ margin: '0 0 6px' }}>
+    <div style={{ margin: '0 0 6px', display: 'flex', gap: 6 }}>
       <button
         type="button"
-        // Keep the text box focused, so the list's arrow keys work.
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onClick}
-        title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
-        style={{
-          ...chipStyle,
-          padding: '3px 10px',
-          cursor: 'pointer',
-          color: '#1a73e8',
-          borderColor: '#c6dafc',
-        }}
+        aria-label="Add"
+        aria-expanded={open}
+        onMouseDown={keepFocus}
+        onClick={() => setOpen(!open)}
+        title="Add a page or an artifact to the chat"
+        style={{ ...choice, padding: '3px 12px', fontWeight: 600 }}
       >
-        + Add page
+        +
       </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={() => {
+              setOpen(false);
+              onAddPage();
+            }}
+            title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
+            style={choice}
+          >
+            Add page
+          </button>
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={() => {
+              setOpen(false);
+              onAddArtifact();
+            }}
+            title="Attach an artifact to the chat (the assistant gets its title and kind)"
+            style={choice}
+          >
+            Add artifact
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -291,10 +367,10 @@ export function AddPageButton({ onClick }: { onClick: () => void }) {
 
 export interface PickerItem {
   key: string;
-  kind: 'tab' | 'space';
+  kind: LinkKind;
   id: number;
   label: string;
-  group: 'This page' | 'Spaces' | 'Tabs';
+  group: 'This page' | 'Spaces' | 'Tabs' | 'Artifacts';
   favicon: string | null;
   color: string | null;
 }
@@ -306,10 +382,13 @@ export function pickerItems(
   refs: ChatRef[],
   tabs: TabInfo[],
   spaces: SpaceInfo[],
+  artifacts: ArtifactInfo[],
   activeTabId: number | null,
   limit = 8,
+  // Only pages and Spaces, or only artifacts (from the "+" menu); "@" shows all.
+  only?: 'page' | 'artifact',
 ): PickerItem[] {
-  const linked = (kind: 'tab' | 'space', id: number) =>
+  const linked = (kind: LinkKind, id: number) =>
     refs.some((r) => r.kind === kind && r.id === id);
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (label: string) =>
@@ -318,6 +397,7 @@ export function pickerItems(
   const items: PickerItem[] = [];
   const active = tabs.find((t) => t.id === activeTabId);
   if (
+    only !== 'artifact' &&
     active &&
     !linked('tab', active.id) &&
     matches(`this page ${labelFor(active)}`)
@@ -332,7 +412,7 @@ export function pickerItems(
       color: null,
     });
   }
-  for (const space of spaces) {
+  for (const space of only === 'artifact' ? [] : spaces) {
     if (linked('space', space.id) || !matches(space.name)) continue;
     items.push({
       key: `space:${space.id}`,
@@ -344,9 +424,10 @@ export function pickerItems(
       color: SPACE_COLOR_HEX[space.color],
     });
   }
-  for (const tab of tabs) {
+  for (const tab of only === 'artifact' ? [] : tabs) {
     if (
       tab.id === active?.id ||
+      tab.closed ||
       linked('tab', tab.id) ||
       !matches(labelFor(tab))
     )
@@ -358,6 +439,18 @@ export function pickerItems(
       label: labelFor(tab),
       group: 'Tabs',
       favicon: tab.favicon,
+      color: null,
+    });
+  }
+  for (const artifact of only === 'page' ? [] : artifacts) {
+    if (linked('artifact', artifact.id) || !matches(artifact.title)) continue;
+    items.push({
+      key: `artifact:${artifact.id}`,
+      kind: 'artifact',
+      id: artifact.id,
+      label: artifact.title,
+      group: 'Artifacts',
+      favicon: null,
       color: null,
     });
   }
@@ -384,7 +477,7 @@ export function LinkPicker({
   return (
     <div
       role="listbox"
-      aria-label="Link a Space or tab"
+      aria-label="Link a Space, tab or artifact"
       style={{
         position: 'fixed',
         left: anchor.left,
@@ -404,8 +497,8 @@ export function LinkPicker({
     >
       {items.length === 0 ? (
         <div style={{ padding: '8px 10px', fontSize: 12, color: '#5f6368' }}>
-          Nothing matches. Open tabs and Spaces you have not linked yet appear
-          here.
+          Nothing matches. Open tabs, Spaces and artifacts you have not linked
+          yet appear here.
         </div>
       ) : (
         items.map((item, i) => (

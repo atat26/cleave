@@ -1,13 +1,16 @@
 import { useRef } from 'react';
+import { ArtifactsPanel } from './ArtifactsPanel';
 import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
 import { SettingsPanel } from './SettingsPanel';
 import { ToolsPanel } from './ToolsPanel';
+import type { ArtifactInfo, SpaceInfo } from './types';
 
 const TITLES: Record<RightPanelName, string> = {
   skills: 'Skills',
   tools: 'Tools',
+  artifacts: 'Artifacts',
   extensions: 'Extensions',
   settings: 'Settings',
 };
@@ -21,7 +24,15 @@ const PLACEHOLDERS: Partial<Record<RightPanelName, string>> = {
 // The panel that opens to the left of the rail. It is a card on the frame, and
 // you can drag its left edge to make it wider or narrower (drag it narrow to
 // close it). The app keeps the --panel variable up to date while it slides.
-export function RightPanel({ panel }: { panel: RightPanelName }) {
+export function RightPanel({
+  panel,
+  artifacts,
+  spaces,
+}: {
+  panel: RightPanelName;
+  artifacts: ArtifactInfo[];
+  spaces: SpaceInfo[];
+}) {
   const cardRef = useRef<HTMLElement>(null);
 
   return (
@@ -81,6 +92,8 @@ export function RightPanel({ panel }: { panel: RightPanelName }) {
             <SettingsPanel />
           ) : panel === 'tools' ? (
             <ToolsPanel />
+          ) : panel === 'artifacts' ? (
+            <ArtifactsPanel artifacts={artifacts} spaces={spaces} />
           ) : (
             <p
               style={{

@@ -80,10 +80,17 @@ export interface Mention extends ChatRef {
   tag: string;
 }
 
-// A Space or tab the conversation has been linked to, so the agent knows where
-// to work. By id: if the Space or tab is closed later, the link just goes grey.
+// What a chat can be linked to.
+export const LINK_KINDS = ['space', 'tab', 'artifact'] as const;
+export type LinkKind = (typeof LINK_KINDS)[number];
+export const isLinkKind = (value: unknown): value is LinkKind =>
+  typeof value === 'string' &&
+  (LINK_KINDS as readonly string[]).includes(value);
+
+// A Space, tab or artifact the conversation has been linked to, so the agent knows
+// where to work. By id: if it is closed or deleted later, the link just goes grey.
 export interface ChatRef {
-  kind: 'space' | 'tab';
+  kind: LinkKind;
   id: number;
   // The item's last known name and address, kept so that a link to something that
   // has since been closed can still be shown by name (and a tab reopened).
@@ -206,7 +213,7 @@ function parseMentions(raw: unknown): Mention[] {
     // An empty tag is an item attached without an "@name" in the text.
     if (!isRecord(r) || !isId(r.id) || !(r.tag === '' || validTag(r.tag)))
       continue;
-    if (r.kind !== 'space' && r.kind !== 'tab') continue;
+    if (!isLinkKind(r.kind)) continue;
     if (out.some((x) => x.kind === r.kind && x.id === r.id)) continue;
     out.push({
       kind: r.kind,
@@ -372,7 +379,7 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
       for (const r of item.refs) {
         if (refs.length >= MAX_REFS) break;
         if (!isRecord(r) || !isId(r.id)) continue;
-        if (r.kind !== 'space' && r.kind !== 'tab') continue;
+        if (!isLinkKind(r.kind)) continue;
         if (refs.some((x) => x.kind === r.kind && x.id === r.id)) continue;
         refs.push({
           kind: r.kind,
@@ -924,8 +931,7 @@ export function addRef(
   chatId: number,
   ref: ChatRef,
 ): ChatsState {
-  if (!isId(ref.id) || (ref.kind !== 'space' && ref.kind !== 'tab'))
-    return state;
+  if (!isId(ref.id) || !isLinkKind(ref.kind)) return state;
   const clean: ChatRef = {
     kind: ref.kind,
     id: ref.id,

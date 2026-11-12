@@ -28,6 +28,7 @@ const RAIL_ITEMS: {
 }[] = [
   { panel: 'skills', label: 'Skills', icon: '⚡' },
   { panel: 'tools', label: 'Tools', icon: '🔧' },
+  { panel: 'artifacts', label: 'Artifacts', icon: '📄' },
   { panel: 'extensions', label: 'Extensions', icon: '🧩' },
   { panel: 'settings', label: 'Settings', icon: '⚙️', bottom: true },
 ];

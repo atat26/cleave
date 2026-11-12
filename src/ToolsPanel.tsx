@@ -22,7 +22,7 @@ const button: CSSProperties = {
   color: '#202124',
 };
 
-const GROUPS: ToolGroup[] = ['look', 'act', 'chat'];
+const GROUPS: ToolGroup[] = ['look', 'act', 'artifacts', 'chat'];
 
 // What each level means, in plain words.
 const LEVEL_HELP: Record<ApprovalLevel, string> = {

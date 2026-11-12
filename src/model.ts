@@ -22,6 +22,17 @@ export interface SavedTab {
   favicon: string | null;
   // The Space this tab belongs to, or null for an ungrouped tab.
   spaceId: number | null;
+  // Closed but kept: the page is saved as a link in its Space (shown on the
+  // Space's overview) with no tab open. Only a tab in a Space can be like this.
+  closed: boolean;
+}
+
+// An artifact that is open as a tab. The artifact itself (its text) lives in
+// artifacts.json; this only remembers that it is open and which Space group it
+// shows under (kept the same as the artifact's own Space).
+export interface SavedArtifactTab {
+  artifactId: number;
+  spaceId: number | null;
 }
 
 export interface SavedSpace {
@@ -34,16 +45,20 @@ export interface SavedSpace {
   leadData: null;
 }
 
-// What is currently showing: a web tab, or a Space's Lead (summary) tab.
+// What is currently showing: a web tab, a Lead (summary) tab of a Space, or an
+// open artifact (by the artifact's id).
 export type ActiveRef =
   | { kind: 'tab'; id: number }
-  | { kind: 'lead'; spaceId: number };
+  | { kind: 'lead'; spaceId: number }
+  | { kind: 'artifact'; id: number };
 
 export interface SavedState {
   version: 1;
   spaces: SavedSpace[];
   // Order in this list is the order within a group in the sidebar.
   tabs: SavedTab[];
+  // Artifacts open as tabs, in the order they were opened.
+  artifactTabs: SavedArtifactTab[];
   active: ActiveRef | null;
   settings: SavedSettings;
   // Source of new ids for both tabs and Spaces.
@@ -54,6 +69,7 @@ export interface SavedState {
 export const RIGHT_PANELS = [
   'skills',
   'tools',
+  'artifacts',
   'extensions',
   'settings',
 ] as const;
@@ -75,6 +91,7 @@ export type PanelContext = 'chat' | 'web' | 'always';
 export const PANEL_CONTEXT: Record<RightPanel, PanelContext> = {
   skills: 'chat',
   tools: 'chat',
+  artifacts: 'always',
   extensions: 'web',
   settings: 'always',
 };
@@ -150,6 +167,7 @@ export function defaultState(): SavedState {
     version: 1,
     spaces: [],
     tabs: [],
+    artifactTabs: [],
     active: null,
     settings: {
       viewMode: 'both',
@@ -213,6 +231,33 @@ export function parseState(raw: unknown): SavedState {
           isId(item.spaceId) && spaceIds.has(item.spaceId)
             ? item.spaceId
             : null,
+        closed:
+          item.closed === true &&
+          isId(item.spaceId) &&
+          spaceIds.has(item.spaceId),
+      });
+    }
+  }
+
+  // Artifact tabs: the ids are artifact ids (checked against the artifacts when
+  // the app starts), so here only the shape is checked.
+  if (Array.isArray(raw.artifactTabs)) {
+    const seen = new Set<number>();
+    for (const item of raw.artifactTabs) {
+      if (state.artifactTabs.length >= MAX_TABS) break;
+      if (
+        !isRecord(item) ||
+        !isId(item.artifactId) ||
+        seen.has(item.artifactId)
+      )
+        continue;
+      seen.add(item.artifactId);
+      state.artifactTabs.push({
+        artifactId: item.artifactId,
+        spaceId:
+          isId(item.spaceId) && spaceIds.has(item.spaceId)
+            ? item.spaceId
+            : null,
       });
     }
   }
@@ -243,7 +288,11 @@ export function parseState(raw: unknown): SavedState {
   }
 
   const active = isRecord(raw.active) ? raw.active : null;
-  if (active?.kind === 'tab' && isId(active.id) && tabIds.has(active.id)) {
+  if (
+    active?.kind === 'tab' &&
+    isId(active.id) &&
+    state.tabs.some((t) => t.id === active.id && !t.closed)
+  ) {
     state.active = { kind: 'tab', id: active.id };
   } else if (
     active?.kind === 'lead' &&
@@ -251,6 +300,12 @@ export function parseState(raw: unknown): SavedState {
     spaceIds.has(active.spaceId)
   ) {
     state.active = { kind: 'lead', spaceId: active.spaceId };
+  } else if (
+    active?.kind === 'artifact' &&
+    isId(active.id) &&
+    state.artifactTabs.some((t) => t.artifactId === active.id)
+  ) {
+    state.active = { kind: 'artifact', id: active.id };
   } else {
     state.active = navOrder(state)[0] ?? null;
   }
@@ -271,25 +326,36 @@ function cleanName(value: unknown, fallback: string): string {
 // tabs first, then each Space (its Lead tab, then its tabs).
 export function navOrder(state: SavedState): ActiveRef[] {
   const order: ActiveRef[] = [];
+  const artifactsIn = (spaceId: number | null) => {
+    for (const t of state.artifactTabs) {
+      if (t.spaceId === spaceId) {
+        order.push({ kind: 'artifact', id: t.artifactId });
+      }
+    }
+  };
   for (const tab of state.tabs) {
-    if (tab.spaceId === null) order.push({ kind: 'tab', id: tab.id });
+    if (tab.spaceId === null && !tab.closed) {
+      order.push({ kind: 'tab', id: tab.id });
+    }
   }
+  artifactsIn(null);
   for (const space of state.spaces) {
     order.push({ kind: 'lead', spaceId: space.id });
     for (const tab of state.tabs) {
-      if (tab.spaceId === space.id) order.push({ kind: 'tab', id: tab.id });
+      if (tab.spaceId === space.id && !tab.closed) {
+        order.push({ kind: 'tab', id: tab.id });
+      }
     }
+    artifactsIn(space.id);
   }
   return order;
 }
 
-export const sameRef = (a: ActiveRef | null, b: ActiveRef | null): boolean =>
-  a !== null &&
-  b !== null &&
-  a.kind === b.kind &&
-  (a.kind === 'tab'
-    ? a.id === (b as typeof a).id
-    : a.spaceId === (b as typeof a).spaceId);
+export const sameRef = (a: ActiveRef | null, b: ActiveRef | null): boolean => {
+  if (a === null || b === null || a.kind !== b.kind) return false;
+  if (a.kind === 'lead') return a.spaceId === (b as typeof a).spaceId;
+  return a.id === (b as { id: number }).id;
+};
 
 export const findTab = (state: SavedState, id: number) =>
   state.tabs.find((t) => t.id === id);
@@ -329,6 +395,7 @@ export function addTab(
     title: '',
     favicon: null,
     spaceId,
+    closed: false,
   };
   return {
     id,
@@ -385,12 +452,138 @@ export function removeTab(state: SavedState, id: number): SavedState {
   };
 }
 
+// Close a tab. In a Space the page is kept as a closed link there (reopen it from
+// the Space's overview); outside a Space it is simply removed.
+export function closeTab(state: SavedState, id: number): SavedState {
+  const tab = findTab(state, id);
+  if (!tab) return state;
+  if (tab.spaceId === null) return removeTab(state, id);
+  if (tab.closed) return state;
+  const before = navOrder(state);
+  const next: SavedState = {
+    ...state,
+    tabs: state.tabs.map((t) => (t.id === id ? { ...t, closed: true } : t)),
+  };
+  return {
+    ...next,
+    active: sameRef(state.active, { kind: 'tab', id })
+      ? pickNeighbor(before, state.active, navOrder(next))
+      : state.active,
+  };
+}
+
+// The closed link (kept page in a Space) for an address, if there is one. The
+// assistant is only told addresses without their query part, so the match is on
+// the address up to that part; an exact match is preferred.
+export function findClosedTabByAddress(
+  state: SavedState,
+  address: string,
+): SavedTab | undefined {
+  const bare = (value: string): string | null => {
+    try {
+      const url = new URL(value);
+      const path = url.pathname.replace(/\/+$/, '');
+      return `${url.protocol}//${url.host.toLowerCase()}${path}`;
+    } catch {
+      return null;
+    }
+  };
+  const wanted = bare(address);
+  if (wanted === null) return undefined;
+  const closed = state.tabs.filter((t) => t.closed && bare(t.url) === wanted);
+  return closed.find((t) => t.url === address) ?? closed[0];
+}
+
+// Open a closed link again as a tab, and select it.
+export function reopenTab(state: SavedState, id: number): SavedState {
+  const tab = findTab(state, id);
+  if (!tab) return state;
+  return {
+    ...state,
+    tabs: state.tabs.map((t) => (t.id === id ? { ...t, closed: false } : t)),
+    active: { kind: 'tab', id },
+  };
+}
+
 export function setActive(state: SavedState, ref: ActiveRef): SavedState {
   const exists =
     ref.kind === 'tab'
-      ? findTab(state, ref.id) !== undefined
-      : findSpace(state, ref.spaceId);
+      ? findTab(state, ref.id)?.closed === false
+      : ref.kind === 'artifact'
+        ? state.artifactTabs.some((t) => t.artifactId === ref.id)
+        : findSpace(state, ref.spaceId);
   return exists ? { ...state, active: ref } : state;
+}
+
+// Open an artifact as a tab (or just switch to it if it is already open). It
+// shows under the Space the artifact belongs to.
+export function openArtifactTab(
+  state: SavedState,
+  artifactId: number,
+  spaceId: number | null,
+): SavedState {
+  const inSpace =
+    spaceId !== null && findSpace(state, spaceId) ? spaceId : null;
+  const open = state.artifactTabs.some((t) => t.artifactId === artifactId);
+  return {
+    ...state,
+    artifactTabs: open
+      ? state.artifactTabs
+      : [...state.artifactTabs, { artifactId, spaceId: inSpace }],
+    active: { kind: 'artifact', id: artifactId },
+  };
+}
+
+// Close an artifact's tab (the artifact itself is kept). If it was showing, the
+// neighbouring item is selected.
+export function closeArtifactTab(
+  state: SavedState,
+  artifactId: number,
+): SavedState {
+  if (!state.artifactTabs.some((t) => t.artifactId === artifactId))
+    return state;
+  const before = navOrder(state);
+  const next: SavedState = {
+    ...state,
+    artifactTabs: state.artifactTabs.filter((t) => t.artifactId !== artifactId),
+  };
+  return {
+    ...next,
+    active: sameRef(state.active, { kind: 'artifact', id: artifactId })
+      ? pickNeighbor(before, state.active, navOrder(next))
+      : state.active,
+  };
+}
+
+// Make the open artifact tabs agree with the artifacts: a tab whose artifact is
+// gone is closed, and each tab shows under its artifact's current Space.
+export function reconcileArtifactTabs(
+  state: SavedState,
+  artifacts: { id: number; spaceId: number | null }[],
+): SavedState {
+  const before = navOrder(state);
+  const bySpace = new Map(artifacts.map((a) => [a.id, a.spaceId]));
+  const tabs: SavedArtifactTab[] = [];
+  for (const tab of state.artifactTabs) {
+    if (!bySpace.has(tab.artifactId)) continue;
+    const wanted = bySpace.get(tab.artifactId) ?? null;
+    const spaceId = wanted !== null && findSpace(state, wanted) ? wanted : null;
+    tabs.push(spaceId === tab.spaceId ? tab : { ...tab, spaceId });
+  }
+  const same =
+    tabs.length === state.artifactTabs.length &&
+    tabs.every((t, i) => t === state.artifactTabs[i]);
+  if (same) return state;
+  const next: SavedState = { ...state, artifactTabs: tabs };
+  const activeId = state.active?.kind === 'artifact' ? state.active.id : null;
+  const activeGone =
+    activeId !== null && !tabs.some((t) => t.artifactId === activeId);
+  return {
+    ...next,
+    active: activeGone
+      ? pickNeighbor(before, state.active, navOrder(next))
+      : state.active,
+  };
 }
 
 export function addSpace(
@@ -457,7 +650,11 @@ export function moveTab(
   if (spaceId !== null && !findSpace(state, spaceId)) return state;
   return {
     ...state,
-    tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, spaceId } : t)),
+    tabs: state.tabs.map((t) =>
+      t.id === tabId
+        ? { ...t, spaceId, closed: spaceId === null ? false : t.closed }
+        : t,
+    ),
   };
 }
 
@@ -468,7 +665,11 @@ export function ungroupSpace(state: SavedState, id: number): SavedState {
   const next: SavedState = {
     ...state,
     spaces: state.spaces.filter((s) => s.id !== id),
+    // Closed links become ordinary tabs again, so nothing is lost.
     tabs: state.tabs.map((t) =>
+      t.spaceId === id ? { ...t, spaceId: null, closed: false } : t,
+    ),
+    artifactTabs: state.artifactTabs.map((t) =>
       t.spaceId === id ? { ...t, spaceId: null } : t,
     ),
   };
@@ -496,6 +697,10 @@ export function deleteSpace(
     ...state,
     spaces: state.spaces.filter((s) => s.id !== id),
     tabs: state.tabs.filter((t) => t.spaceId !== id),
+    // Artifacts are kept: their tabs just leave the Space.
+    artifactTabs: state.artifactTabs.map((t) =>
+      t.spaceId === id ? { ...t, spaceId: null } : t,
+    ),
   };
   const activeGone =
     sameRef(state.active, { kind: 'lead', spaceId: id }) ||

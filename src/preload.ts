@@ -11,6 +11,8 @@ const browserApi: BrowserApi = {
   goForward: () => ipcRenderer.send('tab:forward'),
   newTab: (spaceId) => ipcRenderer.send('tab:new', spaceId),
   closeTab: (id) => ipcRenderer.send('tab:close', id),
+  removeTab: (id) => ipcRenderer.send('tab:remove', id),
+  reopenTab: (id) => ipcRenderer.send('tab:reopen', id),
   selectTab: (id) => ipcRenderer.send('tab:select', id),
   selectLead: (spaceId) => ipcRenderer.send('lead:select', spaceId),
   newSpace: () => ipcRenderer.send('space:new'),
@@ -26,6 +28,19 @@ const browserApi: BrowserApi = {
   toolsList: () => ipcRenderer.invoke('tools:list'),
   toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
   toolsReset: () => ipcRenderer.invoke('tools:reset'),
+  artifactCreate: (kind, title, spaceId) =>
+    ipcRenderer.invoke('artifact:create', kind, title, spaceId),
+  artifactOpen: (id) => ipcRenderer.send('artifact:open', id),
+  artifactSelect: (id) => ipcRenderer.send('artifact:select', id),
+  artifactClose: (id) => ipcRenderer.send('artifact:close', id),
+  artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
+  artifactWrite: (id, content, revision) =>
+    ipcRenderer.invoke('artifact:write', id, content, revision),
+  artifactCopy: (id, spaceId) =>
+    ipcRenderer.invoke('artifact:copy', id, spaceId),
+  artifactRename: (id, title) => ipcRenderer.send('artifact:rename', id, title),
+  artifactMove: (id, spaceId) => ipcRenderer.send('artifact:move', id, spaceId),
+  artifactDelete: (id) => ipcRenderer.send('artifact:delete', id),
   openUrl: (url) => ipcRenderer.send('ui:open-url', url),
   uiReady: () => ipcRenderer.send('ui:ready'),
   hoverSidebar: () => ipcRenderer.send('sidebar:hover'),
@@ -47,6 +62,13 @@ const browserApi: BrowserApi = {
     ipcRenderer.invoke('chat:retry', chatId, messageId),
   chatBranch: (chatId, messageId) =>
     ipcRenderer.invoke('chat:branch', chatId, messageId),
+  onArtifactChanged: (callback) => {
+    const listener = (_event: unknown, id: number) => callback(id);
+    ipcRenderer.on('artifact:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('artifact:changed', listener);
+    };
+  },
   onChatReset: (callback) => {
     const listener = (_event: unknown, chatId: number) => callback(chatId);
     ipcRenderer.on('chat:reset', listener);
@@ -66,6 +88,7 @@ const browserApi: BrowserApi = {
   chatReopenLink: (chatId, tabId) =>
     ipcRenderer.send('chats:reopen-link', chatId, tabId),
   showModelMenu: (chatId) => ipcRenderer.send('chat:model-menu', chatId),
+  openArtifacts: () => ipcRenderer.send('panel:open', 'artifacts'),
   openSettings: () => ipcRenderer.send('panel:open', 'settings'),
   onChatMessage: (callback) => {
     const listener = (

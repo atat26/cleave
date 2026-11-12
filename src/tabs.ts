@@ -27,6 +27,8 @@ import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_SNAP_WIDTH,
 } from './layout';
+import * as artifactsModel from './artifacts';
+import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
 import type { ChatsState } from './chats';
 import type {
@@ -56,7 +58,13 @@ import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
 import type { SearchContext } from './search';
-import { createSaver, loadChats, loadJson, loadState } from './storage';
+import {
+  createSaver,
+  loadArtifacts,
+  loadChats,
+  loadJson,
+  loadState,
+} from './storage';
 import { isApprovalLevel } from './toolPolicy';
 import {
   defaultToolSettings,
@@ -75,8 +83,7 @@ export const NEW_TAB_URL = 'https://duckduckgo.com';
 const isId = (value: unknown): value is number => Number.isInteger(value);
 const isIdOrNull = (value: unknown): value is number | null =>
   value === null || isId(value);
-const isLinkKind = (value: unknown): value is 'tab' | 'space' =>
-  value === 'tab' || value === 'space';
+const isLinkKind = chatsModel.isLinkKind;
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const isResizeKind = (value: unknown): value is ResizeKind =>
@@ -103,6 +110,9 @@ export async function createTabs(
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
   let chats: ChatsState = await loadChats(chatsFile);
+  // Documents made inside the browser (not uploads).
+  const artifactsFile = path.join(app.getPath('userData'), 'artifacts.json');
+  let artifacts: ArtifactsState = await loadArtifacts(artifactsFile);
   // How much each tool may do without asking (the Tools panel's choices).
   const toolsFile = path.join(app.getPath('userData'), 'tools.json');
   let toolSettings = await loadJson(
@@ -113,6 +123,9 @@ export async function createTabs(
   const toolsSaver = createSaver(toolsFile, () => toolSettings);
   if (win.isDestroyed()) return;
 
+  // Artifact tabs only make sense for artifacts that still exist.
+  state = model.reconcileArtifactTabs(state, artifacts.artifacts);
+
   // The first time ever (or after a reset) there is nothing: start with one tab.
   if (state.active === null) {
     state = model.addTab(state, { url: NEW_TAB_URL }).state;
@@ -121,6 +134,7 @@ export async function createTabs(
   const views = new Map<number, WebContentsView>();
   const saver = createSaver(file, () => state);
   const chatsSaver = createSaver(chatsFile, () => chats);
+  const artifactsSaver = createSaver(artifactsFile, () => artifacts);
 
   // The AI connection (key, model, pins, system prompt) and the chat service that
   // talks to the model. Both are set up a little later than the window.
@@ -134,8 +148,15 @@ export async function createTabs(
       title: t.title,
       url: t.url,
       spaceId: t.spaceId,
+      closed: t.closed,
     })),
     spaces: state.spaces.map((s) => ({ id: s.id, name: s.name })),
+    artifacts: artifacts.artifacts.map((a) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      spaceId: a.spaceId,
+    })),
   });
 
   // Keep each chat link's remembered name and address current. Done just before
@@ -302,6 +323,20 @@ export async function createTabs(
         color,
         collapsed,
       })),
+      artifactTabs: state.artifactTabs.flatMap((t) => {
+        const a = artifactsModel.findArtifact(artifacts, t.artifactId);
+        return a
+          ? [{ id: a.id, title: a.title, kind: a.kind, spaceId: t.spaceId }]
+          : [];
+      }),
+      artifacts: artifacts.artifacts.map((a) => ({
+        id: a.id,
+        title: a.title,
+        kind: a.kind,
+        spaceId: a.spaceId,
+        updatedAt: a.updatedAt,
+        size: a.content.length,
+      })),
       tabs: state.tabs.map((tab) => ({
         id: tab.id,
         title: tab.title,
@@ -310,6 +345,7 @@ export async function createTabs(
         spaceId: tab.spaceId,
         loaded: views.has(tab.id),
         working: working.has(tab.id),
+        closed: tab.closed,
       })),
       active: state.active,
       canGoBack: history?.canGoBack() ?? false,
@@ -586,11 +622,27 @@ export async function createTabs(
       ? model.addTab(next, { url: NEW_TAB_URL }).state
       : next;
 
+  // Close a tab. In a Space the page stays as a closed link on the overview.
   const closeTab = (id: number) => {
-    if (!model.findTab(state, id)) return;
+    const tab = model.findTab(state, id);
+    if (!tab || tab.closed) return;
     syncLinkSnapshots(); // So a chat's link to this tab remembers its latest name.
     destroyView(id);
+    commitAndShow(withSomethingActive(model.closeTab(state, id)));
+  };
+
+  // Delete a tab for good (including a closed link).
+  const removeTab = (id: number) => {
+    if (!model.findTab(state, id)) return;
+    syncLinkSnapshots();
+    destroyView(id);
     commitAndShow(withSomethingActive(model.removeTab(state, id)));
+  };
+
+  // Open a closed link again and show it.
+  const reopenTab = (id: number) => {
+    if (!model.findTab(state, id)) return;
+    commitAndShow(revealPage(model.reopenTab(state, id)));
   };
 
   // Ask a yes/no question in a native dialog (default answer: cancel). While it
@@ -618,6 +670,43 @@ export async function createTabs(
     }
   };
 
+  const commitArtifacts = (next: ArtifactsState) => {
+    if (next === artifacts) return;
+    artifacts = next;
+    artifactsSaver.schedule();
+    // Open tabs follow their artifacts (closed when deleted, regrouped when moved).
+    const reconciled = model.reconcileArtifactTabs(state, artifacts.artifacts);
+    if (reconciled !== state) {
+      commitAndShow(withSomethingActive(reconciled));
+    } else {
+      sendState();
+    }
+  };
+
+  // Open an artifact as a tab and show it (editing takes over the page area).
+  const openArtifact = (id: number) => {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found) return;
+    commitAndShow(revealPage(model.openArtifactTab(state, id, found.spaceId)));
+  };
+
+  const deleteArtifact = async (id: number) => {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found) return;
+    if (
+      !(await confirm({
+        title: 'Delete artifact',
+        message: `Delete “${found.title}”?`,
+        detail: 'It cannot be undone.',
+        button: 'Delete artifact',
+      }))
+    ) {
+      return;
+    }
+    syncLinkSnapshots(); // Chats' links to it remember its name.
+    commitArtifacts(artifactsModel.deleteArtifact(artifacts, id));
+  };
+
   const deleteSpace = async (id: number) => {
     const space = model.findSpace(state, id);
     if (!space) return;
@@ -637,6 +726,8 @@ export async function createTabs(
     // The Space may have changed while the dialog was open.
     syncLinkSnapshots(); // Chats' links to this Space and its tabs remember them.
     const result = model.deleteSpace(state, id);
+    // Its artifacts are kept, just no longer in a Space.
+    commitArtifacts(artifactsModel.releaseSpace(artifacts, id));
     for (const tabId of result.removedTabIds) destroyView(tabId);
     commitAndShow(withSomethingActive(result.state));
   };
@@ -693,7 +784,7 @@ export async function createTabs(
     | { ok: false; reason: 'closed' | 'timeout' }
   > => {
     const tab = model.findTab(state, tabId);
-    if (!tab) return { ok: false, reason: 'closed' };
+    if (!tab || tab.closed) return { ok: false, reason: 'closed' };
     const wasAsleep = !views.has(tabId);
     const contents = ensureView(tab).webContents;
     if (wasAsleep) sendState();
@@ -784,7 +875,7 @@ export async function createTabs(
   // keyboard stays in the chat, not in the page.
   const focusTab = (tabId: number) => {
     const active = state.active;
-    if (!model.findTab(state, tabId)) return;
+    if (model.findTab(state, tabId)?.closed !== false) return;
     if (!(active?.kind === 'tab' && active.id === tabId && pageIsShown())) {
       select({ kind: 'tab', id: tabId });
     }
@@ -863,17 +954,26 @@ export async function createTabs(
     },
     // A new tab for the assistant, shown straight away (it is about to act in it).
     openTab: async (url, signal) => {
-      const created = model.addTab(state, {
-        url,
-        spaceId: currentSpaceId(),
-      });
-      commitAndShow(revealPage(created.state));
+      // A page kept in a Space comes back in that same Space, not as a new tab.
+      const kept = model.findClosedTabByAddress(state, url);
+      let tabId: number;
+      if (kept) {
+        commitAndShow(revealPage(model.reopenTab(state, kept.id)));
+        tabId = kept.id;
+      } else {
+        const created = model.addTab(state, {
+          url,
+          spaceId: currentSpaceId(),
+        });
+        commitAndShow(revealPage(created.state));
+        tabId = created.id;
+      }
       win.webContents.focus();
-      const ready = await prepareTab(created.id, signal);
+      const ready = await prepareTab(tabId, signal);
       if (!ready.ok) return { ok: false, reason: 'timeout' };
       return {
         ok: true,
-        tabId: created.id,
+        tabId,
         url: ready.contents.getURL(),
         title: ready.contents.getTitle(),
       };
@@ -902,11 +1002,66 @@ export async function createTabs(
       }
     },
     actions: actionEnv,
+    artifactStore: {
+      read: (id) => {
+        const found = artifactsModel.findArtifact(artifacts, id);
+        return found
+          ? { title: found.title, kind: found.kind, content: found.content }
+          : null;
+      },
+      create: (chatId, input) => {
+        const result = artifactsModel.createArtifact(
+          artifacts,
+          input,
+          Date.now(),
+        );
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason:
+              result.reason === 'too-long' || result.reason === 'bad-kind'
+                ? result.reason
+                : 'too-many',
+          };
+        }
+        commitArtifacts(result.state);
+        // Link it to the chat, so the assistant can read and edit it.
+        commitChats(
+          chatsModel.addRef(chats, chatId, {
+            kind: 'artifact',
+            id: result.artifact.id,
+            title: result.artifact.title,
+            url: null,
+          }),
+        );
+        return { ok: true, id: result.artifact.id };
+      },
+      update: (id, changes) => {
+        const result = artifactsModel.updateArtifact(
+          artifacts,
+          id,
+          changes,
+          Date.now(),
+        );
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason: result.reason === 'too-long' ? 'too-long' : 'not-found',
+          };
+        }
+        commitArtifacts(result.state);
+        // An editor that has it open shows the change.
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send('artifact:changed', id);
+        }
+        return { ok: true };
+      },
+    },
     toolLevel: (tool) => levelFor(toolSettings, tool),
     search: search.catch(() => null),
     linkTab: (chatId, tabId) => {
       const tab = model.findTab(state, tabId);
-      if (!tab) return;
+      if (!tab || tab.closed) return;
       commitChats(
         chatsModel.addRef(chats, chatId, {
           kind: 'tab',
@@ -980,6 +1135,7 @@ export async function createTabs(
       commit(model.moveTab(created.state, tabId, created.id));
     },
     closeTab,
+    removeTab,
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
       if (!pinned()) setHover(true);
@@ -1029,6 +1185,11 @@ export async function createTabs(
     if (active?.kind === 'lead') return active.spaceId;
     if (active?.kind === 'tab')
       return model.findTab(state, active.id)?.spaceId ?? null;
+    if (active?.kind === 'artifact')
+      return (
+        state.artifactTabs.find((t) => t.artifactId === active.id)?.spaceId ??
+        null
+      );
     return null;
   };
 
@@ -1049,6 +1210,11 @@ export async function createTabs(
       event.preventDefault();
       const id = activeTabId();
       if (id !== null) closeTab(id);
+      else if (state.active?.kind === 'artifact') {
+        commitAndShow(
+          withSomethingActive(model.closeArtifactTab(state, state.active.id)),
+        );
+      }
     } else if (key === 'j') {
       event.preventDefault();
       toggleChat();
@@ -1093,8 +1259,16 @@ export async function createTabs(
     'tab:close': (id) => {
       if (isId(id)) closeTab(id);
     },
+    'tab:remove': (id) => {
+      if (isId(id)) removeTab(id);
+    },
+    'tab:reopen': (id) => {
+      if (isId(id)) reopenTab(id);
+    },
     'tab:select': (id) => {
-      if (isId(id)) select({ kind: 'tab', id });
+      if (!isId(id)) return;
+      if (model.findTab(state, id)?.closed) reopenTab(id);
+      else select({ kind: 'tab', id });
     },
     'lead:select': (spaceId) => {
       if (isId(spaceId)) select({ kind: 'lead', spaceId });
@@ -1111,6 +1285,44 @@ export async function createTabs(
       if (isId(id) && typeof collapsed === 'boolean') {
         commit(model.setSpaceCollapsed(state, id, collapsed));
       }
+    },
+    'artifact:open': (id) => {
+      if (isId(id)) openArtifact(id);
+    },
+    'artifact:select': (id) => {
+      if (isId(id)) select({ kind: 'artifact', id });
+    },
+    'artifact:close': (id) => {
+      if (isId(id))
+        commitAndShow(withSomethingActive(model.closeArtifactTab(state, id)));
+    },
+    'artifact:rename': (id, title) => {
+      if (!isId(id) || typeof title !== 'string') return;
+      const result = artifactsModel.updateArtifact(
+        artifacts,
+        id,
+        { title },
+        Date.now(),
+      );
+      if (result.ok) commitArtifacts(result.state);
+    },
+    'artifact:move': (id, spaceId) => {
+      if (!isId(id)) return;
+      if (
+        spaceId !== null &&
+        !(isId(spaceId) && model.findSpace(state, spaceId))
+      )
+        return;
+      const result = artifactsModel.updateArtifact(
+        artifacts,
+        id,
+        { spaceId },
+        Date.now(),
+      );
+      if (result.ok) commitArtifacts(result.state);
+    },
+    'artifact:delete': (id) => {
+      if (isId(id)) void deleteArtifact(id);
     },
     'space:rename': (id, name) => {
       if (isId(id) && typeof name === 'string')
@@ -1142,6 +1354,12 @@ export async function createTabs(
     },
     'panel:open': (panel) => {
       if (panel === 'settings') openSettings();
+      else if (panel === 'artifacts') {
+        state = model.setRightPanel(state, 'artifacts');
+        saver.schedule();
+        applyLayout(true);
+        sendState();
+      }
     },
     'panel:toggle': (panel) => {
       if (!model.RIGHT_PANELS.includes(panel as model.RightPanel)) return;
@@ -1232,10 +1450,14 @@ export async function createTabs(
     // Clicking a link chip jumps to that tab, or to that Space's overview.
     'chats:open-link': (kind, id) => {
       if (!isLinkKind(kind) || !isId(id)) return;
-      if (kind === 'tab' && model.findTab(state, id)) {
+      if (kind === 'tab' && model.findTab(state, id)?.closed) {
+        reopenTab(id); // A closed link in a Space opens again.
+      } else if (kind === 'tab' && model.findTab(state, id)) {
         select({ kind: 'tab', id });
       } else if (kind === 'space' && model.findSpace(state, id)) {
         select({ kind: 'lead', spaceId: id });
+      } else if (kind === 'artifact') {
+        openArtifact(id);
       }
     },
     // Bring a closed tab back (as a new, ungrouped tab) and point every chat's
@@ -1325,6 +1547,91 @@ export async function createTabs(
     }
     return describeTools(toolSettings);
   });
+  // The editor loads an artifact's text when it opens, and saves as you type.
+  ipcMain.handle('artifact:read', (event, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const found = isId(id)
+      ? artifactsModel.findArtifact(artifacts, id)
+      : undefined;
+    return found
+      ? {
+          id: found.id,
+          title: found.title,
+          kind: found.kind,
+          content: found.content,
+          revision: found.revision,
+        }
+      : null;
+  });
+  ipcMain.handle(
+    'artifact:write',
+    (event, id: unknown, content: unknown, revision: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!isId(id) || typeof content !== 'string' || !isNumber(revision)) {
+        return { ok: false, reason: 'failed' };
+      }
+      const current = artifactsModel.findArtifact(artifacts, id);
+      if (!current) return { ok: false, reason: 'failed' };
+      // The text changed since the editor loaded it (the assistant edited it):
+      // saving now would overwrite that, so refuse and let the editor ask.
+      if (current.revision !== revision) {
+        return { ok: false, reason: 'conflict' };
+      }
+      const result = artifactsModel.updateArtifact(
+        artifacts,
+        id,
+        { content },
+        Date.now(),
+      );
+      if (!result.ok) return { ok: false, reason: 'failed' };
+      commitArtifacts(result.state);
+      return { ok: true, revision: result.artifact.revision };
+    },
+  );
+  ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!isId(id)) return null;
+    if (spaceId !== null && !(isId(spaceId) && model.findSpace(state, spaceId)))
+      return null;
+    const original = artifactsModel.findArtifact(artifacts, id);
+    if (!original) return null;
+    const result = artifactsModel.createArtifact(
+      artifacts,
+      {
+        kind: original.kind,
+        title: `${original.title} (copy)`,
+        content: original.content,
+        spaceId: spaceId as number | null,
+      },
+      Date.now(),
+    );
+    if (!result.ok) return null;
+    commitArtifacts(result.state);
+    return result.artifact.id;
+  });
+  ipcMain.handle(
+    'artifact:create',
+    (event, kind: unknown, title: unknown, spaceId: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (
+        spaceId !== null &&
+        !(isId(spaceId) && model.findSpace(state, spaceId))
+      )
+        return null;
+      const result = artifactsModel.createArtifact(
+        artifacts,
+        {
+          kind: typeof kind === 'string' ? kind : '',
+          title: typeof title === 'string' ? title : '',
+          spaceId: spaceId as number | null,
+        },
+        Date.now(),
+      );
+      if (!result.ok) return null;
+      commitArtifacts(result.state);
+      return result.artifact.id;
+    },
+  );
   ipcMain.handle('tools:reset', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     toolSettings = defaultToolSettings();
@@ -1400,6 +1707,7 @@ export async function createTabs(
     saver.flushSync();
     chatsSaver.flushSync();
     toolsSaver.flushSync();
+    artifactsSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();
@@ -1409,6 +1717,10 @@ export async function createTabs(
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
+    ipcMain.removeHandler('artifact:create');
+    ipcMain.removeHandler('artifact:copy');
+    ipcMain.removeHandler('artifact:read');
+    ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);

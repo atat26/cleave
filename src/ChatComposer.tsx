@@ -1,9 +1,17 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
-import { AddPageButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
+import type { LinkKind } from './chats';
+import { AddMenuButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
-import type { ChatInfo, ChatRef, LlmInfo, SpaceInfo, TabInfo } from './types';
+import type {
+  ArtifactInfo,
+  ChatInfo,
+  ChatRef,
+  LlmInfo,
+  SpaceInfo,
+  TabInfo,
+} from './types';
 
 const chipStyle: CSSProperties = {
   border: '1px solid #d0d0d0',
@@ -64,7 +72,7 @@ function makePill(item: PickerItem): HTMLSpanElement {
 
 interface Typed {
   text: string;
-  mentions: { kind: 'space' | 'tab'; id: number; tag: string }[];
+  mentions: { kind: LinkKind; id: number; tag: string }[];
 }
 
 // What is in the box: the text (a pill counts as its "@name") and the pills.
@@ -76,7 +84,11 @@ function readBox(root: HTMLElement): Typed {
         typed.text += (node as Text).data.replace(/ /g, ' ');
       } else if (node instanceof HTMLElement) {
         const { kind, id, tag } = node.dataset;
-        if (tag && (kind === 'tab' || kind === 'space') && id) {
+        if (
+          tag &&
+          (kind === 'tab' || kind === 'space' || kind === 'artifact') &&
+          id
+        ) {
           typed.text += tag;
           typed.mentions.push({ kind, id: Number(id), tag });
         } else if (node.tagName === 'BR') {
@@ -97,7 +109,7 @@ function readBox(root: HTMLElement): Typed {
 // The box you type in, with the model chip and the Send / Stop button.
 //
 //   Enter sends, Shift+Enter adds a new line, Esc stops a reply being written.
-//   Type "@" (or press "+ Add page") to attach a Space or tab to the chat.
+//   Type "@" (or press "+" then "Add page") to attach a Space or tab to the chat.
 //
 // In the one-row (compact) chat bar, `before` and `after` hold the chat switcher
 // and the expand / close buttons, so everything fits on one line.
@@ -107,6 +119,7 @@ export function ChatComposer({
   refs,
   tabs,
   spaces,
+  artifacts,
   activeTabId,
   compact,
   before,
@@ -120,6 +133,7 @@ export function ChatComposer({
   refs: ChatRef[];
   tabs: TabInfo[];
   spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
   // The tab you are looking at (offered first in the list).
   activeTabId: number | null;
   // The one-row look (a single line, no growing).
@@ -144,6 +158,8 @@ export function ChatComposer({
     query: string;
     node: Text | null;
     start: number;
+    // From the "+" menu: list only pages (and Spaces), or only artifacts.
+    only?: 'page' | 'artifact';
   } | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
   // Where the text box is on screen, and how much room there is above it inside
@@ -166,8 +182,10 @@ export function ChatComposer({
         refs,
         tabs,
         spaces,
+        artifacts,
         activeTabId,
         picker.node ? 8 : 30,
+        picker.only,
       )
     : [];
   const index = Math.min(pickerIndex, Math.max(0, items.length - 1));
@@ -235,11 +253,11 @@ export function ChatComposer({
     if (placeAnchor() < 140 && compact) onNeedRoom();
   };
 
-  const openFromButton = () => {
+  const openFromButton = (only: 'page' | 'artifact') => {
     box.current?.focus();
     placeAnchor();
     setPickerIndex(0);
-    setPicker({ query: '', node: null, start: 0 });
+    setPicker({ query: '', node: null, start: 0, only });
   };
 
   // Choose something from the list: attach it to the chat. From "@", the typed
@@ -266,7 +284,7 @@ export function ChatComposer({
     setPicker(null);
     if (refs.length >= MAX_LINKS) {
       setNotice(
-        `You can link up to ${MAX_LINKS} Spaces and tabs to a chat. Remove one first.`,
+        `You can link up to ${MAX_LINKS} Spaces, tabs and artifacts to a chat. Remove one first.`,
       );
     } else {
       setNotice('');
@@ -397,8 +415,17 @@ export function ChatComposer({
       )}
       {!compact && (
         <>
-          <LinkChips chatId={chat.id} refs={refs} tabs={tabs} spaces={spaces} />
-          <AddPageButton onClick={openFromButton} />
+          <LinkChips
+            chatId={chat.id}
+            refs={refs}
+            tabs={tabs}
+            spaces={spaces}
+            artifacts={artifacts}
+          />
+          <AddMenuButton
+            onAddPage={() => openFromButton('page')}
+            onAddArtifact={() => openFromButton('artifact')}
+          />
         </>
       )}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>

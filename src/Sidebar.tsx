@@ -10,7 +10,7 @@ import {
   rowStyle,
   stripButton,
 } from './sidebarStyles';
-import type { SpaceInfo, TabInfo, UiState } from './types';
+import type { ArtifactTabInfo, SpaceInfo, TabInfo, UiState } from './types';
 
 // What to write on a tab: its title, else its site name, else "New Tab".
 export function labelFor(tab: TabInfo): string {
@@ -86,10 +86,46 @@ function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
       <button
         type="button"
         aria-label={`Close ${labelFor(tab)}`}
-        title="Close tab (Ctrl+W)"
+        title={
+          tab.spaceId === null
+            ? 'Close tab (Ctrl+W)'
+            : 'Close tab (Ctrl+W). The page stays in its Space.'
+        }
         onClick={(event) => {
           event.stopPropagation(); // Don't also select this tab.
           window.browserApi.closeTab(tab.id);
+        }}
+        style={iconButtonStyle}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// An open artifact in the sidebar: a document icon, its name, and a close button.
+function ArtifactRow({
+  tab,
+  active,
+}: {
+  tab: ArtifactTabInfo;
+  active: boolean;
+}) {
+  return (
+    <div
+      onClick={() => window.browserApi.artifactSelect(tab.id)}
+      title={tab.title}
+      style={rowStyle(active)}
+    >
+      <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>📄</span>
+      <span style={ellipsis}>{tab.title}</span>
+      <button
+        type="button"
+        aria-label={`Close ${tab.title}`}
+        title="Close tab (Ctrl+W)"
+        onClick={(event) => {
+          event.stopPropagation(); // Don't also select this tab.
+          window.browserApi.artifactClose(tab.id);
         }}
         style={iconButtonStyle}
       >
@@ -103,18 +139,22 @@ function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
 function SpaceGroup({
   space,
   tabs,
+  artifacts,
   active,
   renameRequest,
   onRenameHandled,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
+  artifacts: ArtifactTabInfo[];
   active: UiState['active'];
   // Set when "Rename Space" was chosen from this Space's right-click menu.
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // The mouse is over the title row (shows the rename pencil).
+  const [hover, setHover] = useState(false);
 
   useEffect(() => {
     if (renameRequest === space.id) {
@@ -141,6 +181,8 @@ function SpaceGroup({
     <div style={{ marginTop: 8 }}>
       <div
         onContextMenu={openMenu}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -191,6 +233,24 @@ function SpaceGroup({
             {space.name}
           </span>
         )}
+        {!editing && (
+          <button
+            type="button"
+            aria-label={`Rename ${space.name}`}
+            title="Rename"
+            onClick={() => setEditing(true)}
+            onFocus={() => setHover(true)}
+            onBlur={() => setHover(false)}
+            style={{
+              ...iconButtonStyle,
+              width: 18,
+              fontSize: 11,
+              opacity: hover ? 1 : 0,
+            }}
+          >
+            ✎
+          </button>
+        )}
         <span style={{ flex: 1, fontSize: 11, color: '#5f6368' }}>
           {space.collapsed ? ` ${tabs.length}` : ''}
         </span>
@@ -226,6 +286,13 @@ function SpaceGroup({
               key={tab.id}
               tab={tab}
               active={active?.kind === 'tab' && active.id === tab.id}
+            />
+          ))}
+          {artifacts.map((a) => (
+            <ArtifactRow
+              key={`a${a.id}`}
+              tab={a}
+              active={active?.kind === 'artifact' && active.id === a.id}
             />
           ))}
         </div>
@@ -294,11 +361,25 @@ function FullSidebar({
             active={state.active?.kind === 'tab' && state.active.id === tab.id}
           />
         ))}
+        {state.artifactTabs
+          .filter((a) => a.spaceId === null)
+          .map((a) => (
+            <ArtifactRow
+              key={`a${a.id}`}
+              tab={a}
+              active={
+                state.active?.kind === 'artifact' && state.active.id === a.id
+              }
+            />
+          ))}
         {state.spaces.map((space) => (
           <SpaceGroup
             key={space.id}
             space={space}
-            tabs={state.tabs.filter((tab) => tab.spaceId === space.id)}
+            tabs={state.tabs.filter(
+              (tab) => tab.spaceId === space.id && !tab.closed,
+            )}
+            artifacts={state.artifactTabs.filter((a) => a.spaceId === space.id)}
             active={state.active}
             renameRequest={renameRequest}
             onRenameHandled={onRenameHandled}
@@ -335,13 +416,33 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
   );
 }
 
+function StripArtifact({
+  tab,
+  active,
+}: {
+  tab: ArtifactTabInfo;
+  active: boolean;
+}) {
+  return (
+    <div
+      onClick={() => window.browserApi.artifactSelect(tab.id)}
+      title={tab.title}
+      style={stripButton(active)}
+    >
+      📄
+    </div>
+  );
+}
+
 function StripSpace({
   space,
   tabs,
+  artifacts,
   active,
 }: {
   space: SpaceInfo;
   tabs: TabInfo[];
+  artifacts: ArtifactTabInfo[];
   active: UiState['active'];
 }) {
   const color = SPACE_COLOR_HEX[space.color];
@@ -374,6 +475,14 @@ function StripSpace({
             key={tab.id}
             tab={tab}
             active={active?.kind === 'tab' && active.id === tab.id}
+          />
+        ))}
+      {!space.collapsed &&
+        artifacts.map((a) => (
+          <StripArtifact
+            key={`a${a.id}`}
+            tab={a}
+            active={active?.kind === 'artifact' && active.id === a.id}
           />
         ))}
       {space.collapsed && tabs.length > 0 && (
@@ -426,11 +535,25 @@ function Strip({ state }: { state: UiState }) {
             active={state.active?.kind === 'tab' && state.active.id === tab.id}
           />
         ))}
+        {state.artifactTabs
+          .filter((a) => a.spaceId === null)
+          .map((a) => (
+            <StripArtifact
+              key={`a${a.id}`}
+              tab={a}
+              active={
+                state.active?.kind === 'artifact' && state.active.id === a.id
+              }
+            />
+          ))}
         {state.spaces.map((space) => (
           <StripSpace
             key={space.id}
             space={space}
-            tabs={state.tabs.filter((tab) => tab.spaceId === space.id)}
+            tabs={state.tabs.filter(
+              (tab) => tab.spaceId === space.id && !tab.closed,
+            )}
+            artifacts={state.artifactTabs.filter((a) => a.spaceId === space.id)}
             active={state.active}
           />
         ))}

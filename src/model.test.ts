@@ -19,11 +19,17 @@ import {
   setSidebarWidth,
   addSpace,
   addTab,
+  closeArtifactTab,
+  closeTab,
   defaultState,
   deleteSpace,
+  findClosedTabByAddress,
   moveTab,
   navOrder,
+  openArtifactTab,
   parseState,
+  reconcileArtifactTabs,
+  reopenTab,
   removeTab,
   renameSpace,
   setActive,
@@ -73,6 +79,7 @@ test('parseState drops non-web addresses from a tampered file', () => {
         title: 'x',
         favicon: null,
         spaceId: null,
+        closed: false,
       },
       {
         id: 2,
@@ -80,6 +87,7 @@ test('parseState drops non-web addresses from a tampered file', () => {
         title: 'x',
         favicon: null,
         spaceId: null,
+        closed: false,
       },
       {
         id: 3,
@@ -311,24 +319,24 @@ test('chat and right-panel settings have defaults, clamps and validation', () =>
 });
 
 test('rail buttons follow the view: chat ones with the chat, web ones with the page', () => {
-  // Skills belongs to the chat, Extensions to the web page, Settings to both.
+  // Skills belongs to the chat, Extensions to the web page, Artifacts and Settings to both.
   assert.deepEqual(
-    (['skills', 'tools', 'extensions', 'settings'] as const).map((p) =>
-      isPanelRelevant(p, 'both'),
+    (['skills', 'tools', 'artifacts', 'extensions', 'settings'] as const).map(
+      (p) => isPanelRelevant(p, 'both'),
     ),
-    [true, true, true, true],
+    [true, true, true, true, true],
   );
   assert.deepEqual(
-    (['skills', 'tools', 'extensions', 'settings'] as const).map((p) =>
-      isPanelRelevant(p, 'chat'),
+    (['skills', 'tools', 'artifacts', 'extensions', 'settings'] as const).map(
+      (p) => isPanelRelevant(p, 'chat'),
     ),
-    [true, true, false, true],
+    [true, true, true, false, true],
   );
   assert.deepEqual(
-    (['skills', 'tools', 'extensions', 'settings'] as const).map((p) =>
-      isPanelRelevant(p, 'page'),
+    (['skills', 'tools', 'artifacts', 'extensions', 'settings'] as const).map(
+      (p) => isPanelRelevant(p, 'page'),
     ),
-    [false, false, true, true],
+    [false, false, true, true, true],
   );
 });
 
@@ -412,4 +420,214 @@ test('setActive ignores things that do not exist', () => {
   const { state } = build();
   assert.equal(setActive(state, { kind: 'tab', id: 9999 }), state);
   assert.equal(setActive(state, { kind: 'lead', spaceId: 9999 }), state);
+});
+
+// ---- Artifact tabs ----------------------------------------------------------
+
+test('an artifact opens as a tab under its Space, and opening twice does not duplicate it', () => {
+  const { state, spaceId } = build();
+  const opened = openArtifactTab(state, 7, spaceId);
+  assert.deepEqual(opened.artifactTabs, [{ artifactId: 7, spaceId }]);
+  assert.deepEqual(opened.active, { kind: 'artifact', id: 7 });
+  const again = openArtifactTab(
+    setActive(opened, { kind: 'lead', spaceId }),
+    7,
+    spaceId,
+  );
+  assert.equal(again.artifactTabs.length, 1);
+  assert.deepEqual(again.active, { kind: 'artifact', id: 7 });
+  // A Space that does not exist means no Space.
+  assert.equal(openArtifactTab(state, 8, 9999).artifactTabs[0].spaceId, null);
+});
+
+test('artifact tabs sit after the web tabs of their group in the sidebar order', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(openArtifactTab(state, 1, null), 2, spaceId);
+  const order = navOrder(s);
+  const free = order.findIndex((r) => r.kind === 'artifact' && r.id === 1);
+  const lead = order.findIndex(
+    (r) => r.kind === 'lead' && r.spaceId === spaceId,
+  );
+  const inSpace = order.findIndex((r) => r.kind === 'artifact' && r.id === 2);
+  assert.ok(free < lead && lead < inSpace);
+});
+
+test('closing an artifact tab selects a neighbour and keeps other tabs', () => {
+  const { state } = build();
+  const s = openArtifactTab(openArtifactTab(state, 1, null), 2, null);
+  const closed = closeArtifactTab(s, 2);
+  assert.deepEqual(
+    closed.artifactTabs.map((t) => t.artifactId),
+    [1],
+  );
+  assert.notDeepEqual(closed.active, { kind: 'artifact', id: 2 });
+  assert.equal(closed.active !== null, true);
+  assert.equal(closeArtifactTab(closed, 99), closed);
+});
+
+test('artifact tabs follow their artifacts: gone ones close, moved ones change group', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(openArtifactTab(state, 1, null), 2, null);
+  const moved = reconcileArtifactTabs(s, [
+    { id: 1, spaceId },
+    { id: 2, spaceId: null },
+  ]);
+  assert.deepEqual(moved.artifactTabs, [
+    { artifactId: 1, spaceId },
+    { artifactId: 2, spaceId: null },
+  ]);
+  const gone = reconcileArtifactTabs(s, [{ id: 1, spaceId: null }]);
+  assert.deepEqual(
+    gone.artifactTabs.map((t) => t.artifactId),
+    [1],
+  );
+  assert.notDeepEqual(gone.active, { kind: 'artifact', id: 2 });
+  // Nothing changed: the very same state comes back.
+  assert.equal(
+    reconcileArtifactTabs(s, [
+      { id: 1, spaceId: null },
+      { id: 2, spaceId: null },
+    ]),
+    s,
+  );
+});
+
+test('deleting or ungrouping a Space keeps its artifact tabs, now outside it', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(state, 5, spaceId);
+  assert.equal(deleteSpace(s, spaceId).state.artifactTabs[0].spaceId, null);
+  assert.equal(ungroupSpace(s, spaceId).artifactTabs[0].spaceId, null);
+  assert.deepEqual(deleteSpace(s, spaceId).state.active, {
+    kind: 'artifact',
+    id: 5,
+  });
+});
+
+test('artifact tabs are saved and loaded, and bad ones are repaired', () => {
+  const { state, spaceId } = build();
+  const s = openArtifactTab(state, 5, spaceId);
+  assert.deepEqual(
+    parseState(JSON.parse(JSON.stringify(s))).artifactTabs,
+    s.artifactTabs,
+  );
+  assert.deepEqual(parseState(JSON.parse(JSON.stringify(s))).active, {
+    kind: 'artifact',
+    id: 5,
+  });
+  const bad = parseState({
+    ...JSON.parse(JSON.stringify(s)),
+    artifactTabs: [
+      { artifactId: 5, spaceId: 424242 },
+      { artifactId: 5 },
+      { artifactId: 'x' },
+      3,
+    ],
+    active: { kind: 'artifact', id: 77 },
+  });
+  assert.deepEqual(bad.artifactTabs, [{ artifactId: 5, spaceId: null }]);
+  assert.notDeepEqual(bad.active, { kind: 'artifact', id: 77 });
+  assert.deepEqual(parseState({}).artifactTabs, []);
+});
+
+// ---- Closed-but-kept pages ----------------------------------------------------
+
+test('closing a tab in a Space keeps it as a closed link; outside a Space it is removed', () => {
+  const { state, aId, freeId, spaceId } = build();
+  const closed = closeTab(setActive(state, { kind: 'tab', id: aId }), aId);
+  assert.equal(closed.tabs.find((t) => t.id === aId)?.closed, true);
+  assert.equal(closed.tabs.find((t) => t.id === aId)?.spaceId, spaceId);
+  // It is no longer something you can be on, and the selection moves.
+  assert.ok(!navOrder(closed).some((r) => r.kind === 'tab' && r.id === aId));
+  assert.notDeepEqual(closed.active, { kind: 'tab', id: aId });
+  assert.equal(setActive(closed, { kind: 'tab', id: aId }), closed);
+  // Closing it again changes nothing.
+  assert.equal(closeTab(closed, aId), closed);
+  // A page that is not in a Space is just removed.
+  assert.equal(
+    closeTab(state, freeId).tabs.some((t) => t.id === freeId),
+    false,
+  );
+});
+
+test('a closed link can be reopened, and can still be removed for good', () => {
+  const { state, aId } = build();
+  const closed = closeTab(state, aId);
+  const reopened = reopenTab(closed, aId);
+  assert.equal(reopened.tabs.find((t) => t.id === aId)?.closed, false);
+  assert.deepEqual(reopened.active, { kind: 'tab', id: aId });
+  const gone = removeTab(closed, aId);
+  assert.equal(
+    gone.tabs.some((t) => t.id === aId),
+    false,
+  );
+});
+
+test('a closed link stays in its Space through a save, is dropped from the list of tabs to visit, and cannot be active', () => {
+  const { state, aId } = build();
+  const closed = closeTab(state, aId);
+  const loaded = parseState(JSON.parse(JSON.stringify(closed)));
+  assert.equal(loaded.tabs.find((t) => t.id === aId)?.closed, true);
+  // A tampered file cannot make a closed tab the selected one.
+  const tampered = parseState({
+    ...JSON.parse(JSON.stringify(closed)),
+    active: { kind: 'tab', id: aId },
+  });
+  assert.notDeepEqual(tampered.active, { kind: 'tab', id: aId });
+  // A tab outside any Space cannot be closed-but-kept.
+  const odd = parseState({
+    ...JSON.parse(JSON.stringify(state)),
+    tabs: [
+      {
+        id: 50,
+        url: 'https://x.example',
+        title: '',
+        favicon: null,
+        spaceId: null,
+        closed: true,
+      },
+    ],
+  });
+  assert.equal(odd.tabs[0].closed, false);
+});
+
+test('moving a closed link out of every Space opens it; ungrouping a Space opens its closed links', () => {
+  const { state, aId, spaceId } = build();
+  const closed = closeTab(state, aId);
+  assert.equal(
+    moveTab(closed, aId, null).tabs.find((t) => t.id === aId)?.closed,
+    false,
+  );
+  const ungrouped = ungroupSpace(closed, spaceId);
+  assert.equal(ungrouped.tabs.find((t) => t.id === aId)?.closed, false);
+  assert.ok(navOrder(ungrouped).some((r) => r.kind === 'tab' && r.id === aId));
+  // Deleting the Space deletes its closed links too.
+  assert.equal(
+    deleteSpace(closed, spaceId).state.tabs.some((t) => t.id === aId),
+    false,
+  );
+});
+
+test('a closed link is found by the address the assistant was told (no query), and only closed ones', () => {
+  const { state, aId, spaceId } = build();
+  const withQuery = updateTab(state, aId, {
+    url: 'https://a.example/page?token=SECRET',
+  });
+  const closed = closeTab(withQuery, aId);
+  const found = findClosedTabByAddress(closed, 'https://a.example/page');
+  assert.equal(found?.id, aId);
+  assert.equal(found?.spaceId, spaceId);
+  assert.equal(
+    findClosedTabByAddress(closed, 'https://A.example/page/')?.id,
+    aId,
+  );
+  // An open page is not a closed link, and other addresses do not match.
+  assert.equal(
+    findClosedTabByAddress(withQuery, 'https://a.example/page'),
+    undefined,
+  );
+  assert.equal(
+    findClosedTabByAddress(closed, 'https://a.example/other'),
+    undefined,
+  );
+  assert.equal(findClosedTabByAddress(closed, 'not an address'), undefined);
 });

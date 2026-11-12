@@ -29,11 +29,12 @@ export const LEVEL_WORDS: Record<ApprovalLevel, string> = {
   never: 'Never allow',
 };
 
-export type ToolGroup = 'look' | 'act' | 'chat';
+export type ToolGroup = 'look' | 'act' | 'artifacts' | 'chat';
 
 export const GROUP_TITLES: Record<ToolGroup, string> = {
   look: 'Looking and reading',
   act: 'Acting in tabs',
+  artifacts: 'Artifacts',
   chat: 'Talking to you',
 };
 
@@ -165,6 +166,44 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     warning:
       'The assistant will be able to search the web on its own. What it searches for is sent to your search provider, and a malicious web page could try to make it put something private into a search.',
     setup: 'web-search',
+  },
+  {
+    name: 'read_artifact',
+    group: 'artifacts',
+    title: 'Read an artifact',
+    summary: 'Read the text of an artifact linked to the chat.',
+    defaultLevel: 'if-safe',
+    changesThings: false,
+  },
+  {
+    name: 'create_artifact',
+    group: 'artifacts',
+    title: 'Make an artifact',
+    summary: 'Make a new artifact, outside any Space.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to make documents on its own. It still asks first if it has read a web page in the same reply.',
+  },
+  {
+    name: 'create_artifact_in_space',
+    group: 'artifacts',
+    title: 'Make an artifact in a Space',
+    summary: 'Make a new artifact inside a Space linked to the chat.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to add documents to a Space on its own. It still asks first if it has read a web page in the same reply.',
+  },
+  {
+    name: 'edit_artifact',
+    group: 'artifacts',
+    title: 'Edit an artifact',
+    summary: 'Change the text of an artifact linked to the chat.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to rewrite your artifacts on its own. It still asks first if it has read a web page in the same reply.',
   },
   {
     name: 'offer_choices',
