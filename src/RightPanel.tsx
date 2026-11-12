@@ -28,10 +28,14 @@ export function RightPanel({
   panel,
   artifacts,
   spaces,
+  artifactRenameRequest,
+  onArtifactRenameHandled,
 }: {
   panel: RightPanelName;
   artifacts: ArtifactInfo[];
   spaces: SpaceInfo[];
+  artifactRenameRequest: number | null;
+  onArtifactRenameHandled: () => void;
 }) {
   const cardRef = useRef<HTMLElement>(null);
 
@@ -93,7 +97,12 @@ export function RightPanel({
           ) : panel === 'tools' ? (
             <ToolsPanel />
           ) : panel === 'artifacts' ? (
-            <ArtifactsPanel artifacts={artifacts} spaces={spaces} />
+            <ArtifactsPanel
+              artifacts={artifacts}
+              spaces={spaces}
+              renameRequest={artifactRenameRequest}
+              onRenameHandled={onArtifactRenameHandled}
+            />
           ) : (
             <p
               style={{

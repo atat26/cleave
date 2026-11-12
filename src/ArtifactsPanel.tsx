@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ARTIFACT_KINDS } from './artifacts';
 import type { ArtifactKind } from './artifacts';
@@ -139,9 +139,14 @@ function EditableTitle({
 export function ArtifactsPanel({
   artifacts,
   spaces,
+  renameRequest,
+  onRenameHandled,
 }: {
   artifacts: ArtifactInfo[];
   spaces: SpaceInfo[];
+  // Set when "Rename" was chosen from an artifact's menu.
+  renameRequest: number | null;
+  onRenameHandled: () => void;
 }) {
   // The "+" opens a small chooser for the kind and where it goes.
   const [choosing, setChoosing] = useState(false);
@@ -150,6 +155,13 @@ export function ArtifactsPanel({
   const [where, setWhere] = useState('');
   const [renaming, setRenaming] = useState<number | null>(null);
   const [renamingSpace, setRenamingSpace] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (renameRequest !== null) {
+      setRenaming(renameRequest);
+      onRenameHandled();
+    }
+  }, [renameRequest, onRenameHandled]);
 
   // Make it, then let you name it right away.
   const create = async () => {
@@ -182,6 +194,10 @@ export function ArtifactsPanel({
   const row = (a: ArtifactInfo) => (
     <li
       key={a.id}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showArtifactMenu(a.id, event.clientX, event.clientY);
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',

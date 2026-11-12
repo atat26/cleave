@@ -4,6 +4,7 @@ import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 import type { ArtifactKind } from './artifacts';
+import type { MenuItem } from './menuTypes';
 
 export type { ChatMessage, ChatRef, LinkKind, MessagePart, ModelInfo };
 
@@ -260,6 +261,20 @@ export interface BrowserApi {
     content: string,
     revision: number,
   ) => Promise<ArtifactWriteResult>;
+  // The popup layer (see PopupApp.tsx): the page asks for it to show a menu at a
+  // place in the window, and reports what was chosen. Only that page uses these.
+  onPopupShow: (
+    callback: (menu: {
+      items: MenuItem[];
+      x: number;
+      y: number;
+      alignCenter?: number;
+    }) => void,
+  ) => () => void;
+  onPopupHide: (callback: () => void) => () => void;
+  popupReady: () => void;
+  popupChoose: (id: string) => void;
+  popupClose: () => void;
   // Called when the assistant changed an artifact's text (so an open editor can
   // show it). Returns an unsubscribe function.
   onArtifactChanged: (callback: (id: number) => void) => () => void;
@@ -322,7 +337,7 @@ export interface BrowserApi {
   // Bring back a linked tab that was closed.
   chatReopenLink: (chatId: number, tabId: number) => void;
   // Shows a menu of your pinned models to switch this chat to.
-  showModelMenu: (chatId: number) => void;
+  showModelMenu: (chatId: number, x: number, y: number) => void;
   // Open the Settings panel.
   openSettings: () => void;
   // Open the Artifacts panel (it stays open if it already is).
@@ -341,7 +356,14 @@ export interface BrowserApi {
   // Shows a native menu. Without an id it is the chat title's menu (switch
   // chats, new chat, rename or delete the current one); with an id it is the
   // right-click menu for that one chat (rename, delete).
-  showChatMenu: (id?: number) => void;
+  // alignCenter: the vertical middle of the control that opened the menu. The
+  // menu lines its current choice up with it, and runs down from there.
+  showChatMenu: (
+    id: number | undefined,
+    x: number,
+    y: number,
+    alignCenter?: number,
+  ) => void;
   // Called when "Rename chat" is chosen from a menu: show that chat's rename box.
   onChatRenameRequest: (callback: (chatId: number) => void) => () => void;
   // Open one of the right panels, or close it if it is already the open one.
@@ -355,8 +377,52 @@ export interface BrowserApi {
   // Returns an unsubscribe function.
   onLayout: (callback: (layout: FrameLayout) => void) => () => void;
   // Right-click menus. The app shows a native menu and performs the choice.
-  showTabMenu: (id: number) => void;
-  showSpaceMenu: (id: number) => void;
+  // x and y are where you clicked, in the window (the pointer's client position).
+  showTabMenu: (id: number, x: number, y: number) => void;
+  showSpaceMenu: (id: number, x: number, y: number) => void;
+  // The menu of an artifact (a row, a card, or a row in the Artifacts panel).
+  showArtifactMenu: (id: number, x: number, y: number) => void;
+  // The menu behind a Space overview's Add button.
+  showSpaceAddMenu: (spaceId: number, x: number, y: number) => void;
+  // The menu of a link in a chat. "removable" is true for a chip above the message
+  // box (it can be taken off the chat), false for an @name in a sent message.
+  showLinkMenu: (
+    chatId: number,
+    kind: LinkKind,
+    id: number,
+    removable: boolean,
+    x: number,
+    y: number,
+  ) => void;
+  // Cut, copy, paste and select all for the address bar or the message box.
+  showEditMenu: (
+    kind: 'address' | 'composer' | 'editor',
+    x: number,
+    y: number,
+    hasSelection: boolean,
+    // The selected text, for the artifact editor's "Add selection to chat".
+    selected?: string,
+  ) => void;
+  // The menu of a chat message (selection: the text selected in it, if any).
+  showMessageMenu: (
+    chatId: number,
+    messageId: number,
+    x: number,
+    y: number,
+    selection: string,
+  ) => void;
+  // Retry or Branch was chosen from a message's menu: the chat does it.
+  onMessageAction: (
+    callback: (action: {
+      chatId: number;
+      messageId: number;
+      action: 'retry' | 'branch';
+    }) => void,
+  ) => () => void;
+  // Text to put in the message box (for example a selection from a web page).
+  onComposerInsert: (callback: (text: string) => void) => () => void;
+  // Rename was chosen from an artifact's menu: show its name as a text box.
+  onArtifactRenameRequest: (callback: (id: number) => void) => () => void;
   // Called when "Rename Space" is chosen from a menu: show the rename box.
   onRenameRequest: (callback: (spaceId: number) => void) => () => void;
   // Called whenever anything the UI shows changes. Returns an unsubscribe function.

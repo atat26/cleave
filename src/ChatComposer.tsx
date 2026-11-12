@@ -2,6 +2,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
 import type { LinkKind } from './chats';
+import { onInsert } from './composerBus';
 import { AddMenuButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
 import type {
@@ -253,6 +254,27 @@ export function ChatComposer({
     if (placeAnchor() < 140 && compact) onNeedRoom();
   };
 
+  // Text from elsewhere (a selection from a web page) goes at the end of the box.
+  useEffect(
+    () =>
+      onInsert((text) => {
+        const root = box.current;
+        if (!root) return;
+        root.focus();
+        root.append(
+          document.createTextNode(root.textContent === '' ? text : ` ${text}`),
+        );
+        const caret = document.createRange();
+        caret.selectNodeContents(root);
+        caret.collapse(false);
+        const selected = window.getSelection();
+        selected?.removeAllRanges();
+        selected?.addRange(caret);
+        setText(readBox(root).text);
+      }),
+    [],
+  );
+
   const openFromButton = (only: 'page' | 'artifact') => {
     box.current?.focus();
     placeAnchor();
@@ -445,11 +467,15 @@ export function ChatComposer({
           title={
             model ? `Using ${model}. Click to switch models.` : 'Choose a model'
           }
-          onClick={() =>
-            model
-              ? window.browserApi.showModelMenu(chat.id)
-              : window.browserApi.openSettings()
-          }
+          onClick={(event) => {
+            if (!model) {
+              window.browserApi.openSettings();
+              return;
+            }
+            // Opens just above the chip (it moves itself if there is no room).
+            const box = event.currentTarget.getBoundingClientRect();
+            window.browserApi.showModelMenu(chat.id, box.left, box.top - 4);
+          }}
           style={chipStyle}
         >
           {model ? shortModel(model) : 'Choose model'}
@@ -488,6 +514,16 @@ export function ChatComposer({
               refreshPicker();
             }}
             onClick={refreshPicker}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              const selected = window.getSelection();
+              window.browserApi.showEditMenu(
+                'composer',
+                event.clientX,
+                event.clientY,
+                selected !== null && !selected.isCollapsed,
+              );
+            }}
             onKeyUp={(e) => {
               if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
                 refreshPicker();

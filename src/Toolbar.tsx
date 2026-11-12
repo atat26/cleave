@@ -233,6 +233,16 @@ export function Toolbar({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => e.target.select()}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          const box = event.currentTarget;
+          window.browserApi.showEditMenu(
+            'address',
+            event.clientX,
+            event.clientY,
+            box.selectionStart !== box.selectionEnd,
+          );
+        }}
         disabled={disabled}
         placeholder={disabled ? 'Space overview' : 'Search or enter address'}
         spellCheck={false}

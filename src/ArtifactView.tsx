@@ -250,6 +250,17 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           maxLength={MAX_ARTIFACT_CHARS}
           spellCheck={!mono}
           onChange={(e) => change(e.target.value)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            const box = event.currentTarget;
+            window.browserApi.showEditMenu(
+              'editor',
+              event.clientX,
+              event.clientY,
+              box.selectionStart !== box.selectionEnd,
+              box.value.slice(box.selectionStart, box.selectionEnd),
+            );
+          }}
           onBlur={() => void save()}
           style={{
             flex: 1,

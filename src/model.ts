@@ -380,7 +380,13 @@ function pickNeighbor(
 
 export function addTab(
   state: SavedState,
-  options: { url: string; spaceId?: number | null; activate?: boolean },
+  options: {
+    url: string;
+    spaceId?: number | null;
+    activate?: boolean;
+    // Put the new tab right after this one (in the list), instead of at the end.
+    after?: number;
+  },
 ): { state: SavedState; id: number } {
   const id = state.nextId;
   const spaceId =
@@ -397,11 +403,23 @@ export function addTab(
     spaceId,
     closed: false,
   };
+  const position =
+    options.after === undefined
+      ? -1
+      : state.tabs.findIndex((t) => t.id === options.after);
+  const tabs =
+    position < 0
+      ? [...state.tabs, tab]
+      : [
+          ...state.tabs.slice(0, position + 1),
+          tab,
+          ...state.tabs.slice(position + 1),
+        ];
   return {
     id,
     state: {
       ...state,
-      tabs: [...state.tabs, tab],
+      tabs,
       nextId: id + 1,
       active: options.activate === false ? state.active : { kind: 'tab', id },
     },

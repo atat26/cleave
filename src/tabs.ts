@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   screen,
@@ -30,7 +31,7 @@ import {
 import * as artifactsModel from './artifacts';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
-import type { ChatsState } from './chats';
+import type { ChatRef, ChatsState } from './chats';
 import type {
   ActionEnv,
   ActionResult,
@@ -52,8 +53,6 @@ import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
-import { chatMenu, chatRowMenu, spaceMenu, tabMenu } from './menus';
-import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
@@ -75,7 +74,32 @@ import {
 } from './toolSettings';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
-import { resolveInput } from './url';
+import { resolveInput, searchUrl } from './url';
+import {
+  addMenuItems,
+  artifactMenuItems,
+  chatRowMenuItems,
+  chatSwitchMenuItems,
+  editMenuItems,
+  linkMenuItems,
+  pageImageMenuItems,
+  pageLinkMenuItems,
+  pageMenuItems,
+  pageSelectionMenuItems,
+  parsePageChoice,
+  parseAddChoice,
+  parseArtifactChoice,
+  parseChatChoice,
+  parseEditChoice,
+  parseLinkChoice,
+  parseSpaceChoice,
+  parseTabChoice,
+  spaceMenuItems,
+  tabMenuItems,
+} from './menuData';
+import type { ChatMenuActions, MenuActions } from './menuData';
+import { isChoosable } from './menuTypes';
+import type { MenuItem } from './menuTypes';
 
 // What a new tab shows. Later this could become an AI chat / search page.
 export const NEW_TAB_URL = 'https://duckduckgo.com';
@@ -200,6 +224,41 @@ export async function createTabs(
   // Like the main window, the sidebar never opens windows or navigates away.
   sidebar.setWindowOpenHandler(() => ({ action: 'deny' }));
   sidebar.on('will-navigate', (event) => event.preventDefault());
+
+  // ---- The popup layer: a transparent page above everything, for menus -------
+  //
+  // Web pages are drawn by the system above the window's own page, so a menu
+  // drawn in a page could be hidden behind one. This view is added last (and
+  // again whenever another view is added), so it is always on top. It stays
+  // hidden until a menu opens; then it covers the whole window.
+
+  const popupView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  popupView.setBackgroundColor('#00000000');
+  popupView.setVisible(false);
+  win.contentView.addChildView(popupView);
+  const popup = popupView.webContents;
+  popup.setWindowOpenHandler(() => ({ action: 'deny' }));
+  popup.on('will-navigate', (event) => event.preventDefault());
+  // The popup page says when it is listening, so a menu is never sent too early.
+  let popupReady = false;
+  let waitingForPopup: (() => void) | null = null;
+  // The menu that is open now: what it holds, what a choice does, and which page
+  // had the keyboard (it gets it back).
+  // Which UI page sent the request being handled right now (so a menu it opens
+  // gives the keyboard back to it).
+  let requestSender: Electron.WebContents | null = null;
+  let openMenu: {
+    items: MenuItem[];
+    choose: (id: string) => void;
+    opener: Electron.WebContents;
+  } | null = null;
 
   // ---- Layout ----------------------------------------------------------------
   //
@@ -502,14 +561,38 @@ export async function createTabs(
     sendState();
   };
 
-  // Show a right-click menu without letting the sidebar close under it.
-  const popupMenu = (menu: Electron.Menu | null) => {
-    if (!menu) return;
+  // Show a menu in the popup layer, at a place in the window. `choose` is called
+  // with the id of the item picked. The sidebar does not close under it.
+  const showMenu = (
+    items: MenuItem[],
+    x: number,
+    y: number,
+    choose: (id: string) => void,
+    opener: Electron.WebContents,
+    alignCenter?: number,
+  ) => {
+    if (openMenu) closeMenu(false);
+    openMenu = { items, choose, opener };
     busy++;
-    menu.popup({
-      window: win,
-      callback: () => void (busy = Math.max(0, busy - 1)),
-    });
+    const send = () => popup.send('popup:show', { items, x, y, alignCenter });
+    const size = windowSize();
+    popupView.setBounds({ x: 0, y: 0, width: size.width, height: size.height });
+    popupView.setVisible(true);
+    win.contentView.addChildView(popupView); // On top of everything.
+    if (popupReady) send();
+    else waitingForPopup = send;
+    popup.focus();
+  };
+
+  const closeMenu = (giveBackKeyboard = true) => {
+    if (!openMenu) return;
+    const { opener } = openMenu;
+    openMenu = null;
+    busy = Math.max(0, busy - 1);
+    waitingForPopup = null;
+    if (!popup.isDestroyed()) popup.send('popup:hide');
+    popupView.setVisible(false);
+    if (giveBackKeyboard && !opener.isDestroyed()) opener.focus();
   };
 
   // ---- Web page views ----------------------------------------------------
@@ -536,8 +619,10 @@ export async function createTabs(
     });
     views.set(tab.id, view);
     win.contentView.addChildView(view);
-    // Adding an existing view again moves it to the top: keep the sidebar above.
+    // Adding an existing view again moves it to the top: keep the sidebar above,
+    // and the popup layer above that.
     win.contentView.addChildView(sidebarView);
+    win.contentView.addChildView(popupView);
     // The page is a rounded card inset in the frame.
     view.setBorderRadius(PAGE_RADIUS);
     view.setBounds(pageBounds());
@@ -552,6 +637,10 @@ export async function createTabs(
       return { action: 'deny' };
     });
     contents.on('before-input-event', handleShortcut);
+    // Right-click in the page: a menu for what is under the pointer.
+    contents.on('context-menu', (_event, params) =>
+      showPageMenu(tab.id, view, contents, params),
+    );
     contents.on('page-title-updated', (_event, title) =>
       updateTab(tab.id, { title }),
     );
@@ -1079,7 +1168,8 @@ export async function createTabs(
     },
     onMeta: sendState,
     openSettings,
-    popupMenu: (menu) => popupMenu(menu),
+    showMenu: (items, x, y, choose, opener, alignCenter) =>
+      showMenu(items, x, y, choose, opener, alignCenter),
   });
   llm
     .then((context) => {
@@ -1129,13 +1219,10 @@ export async function createTabs(
   };
 
   const menuActions: MenuActions = {
-    moveTab: (tabId, spaceId) => commit(model.moveTab(state, tabId, spaceId)),
     moveTabToNewSpace: (tabId) => {
       const created = model.addSpace(state);
       commit(model.moveTab(created.state, tabId, created.id));
     },
-    closeTab,
-    removeTab,
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
       if (!pinned()) setHover(true);
@@ -1152,6 +1239,484 @@ export async function createTabs(
       commitAndShow(model.ungroupSpace(state, spaceId));
     },
     deleteSpace: (spaceId) => void deleteSpace(spaceId),
+  };
+
+  // Link something to the chat you are looking at, and bring the chat back if it
+  // was closed (page only).
+  const linkToChat = (ref: ChatRef) => {
+    commitChats(chatsModel.addRef(chats, chats.activeId, ref));
+    if (state.settings.viewMode === 'page') {
+      commitAndShow(model.setViewMode(state, 'both'));
+    }
+  };
+
+  // Jump to a linked tab, Space or artifact (a closed page in a Space opens again).
+  const openLink = (kind: 'tab' | 'space' | 'artifact', id: number) => {
+    if (kind === 'tab' && model.findTab(state, id)?.closed) {
+      reopenTab(id);
+    } else if (kind === 'tab' && model.findTab(state, id)) {
+      select({ kind: 'tab', id });
+    } else if (kind === 'space' && model.findSpace(state, id)) {
+      select({ kind: 'lead', spaceId: id });
+    } else if (kind === 'artifact') {
+      openArtifact(id);
+    }
+  };
+
+  // Bring a page that was closed for good back from the address a link remembers
+  // (as a new, ungrouped tab) and point every chat's link to it at the new tab.
+  const reopenLink = (chatId: number, id: number) => {
+    // The link may have been removed from the chat since; an old message's token
+    // still remembers the address.
+    const conversation = chatsModel.findConversation(chats, chatId);
+    const ref =
+      conversation?.refs.find((r) => r.kind === 'tab' && r.id === id) ??
+      conversation?.messages
+        .flatMap((m) => m.mentions)
+        .find((x) => x.kind === 'tab' && x.id === id);
+    if (!ref || !ref.url || model.findTab(state, id)) return;
+    const created = model.addTab(state, { url: ref.url, spaceId: null });
+    commitAndShow(revealPage(created.state));
+    const reopened = { id: created.id, title: ref.title, url: ref.url };
+    // Every chat that used the page follows it to the new tab: links and the
+    // tokens in old messages. A link you had removed is not added back.
+    commitChats(chatsModel.retargetEverywhere(chats, 'tab', id, reopened));
+    chatService?.refreshMentions(); // Show the live tokens without a reload.
+  };
+
+  // Make a copy of an artifact in a Space (or none). Returns the copy's number.
+  const copyArtifact = (id: number, spaceId: number | null): number | null => {
+    if (spaceId !== null && !model.findSpace(state, spaceId)) return null;
+    const original = artifactsModel.findArtifact(artifacts, id);
+    if (!original) return null;
+    const result = artifactsModel.createArtifact(
+      artifacts,
+      {
+        kind: original.kind,
+        title: `${original.title} (copy)`,
+        content: original.content,
+        spaceId,
+      },
+      Date.now(),
+    );
+    if (!result.ok) return null;
+    commitArtifacts(result.state);
+    return result.artifact.id;
+  };
+
+  // Put an artifact in a Space (or none, with null).
+  const placeArtifact = (id: number, spaceId: number | null) => {
+    const result = artifactsModel.updateArtifact(
+      artifacts,
+      id,
+      { spaceId },
+      Date.now(),
+    );
+    if (result.ok) commitArtifacts(result.state);
+  };
+
+  // What an artifact menu item does.
+  const runArtifactChoice = (id: number, choiceId: string) => {
+    const artifact = artifactsModel.findArtifact(artifacts, id);
+    const choice = parseArtifactChoice(choiceId);
+    if (!artifact || !choice) return;
+    switch (choice.action) {
+      case 'open':
+        openArtifact(id);
+        break;
+      case 'close':
+        commitAndShow(withSomethingActive(model.closeArtifactTab(state, id)));
+        break;
+      case 'rename':
+        // The Artifacts panel opens with this artifact's name as a text box.
+        state = model.setRightPanel(state, 'artifacts');
+        saver.schedule();
+        applyLayout(true);
+        sendState();
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.send('artifact:begin-rename', id);
+        }
+        break;
+      case 'add-to-chat':
+        linkToChat({
+          kind: 'artifact',
+          id,
+          title: artifact.title,
+          url: null,
+        });
+        break;
+      case 'move':
+        if (model.findSpace(state, choice.spaceId)) {
+          placeArtifact(id, choice.spaceId);
+        }
+        break;
+      case 'move-new-space': {
+        const created = model.addSpace(state);
+        commit(created.state);
+        placeArtifact(id, created.id);
+        break;
+      }
+      case 'take-out':
+        placeArtifact(id, null);
+        break;
+      case 'delete':
+        void deleteArtifact(id);
+        break;
+    }
+  };
+
+  // What a choice in a Space overview's Add menu does.
+  const runAddChoice = (spaceId: number, choiceId: string) => {
+    const choice = parseAddChoice(choiceId);
+    if (!choice || !model.findSpace(state, spaceId)) return;
+    switch (choice.action) {
+      case 'page':
+        openTab(NEW_TAB_URL, spaceId);
+        break;
+      case 'new-artifact': {
+        const result = artifactsModel.createArtifact(
+          artifacts,
+          { kind: choice.kind, title: '', spaceId },
+          Date.now(),
+        );
+        if (result.ok) {
+          commitArtifacts(result.state);
+          openArtifact(result.artifact.id);
+        }
+        break;
+      }
+      case 'move':
+        placeArtifact(choice.artifactId, spaceId);
+        break;
+      case 'copy':
+        copyArtifact(choice.artifactId, spaceId);
+        break;
+    }
+  };
+
+  // What a choice in a chat link's menu does.
+  const runLinkChoice = (
+    chatId: number,
+    kind: 'tab' | 'space' | 'artifact',
+    id: number,
+    choiceId: string,
+  ) => {
+    const choice = parseLinkChoice(choiceId);
+    if (!choice) return;
+    switch (choice.action) {
+      case 'open':
+        openLink(kind, id);
+        break;
+      case 'reopen':
+        reopenLink(chatId, id);
+        break;
+      case 'show-in-space': {
+        const spaceId =
+          kind === 'tab'
+            ? (model.findTab(state, id)?.spaceId ?? null)
+            : (artifactsModel.findArtifact(artifacts, id)?.spaceId ?? null);
+        if (spaceId !== null) select({ kind: 'lead', spaceId });
+        break;
+      }
+      case 'remove':
+        commitChats(chatsModel.removeRef(chats, chatId, kind, id));
+        break;
+    }
+  };
+
+  // What a choice in an editing menu does, in the text box that has the keyboard.
+  const runEditChoice = (
+    target: Electron.WebContents,
+    choiceId: string,
+    selected = '',
+  ) => {
+    const choice = parseEditChoice(choiceId);
+    if (!choice || target.isDestroyed()) return;
+    switch (choice.action) {
+      case 'undo':
+        target.undo();
+        break;
+      case 'cut':
+        target.cut();
+        break;
+      case 'copy':
+        target.copy();
+        break;
+      case 'paste':
+        target.paste();
+        break;
+      case 'select-all':
+        target.selectAll();
+        break;
+      case 'add-to-chat':
+        if (selected.trim() !== '') insertIntoChat(selected);
+        break;
+      case 'paste-and-go': {
+        void clipboard.readText().then((copied) => {
+          const text = copied.trim();
+          if (text) requests['tab:navigate'](text);
+        });
+        break;
+      }
+    }
+  };
+
+  // The menu for a right-click inside a web page: a text box gets the editing
+  // menu, then a link, an image, selected text, or the page itself.
+  const showPageMenu = (
+    tabId: number,
+    view: WebContentsView,
+    contents: Electron.WebContents,
+    params: Electron.ContextMenuParams,
+  ) => {
+    const bounds = view.getBounds();
+    const x = bounds.x + params.x;
+    const y = bounds.y + params.y;
+    const selection = params.selectionText;
+
+    if (params.isEditable) {
+      void clipboard.readText().then((copied) =>
+        showMenu(
+          editMenuItems({
+            hasSelection: params.editFlags.canCopy || selection !== '',
+            canPaste: params.editFlags.canPaste && copied.length > 0,
+            pasteAndGo: false,
+          }),
+          x,
+          y,
+          (choice) => runEditChoice(contents, choice),
+          contents,
+        ),
+      );
+      return;
+    }
+
+    let items: MenuItem[];
+    if (params.linkURL !== '')
+      items = pageLinkMenuItems(
+        state,
+        model.findTab(state, tabId)?.spaceId ?? null,
+      );
+    else if (params.mediaType === 'image' && params.srcURL !== '')
+      items = pageImageMenuItems();
+    else if (selection.trim() !== '') items = pageSelectionMenuItems(selection);
+    else
+      items = pageMenuItems({
+        canGoBack: contents.navigationHistory.canGoBack(),
+        canGoForward: contents.navigationHistory.canGoForward(),
+      });
+
+    showMenu(
+      items,
+      x,
+      y,
+      (choice) => runPageChoice(tabId, contents, params, choice),
+      contents,
+    );
+  };
+
+  // What a choice in a web page's menu does.
+  const runPageChoice = (
+    tabId: number,
+    contents: Electron.WebContents,
+    params: Electron.ContextMenuParams,
+    choiceId: string,
+  ) => {
+    const choice = parsePageChoice(choiceId);
+    const tab = model.findTab(state, tabId);
+    if (!choice || !tab) return;
+    const here = tab.spaceId;
+    // Only ordinary web addresses are ever opened in a tab.
+    const openIn = (url: string, spaceId: number | null) => {
+      if (model.isWebUrl(url)) openTab(url, spaceId);
+    };
+    switch (choice.action) {
+      case 'back':
+        contents.navigationHistory.goBack();
+        break;
+      case 'forward':
+        contents.navigationHistory.goForward();
+        break;
+      case 'reload':
+        contents.reload();
+        break;
+      case 'add-page-to-chat':
+        linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
+        break;
+      case 'open-link':
+        openIn(params.linkURL, here);
+        break;
+      case 'open-link-in':
+        if (model.findSpace(state, choice.spaceId)) {
+          openIn(params.linkURL, choice.spaceId);
+        }
+        break;
+      case 'open-link-in-new-space':
+        if (model.isWebUrl(params.linkURL)) {
+          const created = model.addSpace(state);
+          commit(created.state);
+          openTab(params.linkURL, created.id);
+        }
+        break;
+      case 'add-link-to-chat':
+        insertIntoChat(params.linkURL);
+        break;
+      case 'copy-link':
+        clipboard.writeText(params.linkURL);
+        break;
+      case 'open-image':
+        openIn(params.srcURL, here);
+        break;
+      case 'copy-image':
+        contents.copyImageAt(params.x, params.y);
+        break;
+      case 'copy-image-address':
+        clipboard.writeText(params.srcURL);
+        break;
+      case 'copy-selection':
+        clipboard.writeText(params.selectionText);
+        break;
+      case 'search-selection':
+        openTab(searchUrl(params.selectionText), here);
+        break;
+      case 'add-selection-to-chat':
+        insertIntoChat(params.selectionText);
+        break;
+    }
+  };
+
+  // Put text in the message box, bringing the chat back if it was closed.
+  const insertIntoChat = (text: string) => {
+    if (state.settings.viewMode === 'page') {
+      commitAndShow(model.setViewMode(state, 'both'));
+    }
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send('composer:insert', text.slice(0, 4000));
+    }
+  };
+
+  // What a Space menu item does.
+  const runSpaceChoice = (spaceId: number, choiceId: string) => {
+    const space = model.findSpace(state, spaceId);
+    const choice = parseSpaceChoice(choiceId);
+    if (!space || !choice) return;
+    switch (choice.action) {
+      case 'open':
+        select({ kind: 'lead', spaceId });
+        break;
+      case 'new-tab':
+        openTab(NEW_TAB_URL, spaceId);
+        break;
+      case 'add-to-chat':
+        linkToChat({
+          kind: 'space',
+          id: spaceId,
+          title: space.name,
+          url: null,
+        });
+        break;
+      case 'rename':
+        menuActions.renameSpace(spaceId);
+        break;
+      case 'color':
+        menuActions.setSpaceColor(spaceId, choice.color);
+        break;
+      case 'toggle-collapse':
+        menuActions.setSpaceCollapsed(spaceId, !space.collapsed);
+        break;
+      case 'ungroup':
+        menuActions.ungroupSpace(spaceId);
+        break;
+      case 'close-all':
+        for (const tab of state.tabs.filter(
+          (t) => t.spaceId === spaceId && !t.closed,
+        )) {
+          closeTab(tab.id);
+        }
+        break;
+      case 'delete':
+        menuActions.deleteSpace(spaceId);
+        break;
+    }
+  };
+
+  // What a chat menu item does.
+  const runChatChoice = (choiceId: string) => {
+    const choice = parseChatChoice(choiceId);
+    if (!choice) return;
+    switch (choice.action) {
+      case 'new':
+        chatMenuActions.newChat();
+        break;
+      case 'select':
+        chatMenuActions.selectChat(choice.chatId);
+        break;
+      case 'rename':
+        chatMenuActions.renameChat(choice.chatId);
+        break;
+      case 'delete':
+        chatMenuActions.deleteChat(choice.chatId);
+        break;
+    }
+  };
+
+  // What a tab menu item does.
+  const runTabChoice = (tabId: number, choiceId: string) => {
+    const tab = model.findTab(state, tabId);
+    const choice = parseTabChoice(choiceId);
+    if (!tab || !choice) return;
+    switch (choice.action) {
+      case 'new-below':
+        commitAndShow(
+          revealPage(
+            model.addTab(state, {
+              url: NEW_TAB_URL,
+              spaceId: tab.spaceId,
+              after: tabId,
+            }).state,
+          ),
+        );
+        break;
+      case 'duplicate':
+        commitAndShow(
+          revealPage(
+            model.addTab(state, {
+              url: tab.url,
+              spaceId: tab.spaceId,
+              after: tabId,
+            }).state,
+          ),
+        );
+        break;
+      case 'reload':
+        views.get(tabId)?.webContents.reload();
+        break;
+      case 'add-to-chat':
+        linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
+        break;
+      case 'move':
+        commit(model.moveTab(state, tabId, choice.spaceId));
+        break;
+      case 'move-new-space':
+        menuActions.moveTabToNewSpace(tabId);
+        break;
+      case 'copy-link':
+        clipboard.writeText(tab.url);
+        break;
+      case 'close-others':
+        for (const other of state.tabs.filter(
+          (t) => t.id !== tabId && t.spaceId === tab.spaceId && !t.closed,
+        )) {
+          closeTab(other.id);
+        }
+        break;
+      case 'close':
+        closeTab(tabId);
+        break;
+      case 'delete':
+        removeTab(tabId);
+        break;
+    }
   };
 
   const select = (ref: ActiveRef) =>
@@ -1449,38 +2014,83 @@ export async function createTabs(
     },
     // Clicking a link chip jumps to that tab, or to that Space's overview.
     'chats:open-link': (kind, id) => {
-      if (!isLinkKind(kind) || !isId(id)) return;
-      if (kind === 'tab' && model.findTab(state, id)?.closed) {
-        reopenTab(id); // A closed link in a Space opens again.
-      } else if (kind === 'tab' && model.findTab(state, id)) {
-        select({ kind: 'tab', id });
-      } else if (kind === 'space' && model.findSpace(state, id)) {
-        select({ kind: 'lead', spaceId: id });
-      } else if (kind === 'artifact') {
-        openArtifact(id);
-      }
+      if (isLinkKind(kind) && isId(id)) openLink(kind, id);
     },
     // Bring a closed tab back (as a new, ungrouped tab) and point every chat's
     // link to it at the new tab.
     'chats:reopen-link': (chatId, id) => {
-      if (!isId(chatId) || !isId(id)) return;
-      // The link may have been removed from the chat since; an old message's
-      // token still remembers the address.
+      if (isId(chatId) && isId(id)) reopenLink(chatId, id);
+    },
+    // Menus: an artifact, a Space's Add button, a link in a chat, and the editing
+    // menu of a text box.
+    'artifact:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = artifactMenuItems(state, artifacts, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runArtifactChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    'space:add-menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = addMenuItems(state, artifacts, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runAddChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    'link:menu': (chatId, kind, id, removable, x, y) => {
+      if (!isId(chatId) || !isLinkKind(kind) || !isId(id)) return;
+      if (!isNumber(x) || !isNumber(y)) return;
       const conversation = chatsModel.findConversation(chats, chatId);
+      if (!conversation) return;
+      // The link itself, or the remembered copy in an old message.
       const ref =
-        conversation?.refs.find((r) => r.kind === 'tab' && r.id === id) ??
-        conversation?.messages
+        conversation.refs.find((r) => r.kind === kind && r.id === id) ??
+        conversation.messages
           .flatMap((m) => m.mentions)
-          .find((x) => x.kind === 'tab' && x.id === id);
-      // Only for a closed tab whose address was remembered.
-      if (!ref || !ref.url || model.findTab(state, id)) return;
-      const created = model.addTab(state, { url: ref.url, spaceId: null });
-      commitAndShow(revealPage(created.state));
-      const reopened = { id: created.id, title: ref.title, url: ref.url };
-      // Every chat that used the page follows it to the new tab: links and the
-      // tokens in old messages. A link you had removed is not added back.
-      commitChats(chatsModel.retargetEverywhere(chats, 'tab', id, reopened));
-      chatService?.refreshMentions(); // Show the live tokens without a reload.
+          .find((m) => m.kind === kind && m.id === id);
+      if (!ref) return;
+      showMenu(
+        linkMenuItems(ref, workspace(), removable === true),
+        x,
+        y,
+        (choice) => runLinkChoice(chatId, kind, id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    'edit:menu': (kind, x, y, hasSelection, selected) => {
+      if (kind !== 'address' && kind !== 'composer' && kind !== 'editor')
+        return;
+      if (!isNumber(x) || !isNumber(y)) return;
+      const opener = requestSender ?? win.webContents;
+      void clipboard.readText().then((copied) =>
+        showMenu(
+          editMenuItems({
+            hasSelection: hasSelection === true,
+            canPaste: copied.length > 0,
+            pasteAndGo: kind === 'address',
+            addToChat: kind === 'editor',
+          }),
+          x,
+          y,
+          (choice) =>
+            runEditChoice(
+              opener,
+              choice,
+              typeof selected === 'string' ? selected : '',
+            ),
+          opener,
+        ),
+      );
     },
     'chats:new': () => chatMenuActions.newChat(),
     'chats:select': (id) => {
@@ -1494,20 +2104,78 @@ export async function createTabs(
     'chats:delete': (id) => {
       if (isId(id)) void deleteChat(id);
     },
-    'chats:menu': (id) => {
-      if (id === undefined || id === null) {
-        popupMenu(chatMenu(chats, chatMenuActions));
-      } else if (isId(id) && chatsModel.findConversation(chats, id)) {
-        popupMenu(chatRowMenu(id, chatMenuActions));
-      }
+    // The chat-name menu (no id) or the menu of one chat in the list.
+    'chats:menu': (id, x, y, alignCenter) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const items =
+        id === undefined || id === null
+          ? chatSwitchMenuItems(chats)
+          : isId(id)
+            ? chatRowMenuItems(chats, id)
+            : null;
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runChatChoice(choice),
+        requestSender ?? win.webContents,
+        isNumber(alignCenter) ? alignCenter : undefined,
+      );
     },
-    'tab:menu': (id) => {
-      if (isId(id)) popupMenu(tabMenu(state, id, menuActions));
+    'tab:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = tabMenuItems(state, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runTabChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
     },
-    'space:menu': (id) => {
-      if (isId(id)) popupMenu(spaceMenu(state, id, menuActions));
+    'space:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = spaceMenuItems(state, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runSpaceChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
     },
   };
+  // The popup page reports: ready, a choice, or a close. Only that page is heard.
+  const onPopupReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender !== popup) return;
+    popupReady = true;
+    const waiting = waitingForPopup;
+    waitingForPopup = null;
+    waiting?.();
+  };
+  const onPopupChoose = (event: Electron.IpcMainEvent, id: unknown) => {
+    if (event.sender !== popup || !openMenu) return;
+    // Only an item of the menu that is open (and enabled) counts.
+    if (!isChoosable(openMenu.items, id)) return;
+    const { choose } = openMenu;
+    closeMenu(true);
+    choose(id);
+  };
+  const onPopupClose = (event: Electron.IpcMainEvent) => {
+    if (event.sender === popup) closeMenu(true);
+  };
+  ipcMain.on('popup:ready', onPopupReady);
+  ipcMain.on('popup:choose', onPopupChoose);
+  ipcMain.on('popup:close', onPopupClose);
+  // A menu closes when the window is left or resized, like a native one.
+  win.on('blur', () => closeMenu(false));
+  win.on('resize', () => {
+    if (openMenu) closeMenu(false);
+  });
+
   // A UI page says it is listening and asks for the current state. That, not
   // the page's "finished loading" event (which can come before the page is
   // listening, or long after), is what marks the page ready for messages.
@@ -1524,7 +2192,12 @@ export async function createTabs(
   const listeners = Object.entries(requests).map(([channel, handle]) => {
     const listener = (event: Electron.IpcMainEvent, ...args: unknown[]) => {
       if (event.sender === win.webContents || event.sender === sidebar) {
-        handle(...args);
+        requestSender = event.sender;
+        try {
+          handle(...args);
+        } finally {
+          requestSender = null;
+        }
       }
     };
     ipcMain.on(channel, listener);
@@ -1591,23 +2264,8 @@ export async function createTabs(
   ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     if (!isId(id)) return null;
-    if (spaceId !== null && !(isId(spaceId) && model.findSpace(state, spaceId)))
-      return null;
-    const original = artifactsModel.findArtifact(artifacts, id);
-    if (!original) return null;
-    const result = artifactsModel.createArtifact(
-      artifacts,
-      {
-        kind: original.kind,
-        title: `${original.title} (copy)`,
-        content: original.content,
-        spaceId: spaceId as number | null,
-      },
-      Date.now(),
-    );
-    if (!result.ok) return null;
-    commitArtifacts(result.state);
-    return result.artifact.id;
+    if (spaceId !== null && !isId(spaceId)) return null;
+    return copyArtifact(id, spaceId);
   });
   ipcMain.handle(
     'artifact:create',
@@ -1669,6 +2327,7 @@ export async function createTabs(
     sendState();
   }
   void loadUi(sidebar, 'sidebar');
+  void loadUi(popup, 'popup');
 
   // While developing, the dev server sometimes rebuilds its bundled libraries just
   // as the app starts, and a page that loads in that moment fails to start (it
@@ -1714,6 +2373,9 @@ export async function createTabs(
     stopWatching();
     for (const timer of startupTimers) clearTimeout(timer);
     ipcMain.removeListener('ui:ready', onUiReady);
+    ipcMain.removeListener('popup:ready', onPopupReady);
+    ipcMain.removeListener('popup:choose', onPopupChoose);
+    ipcMain.removeListener('popup:close', onPopupClose);
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from 'react';
+import { IconButton } from './ui/controls';
+import { Icon } from './ui/Icon';
 import { ChatList, ChatStrip } from './ChatHistory';
 import { SPACE_COLOR_HEX } from './colors';
 import { FRAME_COLOR, SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
-import {
-  ellipsis,
-  iconButtonStyle,
-  rowStyle,
-  stripButton,
-} from './sidebarStyles';
+import { iconButtonStyle, stripButton } from './sidebarStyles';
 import type { ArtifactTabInfo, SpaceInfo, TabInfo, UiState } from './types';
 
 // What to write on a tab: its title, else its site name, else "New Tab".
@@ -46,7 +47,7 @@ export function Favicon({ tab }: { tab: TabInfo }) {
 
 const showTabMenu = (tab: TabInfo) => (event: ReactMouseEvent) => {
   event.preventDefault();
-  window.browserApi.showTabMenu(tab.id);
+  window.browserApi.showTabMenu(tab.id, event.clientX, event.clientY);
 };
 
 // ---------------------------------------------------------------------------
@@ -72,34 +73,90 @@ function WorkingDot() {
   );
 }
 
-function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
+// Pressing Enter or Space on a focused row does what clicking it does.
+const rowKeys = (open: () => void) => (event: ReactKeyboardEvent) => {
+  if (event.target !== event.currentTarget) return; // Not from a button inside.
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    open();
+  }
+};
+
+// Every row in the sidebar (a tab, an artifact, a Space) is built the same way:
+// an icon, a name, the assistant's working dot if it is busy, and buttons that
+// show while the mouse is over the row.
+function Row({
+  active,
+  dim = false,
+  title,
+  onOpen,
+  onContextMenu,
+  icon,
+  children,
+  trailing,
+}: {
+  active: boolean;
+  dim?: boolean;
+  title: string;
+  onOpen: () => void;
+  onContextMenu?: (event: ReactMouseEvent) => void;
+  icon: ReactNode;
+  children: ReactNode;
+  trailing?: ReactNode;
+}) {
   return (
     <div
-      onClick={() => window.browserApi.selectTab(tab.id)}
-      onContextMenu={showTabMenu(tab)}
-      title={labelFor(tab)}
-      style={{ ...rowStyle(active), opacity: tab.loaded ? 1 : 0.6 }}
+      className={
+        active ? 'lrow collapse-actions is-active' : 'lrow collapse-actions'
+      }
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      title={title}
+      onClick={onOpen}
+      onKeyDown={rowKeys(onOpen)}
+      onContextMenu={onContextMenu}
+      style={{ opacity: dim ? 0.6 : 1 }}
     >
-      <Favicon tab={tab} />
-      <span style={ellipsis}>{labelFor(tab)}</span>
-      {tab.working && <WorkingDot />}
-      <button
-        type="button"
-        aria-label={`Close ${labelFor(tab)}`}
-        title={
-          tab.spaceId === null
-            ? 'Close tab (Ctrl+W)'
-            : 'Close tab (Ctrl+W). The page stays in its Space.'
-        }
-        onClick={(event) => {
-          event.stopPropagation(); // Don't also select this tab.
-          window.browserApi.closeTab(tab.id);
-        }}
-        style={iconButtonStyle}
-      >
-        ×
-      </button>
+      {icon}
+      <span className="truncate grow">{children}</span>
+      {trailing}
     </div>
+  );
+}
+
+function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
+  return (
+    <Row
+      active={active}
+      dim={!tab.loaded}
+      title={labelFor(tab)}
+      onOpen={() => window.browserApi.selectTab(tab.id)}
+      onContextMenu={showTabMenu(tab)}
+      icon={<Favicon tab={tab} />}
+      trailing={
+        <>
+          {tab.working && <WorkingDot />}
+          <IconButton
+            icon="x"
+            size="sm"
+            className="hover-only"
+            label={`Close ${labelFor(tab)}`}
+            title={
+              tab.spaceId === null
+                ? 'Close tab (Ctrl+W)'
+                : 'Close tab (Ctrl+W). The page stays in its Space.'
+            }
+            onClick={(event) => {
+              event.stopPropagation(); // Don't also select this tab.
+              window.browserApi.closeTab(tab.id);
+            }}
+          />
+        </>
+      }
+    >
+      {labelFor(tab)}
+    </Row>
   );
 }
 
@@ -112,30 +169,40 @@ function ArtifactRow({
   active: boolean;
 }) {
   return (
-    <div
-      onClick={() => window.browserApi.artifactSelect(tab.id)}
+    <Row
+      active={active}
       title={tab.title}
-      style={rowStyle(active)}
+      onOpen={() => window.browserApi.artifactSelect(tab.id)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showArtifactMenu(
+          tab.id,
+          event.clientX,
+          event.clientY,
+        );
+      }}
+      icon={<Icon name="doc" />}
+      trailing={
+        <IconButton
+          icon="x"
+          size="sm"
+          className="hover-only"
+          label={`Close ${tab.title}`}
+          title="Close tab (Ctrl+W)"
+          onClick={(event) => {
+            event.stopPropagation(); // Don't also select this tab.
+            window.browserApi.artifactClose(tab.id);
+          }}
+        />
+      }
     >
-      <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>📄</span>
-      <span style={ellipsis}>{tab.title}</span>
-      <button
-        type="button"
-        aria-label={`Close ${tab.title}`}
-        title="Close tab (Ctrl+W)"
-        onClick={(event) => {
-          event.stopPropagation(); // Don't also select this tab.
-          window.browserApi.artifactClose(tab.id);
-        }}
-        style={iconButtonStyle}
-      >
-        ×
-      </button>
-    </div>
+      {tab.title}
+    </Row>
   );
 }
 
-// A Space: a coloured, collapsible group with a Lead (overview) row and its tabs.
+// A Space: a coloured, collapsible group. Its title row is built like a tab row,
+// and clicking it opens the Space's overview (the name IS the overview).
 function SpaceGroup({
   space,
   tabs,
@@ -153,8 +220,6 @@ function SpaceGroup({
   onRenameHandled: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  // The mouse is over the title row (shows the rename pencil).
-  const [hover, setHover] = useState(false);
 
   useEffect(() => {
     if (renameRequest === space.id) {
@@ -165,7 +230,7 @@ function SpaceGroup({
 
   const openMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
-    window.browserApi.showSpaceMenu(space.id);
+    window.browserApi.showSpaceMenu(space.id, event.clientX, event.clientY);
   };
   const color = SPACE_COLOR_HEX[space.color];
   const leadActive = active?.kind === 'lead' && active.spaceId === space.id;
@@ -177,93 +242,88 @@ function SpaceGroup({
     }
   };
 
+  const colourDot = (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: 3,
+        background: color,
+        flex: 'none',
+        margin: '0 3px',
+      }}
+    />
+  );
+
   return (
     <div style={{ marginTop: 8 }}>
-      <div
-        onContextMenu={openMenu}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          height: 28,
-          padding: '0 6px',
-        }}
-      >
-        <button
-          type="button"
-          aria-label={space.collapsed ? 'Expand Space' : 'Collapse Space'}
-          title={space.collapsed ? 'Expand' : 'Collapse'}
-          onClick={() =>
-            window.browserApi.setSpaceCollapsed(space.id, !space.collapsed)
-          }
-          style={{ ...iconButtonStyle, width: 20, fontSize: 11 }}
-        >
-          {space.collapsed ? '▶' : '▼'}
-        </button>
-        {editing ? (
+      {editing ? (
+        <div className="lrow" onContextMenu={openMenu}>
+          {colourDot}
           <input
+            className="input"
             autoFocus
             defaultValue={space.name}
             maxLength={60}
+            aria-label="Space name"
             onFocus={(e) => e.target.select()}
             onBlur={(e) => finishRename(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();
               if (e.key === 'Escape') setEditing(false);
             }}
-            style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}
+            style={{ flex: 1, minWidth: 0, height: 26 }}
           />
-        ) : (
-          <span
-            onDoubleClick={() => setEditing(true)}
-            title="Double-click to rename"
-            style={{
-              ...ellipsis,
-              background: color,
-              color: '#fff',
-              borderRadius: 6,
-              padding: '2px 8px',
-              fontSize: 12,
-              fontWeight: 600,
-              flex: '0 1 auto',
-            }}
-          >
-            {space.name}
-          </span>
-        )}
-        {!editing && (
-          <button
-            type="button"
-            aria-label={`Rename ${space.name}`}
-            title="Rename"
-            onClick={() => setEditing(true)}
-            onFocus={() => setHover(true)}
-            onBlur={() => setHover(false)}
-            style={{
-              ...iconButtonStyle,
-              width: 18,
-              fontSize: 11,
-              opacity: hover ? 1 : 0,
-            }}
-          >
-            ✎
-          </button>
-        )}
-        <span style={{ flex: 1, fontSize: 11, color: '#5f6368' }}>
-          {space.collapsed ? ` ${tabs.length}` : ''}
-        </span>
-        <button
-          type="button"
-          aria-label={`New tab in ${space.name}`}
-          title="New tab in this Space"
-          onClick={() => window.browserApi.newTab(space.id)}
-          style={iconButtonStyle}
+        </div>
+      ) : (
+        <Row
+          active={leadActive}
+          title={`${space.name}: open the overview`}
+          onOpen={() => window.browserApi.selectLead(space.id)}
+          onContextMenu={openMenu}
+          icon={
+            <>
+              <IconButton
+                icon={space.collapsed ? 'chev-r' : 'chev-d'}
+                size="sm"
+                label={space.collapsed ? 'Expand Space' : 'Collapse Space'}
+                title={space.collapsed ? 'Expand' : 'Collapse'}
+                onClick={(event) => {
+                  event.stopPropagation(); // Don't also open the overview.
+                  window.browserApi.setSpaceCollapsed(
+                    space.id,
+                    !space.collapsed,
+                  );
+                }}
+              />
+              {colourDot}
+            </>
+          }
+          trailing={
+            <>
+              {space.collapsed && (
+                <span className="badge" title={`${tabs.length} tabs`}>
+                  {tabs.length}
+                </span>
+              )}
+              <IconButton
+                icon="plus"
+                size="sm"
+                className="hover-only"
+                label={`New tab in ${space.name}`}
+                title="New tab in this Space"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  window.browserApi.newTab(space.id);
+                }}
+              />
+            </>
+          }
         >
-          +
-        </button>
-      </div>
+          {space.name}
+        </Row>
+      )}
 
       {!space.collapsed && (
         <div
@@ -273,14 +333,6 @@ function SpaceGroup({
             paddingLeft: 4,
           }}
         >
-          <div
-            onClick={() => window.browserApi.selectLead(space.id)}
-            onContextMenu={openMenu}
-            style={rowStyle(leadActive)}
-          >
-            <span style={{ width: 16, textAlign: 'center', color }}>★</span>
-            <span style={ellipsis}>Overview</span>
-          </div>
           {tabs.map((tab) => (
             <TabRow
               key={tab.id}
@@ -449,7 +501,7 @@ function StripSpace({
   const leadActive = active?.kind === 'lead' && active.spaceId === space.id;
   const openMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
-    window.browserApi.showSpaceMenu(space.id);
+    window.browserApi.showSpaceMenu(space.id, event.clientX, event.clientY);
   };
 
   return (

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { ARTIFACT_KINDS } from './artifacts';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
+import { Button } from './ui/controls';
+import { Icon } from './ui/Icon';
 import type { ArtifactInfo, SpaceInfo, TabInfo } from './types';
 
 function hostOf(url: string): string {
@@ -30,14 +31,6 @@ const smallButton: CSSProperties = {
   padding: '3px 10px',
   cursor: 'pointer',
   color: '#202124',
-};
-
-const field: CSSProperties = {
-  border: '1px solid #d0d0d0',
-  borderRadius: 8,
-  fontSize: 13,
-  padding: '5px 8px',
-  background: '#ffffff',
 };
 
 const sectionTitle: CSSProperties = {
@@ -137,8 +130,6 @@ export function LeadView({
   tabs,
   artifacts,
   openArtifactIds,
-  allArtifacts,
-  spaces,
 }: {
   space: SpaceInfo;
   // Every page in the Space, open or closed.
@@ -147,15 +138,10 @@ export function LeadView({
   artifacts: ArtifactInfo[];
   // Which artifacts are open as tabs.
   openArtifactIds: number[];
-  // Every artifact, for "Add existing".
-  allArtifacts: ArtifactInfo[];
-  spaces: SpaceInfo[];
 }) {
   const color = SPACE_COLOR_HEX[space.color];
   const [editing, setEditing] = useState(false);
   // The two small forms under the header.
-  const [form, setForm] = useState<'menu' | 'new' | 'existing' | null>(null);
-  const [kind, setKind] = useState<ArtifactKind>('markdown');
 
   const finishRename = (value: string) => {
     setEditing(false);
@@ -164,17 +150,6 @@ export function LeadView({
     }
   };
 
-  const createHere = async () => {
-    const id = await window.browserApi.artifactCreate(kind, '', space.id);
-    setForm(null);
-    if (id !== null) window.browserApi.artifactOpen(id);
-  };
-
-  const others = allArtifacts.filter((a) => a.spaceId !== space.id);
-  const spaceName = (id: number | null) =>
-    id === null
-      ? 'No space'
-      : (spaces.find((s) => s.id === id)?.name ?? 'No space');
   const openCount = tabs.filter((t) => !t.closed).length;
 
   return (
@@ -197,7 +172,11 @@ export function LeadView({
       <div
         onContextMenu={(event) => {
           event.preventDefault();
-          window.browserApi.showSpaceMenu(space.id);
+          window.browserApi.showSpaceMenu(
+            space.id,
+            event.clientX,
+            event.clientY,
+          );
         }}
         style={{
           display: 'flex',
@@ -255,189 +234,26 @@ export function LeadView({
           open) · {artifacts.length}{' '}
           {artifacts.length === 1 ? 'artifact' : 'artifacts'}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          icon="plus"
+          aria-haspopup="menu"
           aria-label="Add to this Space"
-          aria-expanded={form !== null}
           title="Add a page or an artifact"
-          onClick={() => setForm(form === null ? 'menu' : null)}
-          style={{
-            ...smallButton,
-            marginLeft: 'auto',
-            padding: '6px 16px',
-            fontWeight: 600,
+          style={{ marginLeft: 'auto' }}
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            window.browserApi.showSpaceAddMenu(
+              space.id,
+              box.left,
+              box.bottom + 4,
+            );
           }}
         >
-          +
-        </button>
+          Add
+          <Icon name="chev-d" />
+        </Button>
       </div>
-
-      {form === 'menu' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 20,
-            padding: 10,
-            background: '#f6f8fc',
-            borderRadius: 10,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setForm(null);
-              window.browserApi.newTab(space.id);
-            }}
-            style={smallButton}
-          >
-            New page
-          </button>
-          <button
-            type="button"
-            onClick={() => setForm('new')}
-            style={smallButton}
-          >
-            New artifact
-          </button>
-          <button
-            type="button"
-            onClick={() => setForm('existing')}
-            style={smallButton}
-          >
-            Existing artifact
-          </button>
-          <button
-            type="button"
-            onClick={() => setForm(null)}
-            style={{ ...smallButton, marginLeft: 'auto' }}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {form === 'new' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 20,
-            padding: 10,
-            background: '#f6f8fc',
-            borderRadius: 10,
-          }}
-        >
-          <label style={{ fontSize: 12, color: '#5f6368' }}>
-            Type{' '}
-            <select
-              aria-label="Type"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as ArtifactKind)}
-              style={field}
-            >
-              {ARTIFACT_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {KIND_WORDS[k]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => void createHere()}
-            style={{
-              ...smallButton,
-              background: '#1a73e8',
-              color: '#ffffff',
-              borderColor: '#1a73e8',
-            }}
-          >
-            Create here
-          </button>
-          <button
-            type="button"
-            onClick={() => setForm(null)}
-            style={smallButton}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {form === 'existing' && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: 10,
-            background: '#f6f8fc',
-            borderRadius: 10,
-          }}
-        >
-          {others.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#5f6368' }}>
-              Every artifact is already in this Space.
-            </div>
-          ) : (
-            others.map((a) => (
-              <div
-                key={a.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '4px 0',
-                }}
-              >
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: 13,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {a.title}{' '}
-                  <span style={{ color: '#5f6368', fontSize: 12 }}>
-                    · {spaceName(a.spaceId)}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  title="It leaves its current Space and moves here"
-                  onClick={() => window.browserApi.artifactMove(a.id, space.id)}
-                  style={smallButton}
-                >
-                  Move here
-                </button>
-                <button
-                  type="button"
-                  title="Make a copy of it in this Space"
-                  onClick={() =>
-                    void window.browserApi.artifactCopy(a.id, space.id)
-                  }
-                  style={smallButton}
-                >
-                  Copy here
-                </button>
-              </div>
-            ))
-          )}
-          <div style={{ marginTop: 6 }}>
-            <button
-              type="button"
-              onClick={() => setForm(null)}
-              style={smallButton}
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      )}
 
       <h2 style={sectionTitle}>Web pages</h2>
       {tabs.length === 0 ? (
@@ -460,7 +276,11 @@ export function LeadView({
               onOpen={() => window.browserApi.selectTab(tab.id)}
               onContextMenu={(event) => {
                 event.preventDefault();
-                window.browserApi.showTabMenu(tab.id);
+                window.browserApi.showTabMenu(
+                  tab.id,
+                  event.clientX,
+                  event.clientY,
+                );
               }}
             >
               {tab.closed ? (
@@ -514,6 +334,14 @@ export function LeadView({
                 subtitle={`${KIND_WORDS[a.kind]} · ${open ? 'open' : 'closed'}`}
                 open={open}
                 onOpen={() => window.browserApi.artifactOpen(a.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  window.browserApi.showArtifactMenu(
+                    a.id,
+                    event.clientX,
+                    event.clientY,
+                  );
+                }}
               >
                 {open && (
                   <button

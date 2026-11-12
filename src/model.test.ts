@@ -631,3 +631,21 @@ test('a closed link is found by the address the assistant was told (no query), a
   );
   assert.equal(findClosedTabByAddress(closed, 'not an address'), undefined);
 });
+
+test('a new tab can be put right after another one, in the same place in the list', () => {
+  const { state, freeId, aId } = build();
+  const after = addTab(state, {
+    url: 'https://new.example',
+    spaceId: null,
+    after: freeId,
+  });
+  assert.equal(
+    after.state.tabs[state.tabs.findIndex((t) => t.id === freeId) + 1].id,
+    after.id,
+  );
+  assert.equal(after.state.tabs.length, state.tabs.length + 1);
+  // An unknown tab means the end of the list.
+  const end = addTab(state, { url: 'https://end.example', after: 99999 });
+  assert.equal(end.state.tabs.at(-1)?.id, end.id);
+  assert.ok(aId > 0);
+});

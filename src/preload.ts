@@ -87,7 +87,8 @@ const browserApi: BrowserApi = {
   chatOpenLink: (kind, id) => ipcRenderer.send('chats:open-link', kind, id),
   chatReopenLink: (chatId, tabId) =>
     ipcRenderer.send('chats:reopen-link', chatId, tabId),
-  showModelMenu: (chatId) => ipcRenderer.send('chat:model-menu', chatId),
+  showModelMenu: (chatId, x, y) =>
+    ipcRenderer.send('chat:model-menu', chatId, x, y),
   openArtifacts: () => ipcRenderer.send('panel:open', 'artifacts'),
   openSettings: () => ipcRenderer.send('panel:open', 'settings'),
   onChatMessage: (callback) => {
@@ -104,7 +105,8 @@ const browserApi: BrowserApi = {
   selectChat: (id) => ipcRenderer.send('chats:select', id),
   renameChat: (id, title) => ipcRenderer.send('chats:rename', id, title),
   deleteChat: (id) => ipcRenderer.send('chats:delete', id),
-  showChatMenu: (id) => ipcRenderer.send('chats:menu', id),
+  showChatMenu: (id, x, y, alignCenter) =>
+    ipcRenderer.send('chats:menu', id ?? null, x, y, alignCenter),
   onChatRenameRequest: (callback) => {
     const listener = (_event: unknown, chatId: number) => callback(chatId);
     ipcRenderer.on('chats:begin-rename', listener);
@@ -124,8 +126,59 @@ const browserApi: BrowserApi = {
       ipcRenderer.removeListener('ui:layout', listener);
     };
   },
-  showTabMenu: (id) => ipcRenderer.send('tab:menu', id),
-  showSpaceMenu: (id) => ipcRenderer.send('space:menu', id),
+  showTabMenu: (id, x, y) => ipcRenderer.send('tab:menu', id, x, y),
+  onPopupShow: (callback) => {
+    const listener = (_event: unknown, menu: Parameters<typeof callback>[0]) =>
+      callback(menu);
+    ipcRenderer.on('popup:show', listener);
+    return () => {
+      ipcRenderer.removeListener('popup:show', listener);
+    };
+  },
+  onPopupHide: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('popup:hide', listener);
+    return () => {
+      ipcRenderer.removeListener('popup:hide', listener);
+    };
+  },
+  popupReady: () => ipcRenderer.send('popup:ready'),
+  popupChoose: (id) => ipcRenderer.send('popup:choose', id),
+  popupClose: () => ipcRenderer.send('popup:close'),
+  showSpaceMenu: (id, x, y) => ipcRenderer.send('space:menu', id, x, y),
+  showArtifactMenu: (id, x, y) => ipcRenderer.send('artifact:menu', id, x, y),
+  showSpaceAddMenu: (spaceId, x, y) =>
+    ipcRenderer.send('space:add-menu', spaceId, x, y),
+  showLinkMenu: (chatId, kind, id, removable, x, y) =>
+    ipcRenderer.send('link:menu', chatId, kind, id, removable, x, y),
+  showEditMenu: (kind, x, y, hasSelection, selected) =>
+    ipcRenderer.send('edit:menu', kind, x, y, hasSelection, selected),
+  showMessageMenu: (chatId, messageId, x, y, selection) =>
+    ipcRenderer.send('chat:message-menu', chatId, messageId, x, y, selection),
+  onMessageAction: (callback) => {
+    const listener = (
+      _event: unknown,
+      action: Parameters<typeof callback>[0],
+    ) => callback(action);
+    ipcRenderer.on('chat:message-action', listener);
+    return () => {
+      ipcRenderer.removeListener('chat:message-action', listener);
+    };
+  },
+  onComposerInsert: (callback) => {
+    const listener = (_event: unknown, text: string) => callback(text);
+    ipcRenderer.on('composer:insert', listener);
+    return () => {
+      ipcRenderer.removeListener('composer:insert', listener);
+    };
+  },
+  onArtifactRenameRequest: (callback) => {
+    const listener = (_event: unknown, id: number) => callback(id);
+    ipcRenderer.on('artifact:begin-rename', listener);
+    return () => {
+      ipcRenderer.removeListener('artifact:begin-rename', listener);
+    };
+  },
 
   onRenameRequest: (callback) => {
     const listener = (_event: unknown, spaceId: number) => callback(spaceId);

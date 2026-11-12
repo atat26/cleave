@@ -69,7 +69,17 @@ export function ChatSwitcher({
           type="button"
           title="Switch, rename or delete chats"
           aria-label="Chats"
-          onClick={() => window.browserApi.showChatMenu()}
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            // The open chat in the list lines up with the name, and the list
+            // runs down from there.
+            window.browserApi.showChatMenu(
+              undefined,
+              box.left,
+              box.bottom,
+              (box.top + box.bottom) / 2,
+            );
+          }}
           style={{
             ...buttonStyle,
             fontWeight: compact ? 400 : 600,

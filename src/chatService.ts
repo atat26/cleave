@@ -10,7 +10,7 @@
 //     network request. It never reaches the UI.
 //   - Model replies are only ever sent on as plain text; nothing here turns them
 //     into markup.
-import { clipboard, ipcMain, Menu } from 'electron';
+import { clipboard, ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { createAgentTools } from './agentTools';
 import type { ActionEnv, OutlineRead, PageRead } from './agentTools';
@@ -25,6 +25,13 @@ import {
   snapshotLookup,
 } from './chatLinks';
 import type { ArtifactKind } from './artifacts';
+import {
+  messageMenuItems,
+  modelMenuItems,
+  parseMessageChoice,
+  parseModelChoice,
+} from './menuData';
+import type { MenuItem } from './menuTypes';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
 import type { RunContext } from './chatRunner';
@@ -116,8 +123,16 @@ export function createChatService(options: {
   // The chat list's information changed (a title, a model, who is generating).
   onMeta(): void;
   openSettings(): void;
-  // Show a menu without letting the sidebar close under it.
-  popupMenu(menu: Menu): void;
+  // Show a menu in the popup layer at a place in the window; `choose` gets the
+  // id of the item picked. The keyboard goes back to `opener` afterwards.
+  showMenu(
+    items: MenuItem[],
+    x: number,
+    y: number,
+    choose: (id: string) => void,
+    opener: Electron.WebContents,
+    alignCenter?: number,
+  ): void;
 }): ChatService {
   const { win } = options;
 
@@ -510,39 +525,87 @@ export function createChatService(options: {
     }
   };
 
+  // The menu of a message: copy it (or the part selected), and for one of yours
+  // retry it or branch from it. Retry and branch are done by the chat on screen
+  // (it already knows how to show their results), so it is told which was chosen.
+  const onMessageMenu = (
+    event: Electron.IpcMainEvent,
+    chatId: unknown,
+    messageId: unknown,
+    x: unknown,
+    y: unknown,
+    selection: unknown,
+  ) => {
+    if (!fromUi(event) || !isId(chatId) || !isId(messageId)) return;
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    const messages =
+      chats.findConversation(options.getChats(), chatId)?.messages ?? [];
+    const message = messages.find((m) => m.id === messageId);
+    if (!message) return;
+    const picked =
+      typeof selection === 'string' && selection.trim() !== ''
+        ? selection.slice(0, MAX_COPY_CHARS)
+        : '';
+    const newest = [...messages].reverse().find((m) => m.role === 'user');
+    options.showMenu(
+      messageMenuItems({
+        role: message.role,
+        hasSelection: picked !== '',
+        isNewestUser: newest?.id === message.id,
+        busy: runner.runningChats().includes(chatId),
+      }),
+      x,
+      y,
+      (id) => {
+        const choice = parseMessageChoice(id);
+        if (choice?.action === 'copy') {
+          const text = picked || message.content;
+          if (text.length <= MAX_COPY_CHARS) clipboard.writeText(text);
+        } else if (choice && !event.sender.isDestroyed()) {
+          event.sender.send('chat:message-action', {
+            chatId,
+            messageId,
+            action: choice.action,
+          });
+        }
+      },
+      event.sender,
+    );
+  };
+
   // The model switcher: your pinned models, with this chat's current one ticked.
-  const onModelMenu = (event: Electron.IpcMainEvent, chatId: unknown) => {
+  const onModelMenu = (
+    event: Electron.IpcMainEvent,
+    chatId: unknown,
+    x: unknown,
+    y: unknown,
+  ) => {
     if (!fromUi(event) || !isId(chatId) || llm === null) return;
+    if (typeof x !== 'number' || typeof y !== 'number') return;
     const chat = chats.findConversation(options.getChats(), chatId);
     if (!chat) return;
     const settings = llm.getSettings();
     const current = chat.model ?? settings.model;
-    // Show the current model even if it is not pinned, so it is clear what is in use.
-    const choices = [...settings.pinned];
-    if (current && !choices.includes(current)) choices.unshift(current);
-
-    const pick = (id: string) => () => {
-      options.setChats(
-        chats.setConversationModel(options.getChats(), chatId, id),
-      );
-      options.onMeta();
-    };
-    const label = (id: string) => id.replace(/&/g, '&&');
-
-    options.popupMenu(
-      Menu.buildFromTemplate([
-        ...choices.map((id) => ({
-          label: label(id),
-          type: 'radio' as const,
-          checked: id === current,
-          click: pick(id),
-        })),
-        ...(choices.length > 0 ? [{ type: 'separator' as const }] : []),
-        {
-          label: 'Pin more models in Settings…',
-          click: () => options.openSettings(),
-        },
-      ]),
+    options.showMenu(
+      modelMenuItems(settings.pinned, current),
+      x,
+      y,
+      (id) => {
+        const choice = parseModelChoice(id);
+        if (choice?.action === 'pick') {
+          options.setChats(
+            chats.setConversationModel(
+              options.getChats(),
+              chatId,
+              choice.model,
+            ),
+          );
+          options.onMeta();
+        } else if (choice?.action === 'settings') {
+          options.openSettings();
+        }
+      },
+      event.sender,
     );
   };
 
@@ -550,6 +613,7 @@ export function createChatService(options: {
   ipcMain.on('chat:decide', onDecide);
   ipcMain.on('chat:copy', onCopy);
   ipcMain.on('chat:model-menu', onModelMenu);
+  ipcMain.on('chat:message-menu', onMessageMenu);
 
   return {
     runningChats: () => runner.runningChats(),
@@ -573,6 +637,7 @@ export function createChatService(options: {
       ipcMain.removeListener('chat:decide', onDecide);
       ipcMain.removeListener('chat:copy', onCopy);
       ipcMain.removeListener('chat:model-menu', onModelMenu);
+      ipcMain.removeListener('chat:message-menu', onMessageMenu);
     },
   };
 }

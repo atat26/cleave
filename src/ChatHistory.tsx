@@ -20,7 +20,7 @@ const newestFirst = (chats: ChatsInfo): ChatInfo[] =>
 
 const openMenu = (chat: ChatInfo) => (event: ReactMouseEvent) => {
   event.preventDefault();
-  window.browserApi.showChatMenu(chat.id);
+  window.browserApi.showChatMenu(chat.id, event.clientX, event.clientY);
 };
 
 function ChatRow({
