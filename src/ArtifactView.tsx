@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { MAX_ARTIFACT_CHARS } from './artifacts';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import type { ArtifactDocument, ArtifactTabInfo } from './types';
+import { HTML_SANDBOX, htmlDocument } from './artifactRender';
+import { Markdown } from './MarkdownView';
+import { Badge, Banner, Button, Segmented } from './ui/controls';
+import { Icon } from './ui/Icon';
 
 const KIND_WORDS: Record<ArtifactTabInfo['kind'], string> = {
   markdown: 'Markdown',
@@ -154,6 +158,35 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
 
   const mono = tab.kind === 'html' || tab.kind === 'code';
 
+  const [renaming, setRenaming] = useState(false);
+  const finishRename = (value: string) => {
+    setRenaming(false);
+    const name = value.trim();
+    if (name && name !== tab.title)
+      window.browserApi.artifactRename(tab.id, name);
+  };
+
+  // Markdown and HTML can be shown as a finished page (the default) or edited.
+  const canRender = tab.kind === 'markdown' || tab.kind === 'html';
+  const [view, setView] = useState<'preview' | 'edit'>(() => {
+    try {
+      return localStorage.getItem('artifactView') === 'edit'
+        ? 'edit'
+        : 'preview';
+    } catch {
+      return 'preview';
+    }
+  });
+  const chooseView = (next: 'preview' | 'edit') => {
+    setView(next);
+    try {
+      localStorage.setItem('artifactView', next);
+    } catch {
+      // Not remembered; fine.
+    }
+  };
+  const showPreview = canRender && view === 'preview';
+
   return (
     <main
       style={{
@@ -163,7 +196,8 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
         left: `calc(var(--left) + ${PAGE_INSET}px)`,
         right: `calc(var(--rail) + var(--panel) + ${PAGE_INSET}px)`,
         bottom: `calc(var(--chat) + ${PAGE_INSET}px)`,
-        background: '#ffffff',
+        background: 'var(--c-surface)',
+        color: 'var(--c-text)',
         borderRadius: PAGE_RADIUS,
         boxSizing: 'border-box',
         display: 'flex',
@@ -174,35 +208,73 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       <header
         style={{
           display: 'flex',
-          alignItems: 'baseline',
-          gap: 10,
-          padding: '14px 20px 8px',
+          alignItems: 'center',
+          gap: 'var(--s-3)',
+          padding: 'var(--s-4) var(--s-5) var(--s-3)',
         }}
       >
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 18,
-            fontWeight: 600,
-            flex: 1,
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {tab.title}
-        </h1>
-        <span style={{ fontSize: 12, color: '#5f6368' }}>
-          {KIND_WORDS[tab.kind]}
-        </span>
+        {renaming ? (
+          <input
+            className="input"
+            autoFocus
+            defaultValue={tab.title}
+            maxLength={80}
+            aria-label="Artifact name"
+            onFocus={(e) => e.target.select()}
+            onBlur={(e) => finishRename(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') finishRename(e.currentTarget.value);
+              if (e.key === 'Escape') setRenaming(false);
+            }}
+            style={{
+              fontSize: 'var(--fs-xl)',
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              height: 36,
+            }}
+          />
+        ) : (
+          <h1
+            className="truncate"
+            onClick={() => setRenaming(true)}
+            title="Click to rename"
+            style={{
+              margin: 0,
+              fontSize: 'var(--fs-xl)',
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              cursor: 'text',
+            }}
+          >
+            {tab.title}
+          </h1>
+        )}
+        {canRender && (
+          <Segmented
+            label="View"
+            value={view}
+            onChange={chooseView}
+            options={[
+              { value: 'preview', label: 'Preview' },
+              { value: 'edit', label: 'Edit' },
+            ]}
+          />
+        )}
+        <Badge>{KIND_WORDS[tab.kind]}</Badge>
         <span
           role="status"
+          className="row-flex"
           style={{
-            fontSize: 12,
-            color: status === 'failed' ? '#b3261e' : '#5f6368',
+            gap: 'var(--s-1)',
+            fontSize: 'var(--fs-xs)',
+            color: status === 'failed' ? 'var(--c-danger)' : 'var(--c-text-2)',
           }}
         >
+          {status === 'saved' && <Icon name="check" />}
+          {status === 'saving' && <Icon name="spinner" className="spin" />}
+          {status === 'failed' && <Icon name="warn" />}
           {status === 'saved'
             ? 'Saved'
             : status === 'saving'
@@ -211,38 +283,60 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
         </span>
       </header>
       {conflict && (
-        <div
-          role="alert"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-            margin: '0 20px 8px',
-            padding: '8px 12px',
-            background: '#fef7e0',
-            borderRadius: 8,
-            fontSize: 12,
-          }}
-        >
-          <span style={{ flex: 1 }}>
+        <div style={{ margin: '0 var(--s-5) var(--s-3)' }}>
+          <Banner
+            tone="warn"
+            actions={
+              <>
+                <Button size="sm" onClick={useTheirs}>
+                  Use the assistant's version
+                </Button>
+                <Button size="sm" onClick={keepMine}>
+                  Keep mine
+                </Button>
+              </>
+            }
+          >
             The assistant changed this artifact while you were typing. Nothing
             is saved until you choose.
-          </span>
-          <button type="button" onClick={useTheirs}>
-            Use the assistant's version
-          </button>
-          <button type="button" onClick={keepMine}>
-            Keep mine
-          </button>
+          </Banner>
         </div>
       )}
       {missing ? (
-        <p style={{ padding: '0 20px', color: '#5f6368' }}>
+        <p className="muted" style={{ padding: '0 var(--s-5)' }}>
           This artifact no longer exists.
         </p>
       ) : doc === null ? (
-        <p style={{ padding: '0 20px', color: '#5f6368' }}>Loading…</p>
+        <p className="muted" style={{ padding: '0 var(--s-5)' }}>
+          Loading…
+        </p>
+      ) : showPreview && tab.kind === 'markdown' ? (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            borderTop: '1px solid var(--c-border)',
+            padding: 'var(--s-4) var(--s-5)',
+          }}
+        >
+          <Markdown text={text} />
+        </div>
+      ) : showPreview ? (
+        // The assistant may have written this after reading a web page, so it is
+        // shown with no permissions and no way to reach the internet.
+        <iframe
+          title={`${tab.title} (preview)`}
+          sandbox={HTML_SANDBOX}
+          srcDoc={htmlDocument(text)}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            border: 'none',
+            borderTop: '1px solid var(--c-border)',
+            background: '#ffffff',
+          }}
+        />
       ) : (
         <textarea
           aria-label={`Edit ${tab.title}`}
@@ -266,15 +360,15 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             flex: 1,
             minHeight: 0,
             border: 'none',
-            borderTop: '1px solid #eeeeee',
+            borderTop: '1px solid var(--c-border)',
             outline: 'none',
             resize: 'none',
-            padding: '14px 20px',
-            fontSize: 14,
+            padding: 'var(--s-4) var(--s-5)',
+            background: 'var(--c-surface)',
+            color: 'var(--c-text)',
+            fontSize: 'var(--fs-md)',
             lineHeight: 1.55,
-            fontFamily: mono
-              ? 'ui-monospace, Consolas, "Courier New", monospace'
-              : 'inherit',
+            fontFamily: mono ? 'var(--font-mono)' : 'var(--font)',
             tabSize: 2,
           }}
         />

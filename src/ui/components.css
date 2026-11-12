@@ -1256,3 +1256,30 @@ button {
 .chat-notice > .i {
   color: var(--c-ok);
 }
+
+/* ---- A Space's overview (from the design) ----------------------------------- */
+.ov-title {
+  margin-top: var(--s-2);
+}
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--s-3);
+  margin-bottom: var(--s-6);
+}
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  cursor: pointer;
+  font-size: var(--fs-md);
+}
+.ov-card:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.ov-actions {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
