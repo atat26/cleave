@@ -1355,3 +1355,55 @@ button {
   font-size: 14px;
   line-height: 1;
 }
+
+/* ---- Drag and drop in the sidebar ---------------------------------------------- */
+.dnd-dragging {
+  opacity: 0.4;
+}
+/* A line (with a dot at its left end) where the dragged item would land. */
+.dnd-before {
+  position: relative;
+}
+.dnd-before::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 4px;
+  top: -2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--c-accent);
+  pointer-events: none;
+}
+.dnd-before::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  pointer-events: none;
+}
+/* The end of a group: a thin target that shows the line when it is the one. */
+.dnd-end {
+  height: 6px;
+  margin-top: -2px;
+}
+.dnd-end-loose {
+  height: 14px;
+  margin-top: 0;
+}
+/* A Space (or the "outside every Space" area) the item will join. */
+.dnd-into {
+  outline: 1.5px dashed var(--c-accent);
+  outline-offset: -1px;
+  background: var(--c-accent-tint);
+  border-radius: var(--r-md);
+}
+.dnd-grip {
+  display: inline-flex;
+  cursor: grab;
+  color: var(--c-text-3);
+}

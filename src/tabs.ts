@@ -2247,6 +2247,36 @@ export async function createTabs(
       // Unpinned with the mouse on it: it stays open until the mouse leaves.
       if (!pin) setHover(true);
     },
+    // Drag and drop in the sidebar (and Alt+Up / Alt+Down). Each says what to move,
+    // where (a Space, or null for outside every Space), and before which item (null:
+    // at the end). The rules are in model.ts; anything that does not exist is ignored.
+    'sidebar:move-tab': (tabId, spaceId, beforeTabId) => {
+      if (!isId(tabId)) return;
+      if (spaceId !== null && !isId(spaceId)) return;
+      if (beforeTabId !== null && !isId(beforeTabId)) return;
+      commit(model.placeTab(state, tabId, spaceId, beforeTabId));
+    },
+    'sidebar:move-artifact': (artifactId, spaceId, beforeArtifactId) => {
+      if (!isId(artifactId)) return;
+      if (spaceId !== null && !isId(spaceId)) return;
+      if (beforeArtifactId !== null && !isId(beforeArtifactId)) return;
+      const found = artifactsModel.findArtifact(artifacts, artifactId);
+      if (!found) return;
+      if (spaceId !== null && !model.findSpace(state, spaceId)) return;
+      // The artifact belongs to one Space: change that first (its open tab follows).
+      if (found.spaceId !== spaceId) placeArtifact(artifactId, spaceId);
+      commit(model.placeArtifactTab(state, artifactId, beforeArtifactId));
+    },
+    'sidebar:move-space': (spaceId, beforeSpaceId) => {
+      if (!isId(spaceId)) return;
+      if (beforeSpaceId !== null && !isId(beforeSpaceId)) return;
+      commit(model.placeSpace(state, spaceId, beforeSpaceId));
+    },
+    'sidebar:nudge': (kind, id, direction) => {
+      if (kind !== 'tab' && kind !== 'artifact' && kind !== 'space') return;
+      if (!isId(id) || (direction !== -1 && direction !== 1)) return;
+      commit(model.nudge(state, { kind, id }, direction));
+    },
     // Linking Spaces and tabs to a chat. Only things that exist can be linked.
     'chats:link': (chatId, kind, id) => {
       if (!isId(chatId) || !isLinkKind(kind) || !isId(id)) return;

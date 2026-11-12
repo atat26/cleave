@@ -233,6 +233,25 @@ export interface BrowserApi {
   reloadPage: () => void;
   // Pin the sidebar open, or unpin it (back to the strip).
   toggleSidebarPin: () => void;
+  // Drag and drop in the sidebar: put a tab in a Space (null: outside every Space)
+  // before another tab (null: at the end); the same for an open artifact and a Space.
+  moveTab: (
+    tabId: number,
+    spaceId: number | null,
+    beforeTabId: number | null,
+  ) => void;
+  moveArtifactTab: (
+    artifactId: number,
+    spaceId: number | null,
+    beforeArtifactId: number | null,
+  ) => void;
+  moveSpace: (spaceId: number, beforeSpaceId: number | null) => void;
+  // Alt+Up / Alt+Down: one place up (-1) or down (1).
+  nudgeItem: (
+    kind: 'tab' | 'artifact' | 'space',
+    id: number,
+    direction: -1 | 1,
+  ) => void;
   // What the chat needs on screen right now (see layout.ts).
   setChatNeed: (need: ChatNeed) => void;
   stopLoading: () => void;
