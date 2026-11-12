@@ -75,9 +75,17 @@ import {
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
 import {
+  addMenuItems,
+  artifactMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
+  editMenuItems,
+  linkMenuItems,
+  parseAddChoice,
+  parseArtifactChoice,
   parseChatChoice,
+  parseEditChoice,
+  parseLinkChoice,
   parseSpaceChoice,
   parseTabChoice,
   spaceMenuItems,
@@ -1233,6 +1241,210 @@ export async function createTabs(
     }
   };
 
+  // Jump to a linked tab, Space or artifact (a closed page in a Space opens again).
+  const openLink = (kind: 'tab' | 'space' | 'artifact', id: number) => {
+    if (kind === 'tab' && model.findTab(state, id)?.closed) {
+      reopenTab(id);
+    } else if (kind === 'tab' && model.findTab(state, id)) {
+      select({ kind: 'tab', id });
+    } else if (kind === 'space' && model.findSpace(state, id)) {
+      select({ kind: 'lead', spaceId: id });
+    } else if (kind === 'artifact') {
+      openArtifact(id);
+    }
+  };
+
+  // Bring a page that was closed for good back from the address a link remembers
+  // (as a new, ungrouped tab) and point every chat's link to it at the new tab.
+  const reopenLink = (chatId: number, id: number) => {
+    // The link may have been removed from the chat since; an old message's token
+    // still remembers the address.
+    const conversation = chatsModel.findConversation(chats, chatId);
+    const ref =
+      conversation?.refs.find((r) => r.kind === 'tab' && r.id === id) ??
+      conversation?.messages
+        .flatMap((m) => m.mentions)
+        .find((x) => x.kind === 'tab' && x.id === id);
+    if (!ref || !ref.url || model.findTab(state, id)) return;
+    const created = model.addTab(state, { url: ref.url, spaceId: null });
+    commitAndShow(revealPage(created.state));
+    const reopened = { id: created.id, title: ref.title, url: ref.url };
+    // Every chat that used the page follows it to the new tab: links and the
+    // tokens in old messages. A link you had removed is not added back.
+    commitChats(chatsModel.retargetEverywhere(chats, 'tab', id, reopened));
+    chatService?.refreshMentions(); // Show the live tokens without a reload.
+  };
+
+  // Make a copy of an artifact in a Space (or none). Returns the copy's number.
+  const copyArtifact = (id: number, spaceId: number | null): number | null => {
+    if (spaceId !== null && !model.findSpace(state, spaceId)) return null;
+    const original = artifactsModel.findArtifact(artifacts, id);
+    if (!original) return null;
+    const result = artifactsModel.createArtifact(
+      artifacts,
+      {
+        kind: original.kind,
+        title: `${original.title} (copy)`,
+        content: original.content,
+        spaceId,
+      },
+      Date.now(),
+    );
+    if (!result.ok) return null;
+    commitArtifacts(result.state);
+    return result.artifact.id;
+  };
+
+  // Put an artifact in a Space (or none, with null).
+  const placeArtifact = (id: number, spaceId: number | null) => {
+    const result = artifactsModel.updateArtifact(
+      artifacts,
+      id,
+      { spaceId },
+      Date.now(),
+    );
+    if (result.ok) commitArtifacts(result.state);
+  };
+
+  // What an artifact menu item does.
+  const runArtifactChoice = (id: number, choiceId: string) => {
+    const artifact = artifactsModel.findArtifact(artifacts, id);
+    const choice = parseArtifactChoice(choiceId);
+    if (!artifact || !choice) return;
+    switch (choice.action) {
+      case 'open':
+        openArtifact(id);
+        break;
+      case 'close':
+        commitAndShow(withSomethingActive(model.closeArtifactTab(state, id)));
+        break;
+      case 'rename':
+        // The Artifacts panel opens with this artifact's name as a text box.
+        state = model.setRightPanel(state, 'artifacts');
+        saver.schedule();
+        applyLayout(true);
+        sendState();
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.send('artifact:begin-rename', id);
+        }
+        break;
+      case 'add-to-chat':
+        linkToChat({
+          kind: 'artifact',
+          id,
+          title: artifact.title,
+          url: null,
+        });
+        break;
+      case 'move':
+        if (model.findSpace(state, choice.spaceId)) {
+          placeArtifact(id, choice.spaceId);
+        }
+        break;
+      case 'move-new-space': {
+        const created = model.addSpace(state);
+        commit(created.state);
+        placeArtifact(id, created.id);
+        break;
+      }
+      case 'take-out':
+        placeArtifact(id, null);
+        break;
+      case 'delete':
+        void deleteArtifact(id);
+        break;
+    }
+  };
+
+  // What a choice in a Space overview's Add menu does.
+  const runAddChoice = (spaceId: number, choiceId: string) => {
+    const choice = parseAddChoice(choiceId);
+    if (!choice || !model.findSpace(state, spaceId)) return;
+    switch (choice.action) {
+      case 'page':
+        openTab(NEW_TAB_URL, spaceId);
+        break;
+      case 'new-artifact': {
+        const result = artifactsModel.createArtifact(
+          artifacts,
+          { kind: choice.kind, title: '', spaceId },
+          Date.now(),
+        );
+        if (result.ok) {
+          commitArtifacts(result.state);
+          openArtifact(result.artifact.id);
+        }
+        break;
+      }
+      case 'move':
+        placeArtifact(choice.artifactId, spaceId);
+        break;
+      case 'copy':
+        copyArtifact(choice.artifactId, spaceId);
+        break;
+    }
+  };
+
+  // What a choice in a chat link's menu does.
+  const runLinkChoice = (
+    chatId: number,
+    kind: 'tab' | 'space' | 'artifact',
+    id: number,
+    choiceId: string,
+  ) => {
+    const choice = parseLinkChoice(choiceId);
+    if (!choice) return;
+    switch (choice.action) {
+      case 'open':
+        openLink(kind, id);
+        break;
+      case 'reopen':
+        reopenLink(chatId, id);
+        break;
+      case 'show-in-space': {
+        const spaceId =
+          kind === 'tab'
+            ? (model.findTab(state, id)?.spaceId ?? null)
+            : (artifactsModel.findArtifact(artifacts, id)?.spaceId ?? null);
+        if (spaceId !== null) select({ kind: 'lead', spaceId });
+        break;
+      }
+      case 'remove':
+        commitChats(chatsModel.removeRef(chats, chatId, kind, id));
+        break;
+    }
+  };
+
+  // What a choice in an editing menu does, in the text box that has the keyboard.
+  const runEditChoice = (target: Electron.WebContents, choiceId: string) => {
+    const choice = parseEditChoice(choiceId);
+    if (!choice || target.isDestroyed()) return;
+    switch (choice.action) {
+      case 'undo':
+        target.undo();
+        break;
+      case 'cut':
+        target.cut();
+        break;
+      case 'copy':
+        target.copy();
+        break;
+      case 'paste':
+        target.paste();
+        break;
+      case 'select-all':
+        target.selectAll();
+        break;
+      case 'paste-and-go': {
+        void clipboard.readText().then((copied) => {
+          const text = copied.trim();
+          if (text) requests['tab:navigate'](text);
+        });
+        break;
+      }
+    }
+  };
+
   // What a Space menu item does.
   const runSpaceChoice = (spaceId: number, choiceId: string) => {
     const space = model.findSpace(state, spaceId);
@@ -1652,38 +1864,76 @@ export async function createTabs(
     },
     // Clicking a link chip jumps to that tab, or to that Space's overview.
     'chats:open-link': (kind, id) => {
-      if (!isLinkKind(kind) || !isId(id)) return;
-      if (kind === 'tab' && model.findTab(state, id)?.closed) {
-        reopenTab(id); // A closed link in a Space opens again.
-      } else if (kind === 'tab' && model.findTab(state, id)) {
-        select({ kind: 'tab', id });
-      } else if (kind === 'space' && model.findSpace(state, id)) {
-        select({ kind: 'lead', spaceId: id });
-      } else if (kind === 'artifact') {
-        openArtifact(id);
-      }
+      if (isLinkKind(kind) && isId(id)) openLink(kind, id);
     },
     // Bring a closed tab back (as a new, ungrouped tab) and point every chat's
     // link to it at the new tab.
     'chats:reopen-link': (chatId, id) => {
-      if (!isId(chatId) || !isId(id)) return;
-      // The link may have been removed from the chat since; an old message's
-      // token still remembers the address.
+      if (isId(chatId) && isId(id)) reopenLink(chatId, id);
+    },
+    // Menus: an artifact, a Space's Add button, a link in a chat, and the editing
+    // menu of a text box.
+    'artifact:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = artifactMenuItems(state, artifacts, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runArtifactChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    'space:add-menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = addMenuItems(state, artifacts, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runAddChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    'link:menu': (chatId, kind, id, removable, x, y) => {
+      if (!isId(chatId) || !isLinkKind(kind) || !isId(id)) return;
+      if (!isNumber(x) || !isNumber(y)) return;
       const conversation = chatsModel.findConversation(chats, chatId);
+      if (!conversation) return;
+      // The link itself, or the remembered copy in an old message.
       const ref =
-        conversation?.refs.find((r) => r.kind === 'tab' && r.id === id) ??
-        conversation?.messages
+        conversation.refs.find((r) => r.kind === kind && r.id === id) ??
+        conversation.messages
           .flatMap((m) => m.mentions)
-          .find((x) => x.kind === 'tab' && x.id === id);
-      // Only for a closed tab whose address was remembered.
-      if (!ref || !ref.url || model.findTab(state, id)) return;
-      const created = model.addTab(state, { url: ref.url, spaceId: null });
-      commitAndShow(revealPage(created.state));
-      const reopened = { id: created.id, title: ref.title, url: ref.url };
-      // Every chat that used the page follows it to the new tab: links and the
-      // tokens in old messages. A link you had removed is not added back.
-      commitChats(chatsModel.retargetEverywhere(chats, 'tab', id, reopened));
-      chatService?.refreshMentions(); // Show the live tokens without a reload.
+          .find((m) => m.kind === kind && m.id === id);
+      if (!ref) return;
+      showMenu(
+        linkMenuItems(ref, workspace(), removable === true),
+        x,
+        y,
+        (choice) => runLinkChoice(chatId, kind, id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    'edit:menu': (kind, x, y, hasSelection) => {
+      if (kind !== 'address' && kind !== 'composer') return;
+      if (!isNumber(x) || !isNumber(y)) return;
+      const opener = requestSender ?? win.webContents;
+      void clipboard.readText().then((copied) =>
+        showMenu(
+          editMenuItems({
+            hasSelection: hasSelection === true,
+            canPaste: copied.length > 0,
+            pasteAndGo: kind === 'address',
+          }),
+          x,
+          y,
+          (choice) => runEditChoice(opener, choice),
+          opener,
+        ),
+      );
     },
     'chats:new': () => chatMenuActions.newChat(),
     'chats:select': (id) => {
@@ -1857,23 +2107,8 @@ export async function createTabs(
   ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     if (!isId(id)) return null;
-    if (spaceId !== null && !(isId(spaceId) && model.findSpace(state, spaceId)))
-      return null;
-    const original = artifactsModel.findArtifact(artifacts, id);
-    if (!original) return null;
-    const result = artifactsModel.createArtifact(
-      artifacts,
-      {
-        kind: original.kind,
-        title: `${original.title} (copy)`,
-        content: original.content,
-        spaceId: spaceId as number | null,
-      },
-      Date.now(),
-    );
-    if (!result.ok) return null;
-    commitArtifacts(result.state);
-    return result.artifact.id;
+    if (spaceId !== null && !isId(spaceId)) return null;
+    return copyArtifact(id, spaceId);
   });
   ipcMain.handle(
     'artifact:create',

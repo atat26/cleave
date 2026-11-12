@@ -4,7 +4,11 @@
 import type { MenuItem } from './menuTypes.ts';
 import * as model from './model.ts';
 import type { SavedState } from './model.ts';
-import type { ChatsState } from './chats.ts';
+import { ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
+import type { ArtifactKind, ArtifactsState } from './artifacts.ts';
+import type { ChatRef, ChatsState } from './chats.ts';
+import { resolveLink } from './chatLinks.ts';
+import type { Workspace } from './chatLinks.ts';
 import { SPACE_COLOR_HEX } from './colors.ts';
 
 // ---- The tab menu --------------------------------------------------------------
@@ -404,4 +408,431 @@ export interface ChatMenuActions {
   newChat: () => void;
   renameChat: (chatId: number) => void;
   deleteChat: (chatId: number) => void;
+}
+
+// ---- The artifact menu --------------------------------------------------------
+
+export type ArtifactChoice =
+  | { action: 'open' }
+  | { action: 'close' }
+  | { action: 'rename' }
+  | { action: 'add-to-chat' }
+  | { action: 'move'; spaceId: number }
+  | { action: 'move-new-space' }
+  | { action: 'take-out' }
+  | { action: 'delete' };
+
+// The menu for an artifact (a sidebar row, a card on a Space's overview, or a row
+// in the Artifacts panel). Null if there is no such artifact.
+export function artifactMenuItems(
+  state: SavedState,
+  artifacts: ArtifactsState,
+  artifactId: number,
+): MenuItem[] | null {
+  const artifact = findArtifact(artifacts, artifactId);
+  if (!artifact) return null;
+  const open = state.artifactTabs.some((t) => t.artifactId === artifactId);
+  const places = state.spaces.filter((space) => space.id !== artifact.spaceId);
+  const moveItems: MenuItem[] = places.map(
+    (space): MenuItem => ({
+      type: 'item',
+      id: `artifact.move:${space.id}`,
+      label: space.name,
+    }),
+  );
+  if (moveItems.length > 0) moveItems.push({ type: 'separator' });
+  moveItems.push({
+    type: 'item',
+    id: 'artifact.move-new-space',
+    label: 'New Space…',
+    icon: 'plus',
+  });
+  return [
+    { type: 'item', id: 'artifact.open', label: 'Open', icon: 'doc' },
+    {
+      type: 'item',
+      id: 'artifact.close',
+      label: 'Close',
+      icon: 'x',
+      disabled: !open,
+    },
+    { type: 'item', id: 'artifact.rename', label: 'Rename', icon: 'pencil' },
+    {
+      type: 'item',
+      id: 'artifact.add-to-chat',
+      label: 'Add to chat',
+      icon: 'chat',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'artifact.move',
+      label: 'Move to Space',
+      icon: 'move',
+      submenu: moveItems,
+    },
+    ...(artifact.spaceId !== null
+      ? [
+          {
+            type: 'item',
+            id: 'artifact.take-out',
+            label: 'Take out of Space',
+            icon: 'arrow-right',
+          } as MenuItem,
+        ]
+      : []),
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'artifact.delete',
+      label: 'Delete',
+      icon: 'trash',
+      danger: true,
+    },
+  ];
+}
+
+export function parseArtifactChoice(id: string): ArtifactChoice | null {
+  switch (id) {
+    case 'artifact.open':
+      return { action: 'open' };
+    case 'artifact.close':
+      return { action: 'close' };
+    case 'artifact.rename':
+      return { action: 'rename' };
+    case 'artifact.add-to-chat':
+      return { action: 'add-to-chat' };
+    case 'artifact.move-new-space':
+      return { action: 'move-new-space' };
+    case 'artifact.take-out':
+      return { action: 'take-out' };
+    case 'artifact.delete':
+      return { action: 'delete' };
+  }
+  const moved = /^artifact\.move:(\d+)$/.exec(id);
+  return moved ? { action: 'move', spaceId: Number(moved[1]) } : null;
+}
+
+// ---- The "Add" menu on a Space's overview -------------------------------------
+
+export type AddChoice =
+  | { action: 'page' }
+  | { action: 'new-artifact'; kind: ArtifactKind }
+  | { action: 'move'; artifactId: number }
+  | { action: 'copy'; artifactId: number };
+
+const KIND_LABELS: Record<ArtifactKind, string> = {
+  markdown: 'Markdown',
+  text: 'Plain text',
+  html: 'HTML',
+  code: 'Code',
+};
+
+// The menu behind the overview's Add button: a new page, a new artifact (by kind)
+// or an artifact from another Space (moved here, or copied here).
+export function addMenuItems(
+  state: SavedState,
+  artifacts: ArtifactsState,
+  spaceId: number,
+): MenuItem[] | null {
+  if (!model.findSpace(state, spaceId)) return null;
+  const spaceName = (id: number | null) =>
+    id === null ? 'No Space' : (model.findSpace(state, id)?.name ?? 'No Space');
+  const others = artifacts.artifacts.filter((a) => a.spaceId !== spaceId);
+  return [
+    { type: 'item', id: 'add.page', label: 'New page', icon: 'globe' },
+    {
+      type: 'item',
+      id: 'add.artifact',
+      label: 'New artifact',
+      icon: 'doc',
+      submenu: ARTIFACT_KINDS.map(
+        (kind): MenuItem => ({
+          type: 'item',
+          id: `add.artifact:${kind}`,
+          label: KIND_LABELS[kind],
+        }),
+      ),
+    },
+    { type: 'separator' },
+    { type: 'header', label: 'From another Space' },
+    {
+      type: 'item',
+      id: 'add.existing',
+      label: 'Existing artifact',
+      icon: 'file',
+      disabled: others.length === 0,
+      submenu: others.map(
+        (a): MenuItem => ({
+          type: 'item',
+          id: `add.pick:${a.id}`,
+          label: `${shortTitle(a.title)} · ${shortTitle(spaceName(a.spaceId))}`,
+          submenu: [
+            {
+              type: 'item',
+              id: `add.move:${a.id}`,
+              label: 'Move here',
+              icon: 'move',
+            },
+            {
+              type: 'item',
+              id: `add.copy:${a.id}`,
+              label: 'Copy here',
+              icon: 'copy',
+            },
+          ],
+        }),
+      ),
+    },
+  ];
+}
+
+export function parseAddChoice(id: string): AddChoice | null {
+  if (id === 'add.page') return { action: 'page' };
+  const created = /^add\.artifact:([a-z]+)$/.exec(id);
+  if (created) {
+    const kind = ARTIFACT_KINDS.find((k) => k === created[1]);
+    return kind ? { action: 'new-artifact', kind } : null;
+  }
+  const other = /^add\.(move|copy):(\d+)$/.exec(id);
+  if (other) {
+    return {
+      action: other[1] as 'move' | 'copy',
+      artifactId: Number(other[2]),
+    };
+  }
+  return null;
+}
+
+// ---- The menu of a link in a chat ---------------------------------------------
+
+export type LinkChoice =
+  | { action: 'open' }
+  | { action: 'reopen' }
+  | { action: 'show-in-space' }
+  | { action: 'remove' };
+
+// The menu of a link chip, or of an @name in a sent message. `removable` is true
+// for a chip (the link can be taken off the chat), false for a token in a message.
+export function linkMenuItems(
+  ref: ChatRef,
+  workspace: Workspace,
+  removable: boolean,
+): MenuItem[] {
+  const link = resolveLink(ref, workspace);
+  // A page that was closed all the way (not just kept in its Space) can come back
+  // from the address that was remembered.
+  const canReopen = ref.kind === 'tab' && !link.open && Boolean(ref.url);
+  const spaceId =
+    ref.kind === 'tab'
+      ? (workspace.tabs.find((t) => t.id === ref.id)?.spaceId ?? null)
+      : ref.kind === 'artifact'
+        ? ((workspace.artifacts ?? []).find((a) => a.id === ref.id)?.spaceId ??
+          null)
+        : null;
+  return [
+    {
+      type: 'item',
+      id: 'link.open',
+      label: 'Open',
+      icon: 'ext-link',
+      disabled: !link.open,
+    },
+    ...(canReopen
+      ? [
+          {
+            type: 'item',
+            id: 'link.reopen',
+            label: 'Reopen',
+            icon: 'retry',
+          } as MenuItem,
+        ]
+      : []),
+    ...(ref.kind !== 'space'
+      ? [
+          {
+            type: 'item',
+            id: 'link.show-in-space',
+            label: 'Show in Space',
+            icon: 'layers',
+            disabled: spaceId === null,
+          } as MenuItem,
+        ]
+      : []),
+    ...(removable
+      ? [
+          { type: 'separator' } as MenuItem,
+          {
+            type: 'item',
+            id: 'link.remove',
+            label: 'Remove from chat',
+            icon: 'x',
+            danger: true,
+          } as MenuItem,
+        ]
+      : []),
+  ];
+}
+
+export function parseLinkChoice(id: string): LinkChoice | null {
+  switch (id) {
+    case 'link.open':
+      return { action: 'open' };
+    case 'link.reopen':
+      return { action: 'reopen' };
+    case 'link.show-in-space':
+      return { action: 'show-in-space' };
+    case 'link.remove':
+      return { action: 'remove' };
+  }
+  return null;
+}
+
+// ---- The menu of a chat message ---------------------------------------------------
+
+export type MessageChoice =
+  | { action: 'copy' }
+  | { action: 'retry' }
+  | { action: 'branch' };
+
+// Copy (the selected text, else the whole message), and for one of your own
+// messages Retry (only the newest, when no reply is being written) or Branch (the
+// older ones).
+export function messageMenuItems(options: {
+  role: 'user' | 'assistant';
+  hasSelection: boolean;
+  isNewestUser: boolean;
+  busy: boolean;
+}): MenuItem[] {
+  const items: MenuItem[] = [
+    {
+      type: 'item',
+      id: 'msg.copy',
+      label: options.hasSelection ? 'Copy selection' : 'Copy message',
+      icon: 'copy',
+      shortcut: 'Ctrl+C',
+    },
+  ];
+  if (options.role === 'user') {
+    items.push(
+      { type: 'separator' },
+      {
+        type: 'item',
+        id: 'msg.retry',
+        label: 'Retry',
+        icon: 'retry',
+        disabled: !options.isNewestUser || options.busy,
+      },
+      {
+        type: 'item',
+        id: 'msg.branch',
+        label: 'Branch from here',
+        icon: 'branch',
+        disabled: options.isNewestUser,
+      },
+    );
+  }
+  return items;
+}
+
+export function parseMessageChoice(id: string): MessageChoice | null {
+  switch (id) {
+    case 'msg.copy':
+      return { action: 'copy' };
+    case 'msg.retry':
+      return { action: 'retry' };
+    case 'msg.branch':
+      return { action: 'branch' };
+  }
+  return null;
+}
+
+// ---- Editing menus: the address bar and the message box ----------------------------
+
+export type EditChoice =
+  | { action: 'undo' }
+  | { action: 'cut' }
+  | { action: 'copy' }
+  | { action: 'paste' }
+  | { action: 'paste-and-go' }
+  | { action: 'select-all' };
+
+// Cut, copy, paste and select all for a text box. `pasteAndGo` adds the address
+// bar's "Paste and go".
+export function editMenuItems(options: {
+  hasSelection: boolean;
+  canPaste: boolean;
+  pasteAndGo: boolean;
+}): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'edit.undo',
+      label: 'Undo',
+      icon: 'undo',
+      shortcut: 'Ctrl+Z',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'edit.cut',
+      label: 'Cut',
+      icon: 'cut',
+      shortcut: 'Ctrl+X',
+      disabled: !options.hasSelection,
+    },
+    {
+      type: 'item',
+      id: 'edit.copy',
+      label: 'Copy',
+      icon: 'copy',
+      shortcut: 'Ctrl+C',
+      disabled: !options.hasSelection,
+    },
+    {
+      type: 'item',
+      id: 'edit.paste',
+      label: 'Paste',
+      icon: 'paste',
+      shortcut: 'Ctrl+V',
+      disabled: !options.canPaste,
+    },
+    ...(options.pasteAndGo
+      ? [
+          {
+            type: 'item',
+            id: 'edit.paste-and-go',
+            label: 'Paste and go',
+            icon: 'arrow-right',
+            disabled: !options.canPaste,
+          } as MenuItem,
+        ]
+      : []),
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'edit.select-all',
+      label: 'Select all',
+      icon: 'select-all',
+      shortcut: 'Ctrl+A',
+    },
+  ];
+}
+
+export function parseEditChoice(id: string): EditChoice | null {
+  switch (id) {
+    case 'edit.undo':
+      return { action: 'undo' };
+    case 'edit.cut':
+      return { action: 'cut' };
+    case 'edit.copy':
+      return { action: 'copy' };
+    case 'edit.paste':
+      return { action: 'paste' };
+    case 'edit.paste-and-go':
+      return { action: 'paste-and-go' };
+    case 'edit.select-all':
+      return { action: 'select-all' };
+  }
+  return null;
 }

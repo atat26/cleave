@@ -37,6 +37,15 @@ export function App() {
   // Remembered so a panel's content stays visible while it slides closed.
   const lastPanel = useRef<RightPanelName | null>(null);
 
+  // Set when "Rename" is chosen from an artifact's menu.
+  const [artifactRenameRequest, setArtifactRenameRequest] = useState<
+    number | null
+  >(null);
+  const clearArtifactRenameRequest = useCallback(
+    () => setArtifactRenameRequest(null),
+    [],
+  );
+
   // Set when "Rename chat" is chosen from a chat menu.
   const [chatRenameRequest, setChatRenameRequest] = useState<number | null>(
     null,
@@ -48,6 +57,10 @@ export function App() {
 
   useEffect(() => window.browserApi.onState(setState), []);
   useEffect(() => window.browserApi.onRenameRequest(setRenameRequest), []);
+  useEffect(
+    () => window.browserApi.onArtifactRenameRequest(setArtifactRenameRequest),
+    [],
+  );
   useEffect(
     () => window.browserApi.onChatRenameRequest(setChatRenameRequest),
     [],
@@ -124,8 +137,6 @@ export function App() {
           tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
           artifacts={state.artifacts.filter((a) => a.spaceId === leadSpace.id)}
           openArtifactIds={state.artifactTabs.map((a) => a.id)}
-          allArtifacts={state.artifacts}
-          spaces={state.spaces}
         />
       )}
       {chatVisible && (
@@ -147,6 +158,8 @@ export function App() {
           panel={shownPanel}
           artifacts={state.artifacts}
           spaces={state.spaces}
+          artifactRenameRequest={artifactRenameRequest}
+          onArtifactRenameHandled={clearArtifactRenameRequest}
         />
       )}
       <Rail open={state.rightPanel} viewMode={state.viewMode} />

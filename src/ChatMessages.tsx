@@ -1,5 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from 'react';
 import { MentionToken } from './LinkChips';
 import { Markdown } from './MarkdownView';
 import { errorMessage } from './openrouter';
@@ -563,6 +567,36 @@ function MessageView({
     const result = await window.browserApi.chatBranch(chatId, message.id);
     if (!result.ok) setRetryNote(result.error);
   };
+  // Retry or Branch chosen from this message's right-click menu: do it here, so
+  // the result (or an error) shows the same way as from the buttons.
+  const doAction = useRef<(action: 'retry' | 'branch') => void>(() => {});
+  doAction.current = (action) => void (action === 'retry' ? retry() : branch());
+  useEffect(
+    () =>
+      window.browserApi.onMessageAction((chosen) => {
+        if (chosen.chatId === chatId && chosen.messageId === message.id) {
+          doAction.current(chosen.action);
+        }
+      }),
+    [chatId, message.id],
+  );
+  const openMenu = (event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    // Only text selected inside this message counts.
+    const selected = window.getSelection();
+    const inside =
+      selected !== null &&
+      !selected.isCollapsed &&
+      selected.anchorNode !== null &&
+      event.currentTarget.contains(selected.anchorNode);
+    window.browserApi.showMessageMenu(
+      chatId,
+      message.id,
+      event.clientX,
+      event.clientY,
+      inside ? selected.toString() : '',
+    );
+  };
   const text: CSSProperties = {
     whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere',
@@ -576,6 +610,7 @@ function MessageView({
     const attached = message.mentions.filter((m) => m.tag === '');
     return (
       <div
+        onContextMenu={openMenu}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -650,7 +685,7 @@ function MessageView({
   const streaming = message.status === 'streaming';
   const finished = message.status === 'done' || message.status === 'stopped';
   return (
-    <div style={{ margin: '10px 0' }}>
+    <div onContextMenu={openMenu} style={{ margin: '10px 0' }}>
       {/* Everything that happened, in the order it happened. */}
       {message.parts.map((part, i) => {
         const last = i === message.parts.length - 1;

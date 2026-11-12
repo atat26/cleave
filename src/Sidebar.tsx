@@ -173,6 +173,14 @@ function ArtifactRow({
       active={active}
       title={tab.title}
       onOpen={() => window.browserApi.artifactSelect(tab.id)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showArtifactMenu(
+          tab.id,
+          event.clientX,
+          event.clientY,
+        );
+      }}
       icon={<Icon name="doc" />}
       trailing={
         <IconButton

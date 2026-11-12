@@ -380,6 +380,45 @@ export interface BrowserApi {
   // x and y are where you clicked, in the window (the pointer's client position).
   showTabMenu: (id: number, x: number, y: number) => void;
   showSpaceMenu: (id: number, x: number, y: number) => void;
+  // The menu of an artifact (a row, a card, or a row in the Artifacts panel).
+  showArtifactMenu: (id: number, x: number, y: number) => void;
+  // The menu behind a Space overview's Add button.
+  showSpaceAddMenu: (spaceId: number, x: number, y: number) => void;
+  // The menu of a link in a chat. "removable" is true for a chip above the message
+  // box (it can be taken off the chat), false for an @name in a sent message.
+  showLinkMenu: (
+    chatId: number,
+    kind: LinkKind,
+    id: number,
+    removable: boolean,
+    x: number,
+    y: number,
+  ) => void;
+  // Cut, copy, paste and select all for the address bar or the message box.
+  showEditMenu: (
+    kind: 'address' | 'composer',
+    x: number,
+    y: number,
+    hasSelection: boolean,
+  ) => void;
+  // The menu of a chat message (selection: the text selected in it, if any).
+  showMessageMenu: (
+    chatId: number,
+    messageId: number,
+    x: number,
+    y: number,
+    selection: string,
+  ) => void;
+  // Retry or Branch was chosen from a message's menu: the chat does it.
+  onMessageAction: (
+    callback: (action: {
+      chatId: number;
+      messageId: number;
+      action: 'retry' | 'branch';
+    }) => void,
+  ) => () => void;
+  // Rename was chosen from an artifact's menu: show its name as a text box.
+  onArtifactRenameRequest: (callback: (id: number) => void) => () => void;
   // Called when "Rename Space" is chosen from a menu: show the rename box.
   onRenameRequest: (callback: (spaceId: number) => void) => () => void;
   // Called whenever anything the UI shows changes. Returns an unsubscribe function.

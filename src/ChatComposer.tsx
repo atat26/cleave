@@ -492,6 +492,16 @@ export function ChatComposer({
               refreshPicker();
             }}
             onClick={refreshPicker}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              const selected = window.getSelection();
+              window.browserApi.showEditMenu(
+                'composer',
+                event.clientX,
+                event.clientY,
+                selected !== null && !selected.isCollapsed,
+              );
+            }}
             onKeyUp={(e) => {
               if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
                 refreshPicker();

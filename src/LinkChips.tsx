@@ -174,6 +174,17 @@ export function LinkChips({
           <span
             key={`${ref.kind}:${ref.id}`}
             title={tip}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              window.browserApi.showLinkMenu(
+                chatId,
+                link.kind,
+                link.id,
+                true,
+                event.clientX,
+                event.clientY,
+              );
+            }}
             style={{
               ...chipStyle,
               color: link.open ? '#202124' : '#80868b',
@@ -257,6 +268,17 @@ export function MentionToken({
     link.kind === 'space' ? spaces.find((s) => s.id === link.id) : undefined;
   return (
     <span
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showLinkMenu(
+          chatId,
+          link.kind,
+          link.id,
+          false,
+          event.clientX,
+          event.clientY,
+        );
+      }}
       title={[link.label, link.address, link.open ? '' : 'Closed.']
         .filter(Boolean)
         .join('\n')}

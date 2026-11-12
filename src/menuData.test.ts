@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  addMenuItems,
+  artifactMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
+  editMenuItems,
+  linkMenuItems,
+  messageMenuItems,
   modelMenuItems,
+  parseAddChoice,
+  parseArtifactChoice,
   parseChatChoice,
+  parseEditChoice,
+  parseLinkChoice,
+  parseMessageChoice,
   parseModelChoice,
   parseSpaceChoice,
   parseTabChoice,
@@ -19,7 +29,15 @@ import {
 } from './chats.ts';
 import { isChoosable, menuIds } from './menuTypes.ts';
 import type { MenuEntry, MenuItem } from './menuTypes.ts';
-import { addSpace, addTab, closeTab, defaultState } from './model.ts';
+import { createArtifact, defaultArtifacts } from './artifacts.ts';
+import type { Workspace } from './chatLinks.ts';
+import {
+  addSpace,
+  addTab,
+  closeTab,
+  defaultState,
+  openArtifactTab,
+} from './model.ts';
 
 const entry = (items: MenuItem[], id: string): MenuEntry => {
   const found = items.find(
@@ -298,4 +316,286 @@ test('the model menu shows pinned models with the current one ticked, even if it
   for (const bad of ['', 'model.pick:', 'model.pick', 'model.other']) {
     assert.equal(parseModelChoice(bad), null, bad);
   }
+});
+
+// ---- Artifact, add, link, message and edit menus -----------------------------
+
+function withArtifacts() {
+  const base = build();
+  let artifacts = defaultArtifacts();
+  const made = (title: string, spaceId: number | null) => {
+    const result = createArtifact(
+      artifacts,
+      { kind: 'markdown', title, spaceId },
+      1,
+    );
+    assert.ok(result.ok);
+    artifacts = result.state;
+    return result.artifact.id;
+  };
+  const inWork = made('Notes', base.workId);
+  const loose = made('Loose', null);
+  const inHome = made('Plan', base.homeId);
+  return { ...base, artifacts, inWork, loose, inHome };
+}
+
+test('the artifact menu: close only when open, take out only in a Space, own Space not offered', () => {
+  const { state, artifacts, inWork, loose, workId, homeId } = withArtifacts();
+  const closed = artifactMenuItems(state, artifacts, inWork)!;
+  assert.equal(entry(closed, 'artifact.close').disabled, true);
+  assert.ok(menuIds(closed).includes('artifact.take-out'));
+  assert.equal(entry(closed, 'artifact.delete').danger, true);
+  const ids = menuIds(closed);
+  assert.ok(ids.includes(`artifact.move:${homeId}`));
+  assert.ok(!ids.includes(`artifact.move:${workId}`));
+  // Open: it can be closed. Outside any Space: nothing to take out.
+  const open = openArtifactTab(state, inWork, workId);
+  assert.notEqual(
+    entry(artifactMenuItems(open, artifacts, inWork)!, 'artifact.close')
+      .disabled,
+    true,
+  );
+  assert.ok(
+    !menuIds(artifactMenuItems(state, artifacts, loose)!).includes(
+      'artifact.take-out',
+    ),
+  );
+  assert.equal(artifactMenuItems(state, artifacts, 99999), null);
+});
+
+test('artifact menu ids are unique and understood', () => {
+  const { state, artifacts, inWork } = withArtifacts();
+  const items = artifactMenuItems(state, artifacts, inWork)!;
+  const ids = menuIds(items);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const id of ids) {
+    if (id === 'artifact.move') continue;
+    assert.ok(parseArtifactChoice(id), id);
+  }
+  assert.deepEqual(parseArtifactChoice('artifact.move:4'), {
+    action: 'move',
+    spaceId: 4,
+  });
+  for (const bad of [
+    '',
+    'artifact.move',
+    'artifact.move:x',
+    'artifact.nope',
+    'tab.close',
+  ]) {
+    assert.equal(parseArtifactChoice(bad), null, bad);
+  }
+});
+
+test('the overview Add menu: a new page, artifact kinds, and artifacts from other Spaces', () => {
+  const { state, artifacts, workId, inWork, loose, inHome } = withArtifacts();
+  const items = addMenuItems(state, artifacts, workId)!;
+  const kinds = entry(items, 'add.artifact').submenu!.map(
+    (i) => (i as MenuEntry).id,
+  );
+  assert.deepEqual(kinds, [
+    'add.artifact:markdown',
+    'add.artifact:text',
+    'add.artifact:html',
+    'add.artifact:code',
+  ]);
+  const existing = entry(items, 'add.existing');
+  assert.notEqual(existing.disabled, true);
+  const picks = existing.submenu!.map((i) => (i as MenuEntry).id);
+  // Artifacts already in this Space are not offered.
+  assert.deepEqual(
+    picks.sort(),
+    [`add.pick:${loose}`, `add.pick:${inHome}`].sort(),
+  );
+  assert.ok(!picks.includes(`add.pick:${inWork}`));
+  const first = existing.submenu![0] as MenuEntry;
+  assert.deepEqual(
+    first.submenu!.map((i) => (i as MenuEntry).id),
+    [first.id.replace('pick', 'move'), first.id.replace('pick', 'copy')],
+  );
+  assert.equal(addMenuItems(state, artifacts, 99999), null);
+  // With nothing elsewhere, the entry is greyed out.
+  const alone = createArtifact(
+    defaultArtifacts(),
+    { kind: 'text', spaceId: workId },
+    1,
+  );
+  assert.ok(alone.ok);
+  assert.equal(
+    entry(addMenuItems(state, alone.state, workId)!, 'add.existing').disabled,
+    true,
+  );
+});
+
+test('Add menu choices are read back, and bad ones are not understood', () => {
+  assert.deepEqual(parseAddChoice('add.page'), { action: 'page' });
+  assert.deepEqual(parseAddChoice('add.artifact:html'), {
+    action: 'new-artifact',
+    kind: 'html',
+  });
+  assert.deepEqual(parseAddChoice('add.move:7'), {
+    action: 'move',
+    artifactId: 7,
+  });
+  assert.deepEqual(parseAddChoice('add.copy:7'), {
+    action: 'copy',
+    artifactId: 7,
+  });
+  for (const bad of [
+    '',
+    'add.artifact',
+    'add.artifact:pdf',
+    'add.move:x',
+    'add.pick:3',
+    'add.copy:',
+  ]) {
+    assert.equal(parseAddChoice(bad), null, bad);
+  }
+});
+
+const linkWorkspace: Workspace = {
+  spaces: [{ id: 10, name: 'Work' }],
+  tabs: [
+    { id: 1, title: 'Open page', url: 'https://a.example/', spaceId: 10 },
+    {
+      id: 2,
+      title: 'Kept page',
+      url: 'https://b.example/',
+      spaceId: 10,
+      closed: true,
+    },
+  ],
+  artifacts: [{ id: 5, title: 'Notes', kind: 'markdown', spaceId: null }],
+};
+const ref = (
+  kind: 'tab' | 'space' | 'artifact',
+  id: number,
+  url: string | null = null,
+) => ({
+  kind,
+  id,
+  title: 'Old',
+  url,
+});
+
+test('the link menu: open, reopen a page that is gone, show in Space, remove only on a chip', () => {
+  const open = linkMenuItems(ref('tab', 1), linkWorkspace, true);
+  assert.deepEqual(menuIds(open), [
+    'link.open',
+    'link.show-in-space',
+    'link.remove',
+  ]);
+  assert.notEqual(entry(open, 'link.show-in-space').disabled, true);
+  // A page gone for good, with its address remembered, can be reopened (not opened).
+  const gone = linkMenuItems(
+    ref('tab', 9, 'https://old.example/'),
+    linkWorkspace,
+    true,
+  );
+  assert.equal(entry(gone, 'link.open').disabled, true);
+  assert.ok(menuIds(gone).includes('link.reopen'));
+  assert.equal(entry(gone, 'link.show-in-space').disabled, true);
+  // A kept (closed) page still counts as there: it opens, and is not "reopened".
+  assert.ok(
+    !menuIds(linkMenuItems(ref('tab', 2), linkWorkspace, true)).includes(
+      'link.reopen',
+    ),
+  );
+  // An artifact outside any Space has nowhere to show; a Space has no such item.
+  assert.equal(
+    entry(
+      linkMenuItems(ref('artifact', 5), linkWorkspace, true),
+      'link.show-in-space',
+    ).disabled,
+    true,
+  );
+  assert.ok(
+    !menuIds(linkMenuItems(ref('space', 10), linkWorkspace, true)).includes(
+      'link.show-in-space',
+    ),
+  );
+  // A token in a sent message cannot be removed from the chat.
+  assert.ok(
+    !menuIds(linkMenuItems(ref('tab', 1), linkWorkspace, false)).includes(
+      'link.remove',
+    ),
+  );
+  assert.deepEqual(parseLinkChoice('link.remove'), { action: 'remove' });
+  assert.equal(parseLinkChoice('link.nope'), null);
+});
+
+test('the message menu: copy for all, retry only the newest of yours, branch only older ones', () => {
+  const assistant = messageMenuItems({
+    role: 'assistant',
+    hasSelection: false,
+    isNewestUser: false,
+    busy: false,
+  });
+  assert.deepEqual(menuIds(assistant), ['msg.copy']);
+  assert.equal(entry(assistant, 'msg.copy').label, 'Copy message');
+  assert.equal(
+    entry(
+      messageMenuItems({
+        role: 'assistant',
+        hasSelection: true,
+        isNewestUser: false,
+        busy: false,
+      }),
+      'msg.copy',
+    ).label,
+    'Copy selection',
+  );
+  const newest = messageMenuItems({
+    role: 'user',
+    hasSelection: false,
+    isNewestUser: true,
+    busy: false,
+  });
+  assert.notEqual(entry(newest, 'msg.retry').disabled, true);
+  assert.equal(entry(newest, 'msg.branch').disabled, true);
+  const older = messageMenuItems({
+    role: 'user',
+    hasSelection: false,
+    isNewestUser: false,
+    busy: false,
+  });
+  assert.equal(entry(older, 'msg.retry').disabled, true);
+  assert.notEqual(entry(older, 'msg.branch').disabled, true);
+  // Not while a reply is being written.
+  assert.equal(
+    entry(
+      messageMenuItems({
+        role: 'user',
+        hasSelection: false,
+        isNewestUser: true,
+        busy: true,
+      }),
+      'msg.retry',
+    ).disabled,
+    true,
+  );
+  assert.deepEqual(parseMessageChoice('msg.branch'), { action: 'branch' });
+  assert.equal(parseMessageChoice('msg.x'), null);
+});
+
+test('the editing menu: cut and copy need a selection, paste needs something to paste, paste and go only for the address bar', () => {
+  const none = editMenuItems({
+    hasSelection: false,
+    canPaste: false,
+    pasteAndGo: false,
+  });
+  assert.equal(entry(none, 'edit.cut').disabled, true);
+  assert.equal(entry(none, 'edit.copy').disabled, true);
+  assert.equal(entry(none, 'edit.paste').disabled, true);
+  assert.ok(!menuIds(none).includes('edit.paste-and-go'));
+  assert.notEqual(entry(none, 'edit.select-all').disabled, true);
+  const all = editMenuItems({
+    hasSelection: true,
+    canPaste: true,
+    pasteAndGo: true,
+  });
+  assert.notEqual(entry(all, 'edit.cut').disabled, true);
+  assert.notEqual(entry(all, 'edit.paste-and-go').disabled, true);
+  for (const id of menuIds(all)) assert.ok(parseEditChoice(id), id);
+  assert.equal(parseEditChoice('edit.nope'), null);
 });
