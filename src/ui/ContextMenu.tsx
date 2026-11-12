@@ -35,7 +35,12 @@ function MenuList({
   const list = useRef<HTMLUListElement>(null);
   const [active, setActive] = useState(-1);
   const [open, setOpen] = useState(-1);
-  const anyIcon = items.some((item) => item.type === 'item' && item.icon);
+  const anyIcon = items.some(
+    (item) => item.type === 'item' && (item.icon || item.swatch),
+  );
+  // A long menu scrolls instead of running off the window. (A menu that opens
+  // submenus cannot scroll: that would cut the submenus off. They are short.)
+  const scrolls = !items.some((item) => item.type === 'item' && item.submenu);
 
   // This list takes the keyboard when it appears.
   useLayoutEffect(() => {
@@ -60,6 +65,13 @@ function MenuList({
     setActive(to);
     setOpen(-1);
   };
+
+  // Moving with the keyboard keeps the chosen item in view.
+  useLayoutEffect(() => {
+    if (active < 0) return;
+    const rows = list.current?.querySelectorAll(':scope > li');
+    rows?.[active]?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
 
   const step = (direction: 1 | -1) => {
     const can = reachable(items);
@@ -131,7 +143,12 @@ function MenuList({
       role="menu"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      style={{ outline: 'none' }}
+      style={{
+        outline: 'none',
+        ...(scrolls
+          ? { maxHeight: window.innerHeight - 2 * MARGIN, overflowY: 'auto' }
+          : {}),
+      }}
     >
       {items.map((item, index) => {
         if (item.type === 'separator') {
@@ -211,12 +228,25 @@ function MenuRow({
       onMouseEnter={onHover}
       onClick={onClick}
     >
-      {item.icon ? (
+      {item.swatch ? (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 12,
+            height: 12,
+            margin: '0 2px',
+            borderRadius: 3,
+            background: item.swatch,
+            flex: 'none',
+          }}
+        />
+      ) : item.icon ? (
         <Icon name={item.icon} />
       ) : (
         anyIcon && <span style={{ width: 16, flex: 'none' }} />
       )}
       <span className="lbl">{item.label}</span>
+      {item.checked && <Icon name="check" />}
       {item.shortcut && <span className="sc">{item.shortcut}</span>}
       {item.submenu && <Icon name="chev-r" className="sub" />}
       {children}

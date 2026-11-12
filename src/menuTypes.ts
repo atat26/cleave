@@ -13,6 +13,10 @@ export interface MenuEntry {
   icon?: IconName;
   // Shown on the right, e.g. "Ctrl+W". Only for shortcuts that really work.
   shortcut?: string;
+  // A small square of this colour, drawn in place of an icon (for colour choices).
+  swatch?: string;
+  // Ticked: this is the current choice. Drawn as a check at the right.
+  checked?: boolean;
   // Drawn red: this throws something away.
   danger?: boolean;
   // Drawn grey and cannot be chosen.

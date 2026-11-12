@@ -87,7 +87,8 @@ const browserApi: BrowserApi = {
   chatOpenLink: (kind, id) => ipcRenderer.send('chats:open-link', kind, id),
   chatReopenLink: (chatId, tabId) =>
     ipcRenderer.send('chats:reopen-link', chatId, tabId),
-  showModelMenu: (chatId) => ipcRenderer.send('chat:model-menu', chatId),
+  showModelMenu: (chatId, x, y) =>
+    ipcRenderer.send('chat:model-menu', chatId, x, y),
   openArtifacts: () => ipcRenderer.send('panel:open', 'artifacts'),
   openSettings: () => ipcRenderer.send('panel:open', 'settings'),
   onChatMessage: (callback) => {
@@ -104,7 +105,7 @@ const browserApi: BrowserApi = {
   selectChat: (id) => ipcRenderer.send('chats:select', id),
   renameChat: (id, title) => ipcRenderer.send('chats:rename', id, title),
   deleteChat: (id) => ipcRenderer.send('chats:delete', id),
-  showChatMenu: (id) => ipcRenderer.send('chats:menu', id),
+  showChatMenu: (id, x, y) => ipcRenderer.send('chats:menu', id ?? null, x, y),
   onChatRenameRequest: (callback) => {
     const listener = (_event: unknown, chatId: number) => callback(chatId);
     ipcRenderer.on('chats:begin-rename', listener);
@@ -143,7 +144,7 @@ const browserApi: BrowserApi = {
   popupReady: () => ipcRenderer.send('popup:ready'),
   popupChoose: (id) => ipcRenderer.send('popup:choose', id),
   popupClose: () => ipcRenderer.send('popup:close'),
-  showSpaceMenu: (id) => ipcRenderer.send('space:menu', id),
+  showSpaceMenu: (id, x, y) => ipcRenderer.send('space:menu', id, x, y),
 
   onRenameRequest: (callback) => {
     const listener = (_event: unknown, spaceId: number) => callback(spaceId);

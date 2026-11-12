@@ -332,7 +332,7 @@ export interface BrowserApi {
   // Bring back a linked tab that was closed.
   chatReopenLink: (chatId: number, tabId: number) => void;
   // Shows a menu of your pinned models to switch this chat to.
-  showModelMenu: (chatId: number) => void;
+  showModelMenu: (chatId: number, x: number, y: number) => void;
   // Open the Settings panel.
   openSettings: () => void;
   // Open the Artifacts panel (it stays open if it already is).
@@ -351,7 +351,7 @@ export interface BrowserApi {
   // Shows a native menu. Without an id it is the chat title's menu (switch
   // chats, new chat, rename or delete the current one); with an id it is the
   // right-click menu for that one chat (rename, delete).
-  showChatMenu: (id?: number) => void;
+  showChatMenu: (id: number | undefined, x: number, y: number) => void;
   // Called when "Rename chat" is chosen from a menu: show that chat's rename box.
   onChatRenameRequest: (callback: (chatId: number) => void) => () => void;
   // Open one of the right panels, or close it if it is already the open one.
@@ -367,7 +367,7 @@ export interface BrowserApi {
   // Right-click menus. The app shows a native menu and performs the choice.
   // x and y are where you clicked, in the window (the pointer's client position).
   showTabMenu: (id: number, x: number, y: number) => void;
-  showSpaceMenu: (id: number) => void;
+  showSpaceMenu: (id: number, x: number, y: number) => void;
   // Called when "Rename Space" is chosen from a menu: show the rename box.
   onRenameRequest: (callback: (spaceId: number) => void) => () => void;
   // Called whenever anything the UI shows changes. Returns an unsubscribe function.

@@ -197,7 +197,11 @@ export function LeadView({
       <div
         onContextMenu={(event) => {
           event.preventDefault();
-          window.browserApi.showSpaceMenu(space.id);
+          window.browserApi.showSpaceMenu(
+            space.id,
+            event.clientX,
+            event.clientY,
+          );
         }}
         style={{
           display: 'flex',

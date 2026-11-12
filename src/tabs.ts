@@ -31,7 +31,7 @@ import {
 import * as artifactsModel from './artifacts';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
-import type { ChatsState } from './chats';
+import type { ChatRef, ChatsState } from './chats';
 import type {
   ActionEnv,
   ActionResult,
@@ -53,8 +53,6 @@ import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
-import { chatMenu, chatRowMenu, spaceMenu } from './menus';
-import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
 import type { LlmContext } from './llm';
@@ -76,7 +74,16 @@ import {
 } from './toolSettings';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
-import { parseTabChoice, tabMenuItems } from './menuData';
+import {
+  chatRowMenuItems,
+  chatSwitchMenuItems,
+  parseChatChoice,
+  parseSpaceChoice,
+  parseTabChoice,
+  spaceMenuItems,
+  tabMenuItems,
+} from './menuData';
+import type { ChatMenuActions, MenuActions } from './menuData';
 import { isChoosable } from './menuTypes';
 import type { MenuItem } from './menuTypes';
 import { resolveInput } from './url';
@@ -572,16 +579,6 @@ export async function createTabs(
     if (!popup.isDestroyed()) popup.send('popup:hide');
     popupView.setVisible(false);
     if (giveBackKeyboard && !opener.isDestroyed()) opener.focus();
-  };
-
-  // Show a right-click menu without letting the sidebar close under it.
-  const popupMenu = (menu: Electron.Menu | null) => {
-    if (!menu) return;
-    busy++;
-    menu.popup({
-      window: win,
-      callback: () => void (busy = Math.max(0, busy - 1)),
-    });
   };
 
   // ---- Web page views ----------------------------------------------------
@@ -1153,7 +1150,8 @@ export async function createTabs(
     },
     onMeta: sendState,
     openSettings,
-    popupMenu: (menu) => popupMenu(menu),
+    showMenu: (items, x, y, choose, opener) =>
+      showMenu(items, x, y, choose, opener),
   });
   llm
     .then((context) => {
@@ -1203,13 +1201,10 @@ export async function createTabs(
   };
 
   const menuActions: MenuActions = {
-    moveTab: (tabId, spaceId) => commit(model.moveTab(state, tabId, spaceId)),
     moveTabToNewSpace: (tabId) => {
       const created = model.addSpace(state);
       commit(model.moveTab(created.state, tabId, created.id));
     },
-    closeTab,
-    removeTab,
     // The sidebar shows the rename box, so make sure it is open.
     renameSpace: (spaceId) => {
       if (!pinned()) setHover(true);
@@ -1226,6 +1221,80 @@ export async function createTabs(
       commitAndShow(model.ungroupSpace(state, spaceId));
     },
     deleteSpace: (spaceId) => void deleteSpace(spaceId),
+  };
+
+  // Link something to the chat you are looking at, and bring the chat back if it
+  // was closed (page only).
+  const linkToChat = (ref: ChatRef) => {
+    commitChats(chatsModel.addRef(chats, chats.activeId, ref));
+    if (state.settings.viewMode === 'page') {
+      commitAndShow(model.setViewMode(state, 'both'));
+    }
+  };
+
+  // What a Space menu item does.
+  const runSpaceChoice = (spaceId: number, choiceId: string) => {
+    const space = model.findSpace(state, spaceId);
+    const choice = parseSpaceChoice(choiceId);
+    if (!space || !choice) return;
+    switch (choice.action) {
+      case 'open':
+        select({ kind: 'lead', spaceId });
+        break;
+      case 'new-tab':
+        openTab(NEW_TAB_URL, spaceId);
+        break;
+      case 'add-to-chat':
+        linkToChat({
+          kind: 'space',
+          id: spaceId,
+          title: space.name,
+          url: null,
+        });
+        break;
+      case 'rename':
+        menuActions.renameSpace(spaceId);
+        break;
+      case 'color':
+        menuActions.setSpaceColor(spaceId, choice.color);
+        break;
+      case 'toggle-collapse':
+        menuActions.setSpaceCollapsed(spaceId, !space.collapsed);
+        break;
+      case 'ungroup':
+        menuActions.ungroupSpace(spaceId);
+        break;
+      case 'close-all':
+        for (const tab of state.tabs.filter(
+          (t) => t.spaceId === spaceId && !t.closed,
+        )) {
+          closeTab(tab.id);
+        }
+        break;
+      case 'delete':
+        menuActions.deleteSpace(spaceId);
+        break;
+    }
+  };
+
+  // What a chat menu item does.
+  const runChatChoice = (choiceId: string) => {
+    const choice = parseChatChoice(choiceId);
+    if (!choice) return;
+    switch (choice.action) {
+      case 'new':
+        chatMenuActions.newChat();
+        break;
+      case 'select':
+        chatMenuActions.selectChat(choice.chatId);
+        break;
+      case 'rename':
+        chatMenuActions.renameChat(choice.chatId);
+        break;
+      case 'delete':
+        chatMenuActions.deleteChat(choice.chatId);
+        break;
+    }
   };
 
   // What a tab menu item does.
@@ -1260,18 +1329,7 @@ export async function createTabs(
         views.get(tabId)?.webContents.reload();
         break;
       case 'add-to-chat':
-        commitChats(
-          chatsModel.addRef(chats, chats.activeId, {
-            kind: 'tab',
-            id: tabId,
-            title: tab.title,
-            url: tab.url,
-          }),
-        );
-        // The chat may be closed (page only): bring it back.
-        if (state.settings.viewMode === 'page') {
-          commitAndShow(model.setViewMode(state, 'both'));
-        }
+        linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
         break;
       case 'move':
         commit(model.moveTab(state, tabId, choice.spaceId));
@@ -1638,12 +1696,23 @@ export async function createTabs(
     'chats:delete': (id) => {
       if (isId(id)) void deleteChat(id);
     },
-    'chats:menu': (id) => {
-      if (id === undefined || id === null) {
-        popupMenu(chatMenu(chats, chatMenuActions));
-      } else if (isId(id) && chatsModel.findConversation(chats, id)) {
-        popupMenu(chatRowMenu(id, chatMenuActions));
-      }
+    // The chat-name menu (no id) or the menu of one chat in the list.
+    'chats:menu': (id, x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const items =
+        id === undefined || id === null
+          ? chatSwitchMenuItems(chats)
+          : isId(id)
+            ? chatRowMenuItems(chats, id)
+            : null;
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runChatChoice(choice),
+        requestSender ?? win.webContents,
+      );
     },
     'tab:menu': (id, x, y) => {
       if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
@@ -1657,8 +1726,17 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
-    'space:menu': (id) => {
-      if (isId(id)) popupMenu(spaceMenu(state, id, menuActions));
+    'space:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = spaceMenuItems(state, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runSpaceChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
     },
   };
   // The popup page reports: ready, a choice, or a close. Only that page is heard.

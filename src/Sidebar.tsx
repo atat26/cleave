@@ -222,7 +222,7 @@ function SpaceGroup({
 
   const openMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
-    window.browserApi.showSpaceMenu(space.id);
+    window.browserApi.showSpaceMenu(space.id, event.clientX, event.clientY);
   };
   const color = SPACE_COLOR_HEX[space.color];
   const leadActive = active?.kind === 'lead' && active.spaceId === space.id;
@@ -493,7 +493,7 @@ function StripSpace({
   const leadActive = active?.kind === 'lead' && active.spaceId === space.id;
   const openMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
-    window.browserApi.showSpaceMenu(space.id);
+    window.browserApi.showSpaceMenu(space.id, event.clientX, event.clientY);
   };
 
   return (

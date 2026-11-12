@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseTabChoice, tabMenuItems } from './menuData.ts';
+import {
+  chatRowMenuItems,
+  chatSwitchMenuItems,
+  modelMenuItems,
+  parseChatChoice,
+  parseModelChoice,
+  parseSpaceChoice,
+  parseTabChoice,
+  spaceMenuItems,
+  tabMenuItems,
+} from './menuData.ts';
+import {
+  defaultChats,
+  newConversation,
+  renameConversation,
+  setActiveConversation,
+} from './chats.ts';
 import { isChoosable, menuIds } from './menuTypes.ts';
 import type { MenuEntry, MenuItem } from './menuTypes.ts';
 import { addSpace, addTab, closeTab, defaultState } from './model.ts';
@@ -152,4 +168,134 @@ test('only an enabled item of the open menu can be chosen', () => {
   assert.equal(isChoosable(items, 7), false);
   assert.equal(isChoosable(items, undefined), false);
   assert.deepEqual(menuIds(items), ['a', 'b', 'c', 'c1']);
+});
+
+// ---- Space, chat and model menus ---------------------------------------------
+
+test('the Space menu: a ticked colour, collapse or expand, and a delete that says what it takes', () => {
+  const { state, workId, aId } = build();
+  const items = spaceMenuItems(state, workId)!;
+  const colour = entry(items, 'space.color').submenu!;
+  const ticked = colour.filter((i) => i.type === 'item' && i.checked);
+  assert.equal(ticked.length, 1);
+  // Every colour shows its own colour, and so does the Colour item itself.
+  assert.ok(
+    colour.every(
+      (i) => i.type === 'item' && /^#[0-9a-f]{6}$/i.test(i.swatch ?? ''),
+    ),
+  );
+  assert.ok(entry(items, 'space.color').swatch);
+  assert.equal(entry(items, 'space.toggle-collapse').label, 'Collapse');
+  assert.match(
+    entry(items, 'space.delete').label,
+    /Delete Space and its 1 tab/,
+  );
+  assert.equal(entry(items, 'space.delete').danger, true);
+  assert.notEqual(entry(items, 'space.close-all').disabled, true);
+  // An empty Space has nothing to close and nothing to lose.
+  const { state: s2, homeId } = build();
+  const empty = spaceMenuItems(s2, homeId)!;
+  assert.equal(entry(empty, 'space.close-all').disabled, true);
+  assert.equal(entry(empty, 'space.delete').label, 'Delete Space');
+  // Once its only tab is a closed link there is nothing open to close.
+  assert.equal(
+    entry(spaceMenuItems(closeTab(state, aId), workId)!, 'space.close-all')
+      .disabled,
+    true,
+  );
+  assert.equal(spaceMenuItems(state, 99999), null);
+});
+
+test('Space menu ids are unique and understood, anything else is not', () => {
+  const { state, workId } = build();
+  const items = spaceMenuItems(state, workId)!;
+  const ids = menuIds(items);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const id of ids) {
+    if (id === 'space.color') continue; // The submenu's parent.
+    assert.ok(parseSpaceChoice(id), id);
+  }
+  assert.deepEqual(parseSpaceChoice('space.color:red'), {
+    action: 'color',
+    color: 'red',
+  });
+  for (const id of [
+    '',
+    'space.color',
+    'space.color:chartreuse',
+    'space.color:RED',
+    'tab.close',
+  ]) {
+    assert.equal(parseSpaceChoice(id), null, id);
+  }
+});
+
+test('the chat-name menu lists chats newest first, ticks the open one, and acts on it', () => {
+  let chats = defaultChats(1000);
+  const firstId = chats.activeId;
+  chats = renameConversation(chats, firstId, 'First');
+  const second = newConversation(chats);
+  chats = renameConversation(second.state, second.state.activeId, 'Second');
+  const items = chatSwitchMenuItems(chats);
+  const titles = items
+    .filter((i) => i.type === 'item')
+    .map((i) => (i as MenuEntry).label);
+  assert.deepEqual(titles.slice(0, 2), ['Second', 'First']);
+  const activeId = chats.activeId;
+  assert.equal(entry(items, `chat.select:${activeId}`).icon, 'check');
+  assert.equal(entry(items, `chat.select:${firstId}`).icon, undefined);
+  assert.equal(entry(items, `chat.delete:${activeId}`).danger, true);
+  // Rename and delete act on the open chat, even after switching.
+  const switched = chatSwitchMenuItems(setActiveConversation(chats, firstId));
+  assert.ok(menuIds(switched).includes(`chat.rename:${firstId}`));
+});
+
+test('the chat row menu and chat ids', () => {
+  const chats = defaultChats(1000);
+  const id = chats.activeId;
+  const items = chatRowMenuItems(chats, id)!;
+  assert.deepEqual(menuIds(items), [
+    `chat.select:${id}`,
+    `chat.rename:${id}`,
+    `chat.delete:${id}`,
+  ]);
+  assert.equal(chatRowMenuItems(chats, 99999), null);
+  assert.deepEqual(parseChatChoice('chat.new'), { action: 'new' });
+  assert.deepEqual(parseChatChoice('chat.rename:7'), {
+    action: 'rename',
+    chatId: 7,
+  });
+  assert.deepEqual(parseChatChoice('chat.delete:7'), {
+    action: 'delete',
+    chatId: 7,
+  });
+  for (const bad of [
+    '',
+    'chat.select',
+    'chat.select:x',
+    'chat.nope:1',
+    'chat.delete:-1',
+  ]) {
+    assert.equal(parseChatChoice(bad), null, bad);
+  }
+});
+
+test('the model menu shows pinned models with the current one ticked, even if it is not pinned', () => {
+  const items = modelMenuItems(['a/one', 'b/two'], 'b/two');
+  assert.equal(entry(items, 'model.pick:b/two').icon, 'check');
+  assert.equal(entry(items, 'model.pick:a/one').icon, undefined);
+  const unpinned = modelMenuItems(['a/one'], 'z/other');
+  const first = unpinned.find((i) => i.type === 'item') as MenuEntry;
+  assert.equal(first.id, 'model.pick:z/other');
+  assert.equal(first.icon, 'check');
+  // With nothing pinned there is just the link to Settings.
+  assert.deepEqual(menuIds(modelMenuItems([], null)), ['model.settings']);
+  assert.deepEqual(parseModelChoice('model.pick:openrouter/free'), {
+    action: 'pick',
+    model: 'openrouter/free',
+  });
+  assert.deepEqual(parseModelChoice('model.settings'), { action: 'settings' });
+  for (const bad of ['', 'model.pick:', 'model.pick', 'model.other']) {
+    assert.equal(parseModelChoice(bad), null, bad);
+  }
 });

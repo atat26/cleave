@@ -445,11 +445,15 @@ export function ChatComposer({
           title={
             model ? `Using ${model}. Click to switch models.` : 'Choose a model'
           }
-          onClick={() =>
-            model
-              ? window.browserApi.showModelMenu(chat.id)
-              : window.browserApi.openSettings()
-          }
+          onClick={(event) => {
+            if (!model) {
+              window.browserApi.openSettings();
+              return;
+            }
+            // Opens just above the chip (it moves itself if there is no room).
+            const box = event.currentTarget.getBoundingClientRect();
+            window.browserApi.showModelMenu(chat.id, box.left, box.top - 4);
+          }}
           style={chipStyle}
         >
           {model ? shortModel(model) : 'Choose model'}
