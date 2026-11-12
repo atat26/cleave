@@ -11,23 +11,26 @@ const note: CSSProperties = {
   margin: '4px 0',
   fontSize: 12,
   lineHeight: 1.45,
-  color: '#5f6368',
+  color: 'var(--c-text-2)',
 };
 const field: CSSProperties = {
+  background: 'var(--c-surface)',
+  color: 'var(--c-text)',
   width: '100%',
   boxSizing: 'border-box',
   height: 32,
   padding: '0 10px',
-  border: '1px solid #c4c4c4',
+  border: '1px solid var(--c-border-strong)',
   borderRadius: 8,
   fontSize: 13,
 };
 const button: CSSProperties = {
+  color: 'var(--c-text)',
   height: 30,
   padding: '0 12px',
-  border: '1px solid #c4c4c4',
+  border: '1px solid var(--c-border-strong)',
   borderRadius: 8,
-  background: '#ffffff',
+  background: 'var(--c-surface)',
   fontSize: 13,
   cursor: 'pointer',
 };
@@ -99,7 +102,7 @@ export function WebSearchSettings() {
             .searchSetProvider(e.target.value)
             .then(setStatus)
         }
-        style={{ ...field, background: '#ffffff' }}
+        style={{ ...field, background: 'var(--c-surface)' }}
       >
         {status.providers.map((p) => (
           <option key={p.id} value={p.id}>
@@ -114,7 +117,7 @@ export function WebSearchSettings() {
 
       <h3 style={heading}>API key</h3>
       {!status.encryptionAvailable && (
-        <p style={{ ...note, color: '#b3261e' }}>
+        <p style={{ ...note, color: 'var(--c-danger)' }}>
           Secure storage isn&apos;t available on this computer, so a key
           can&apos;t be saved safely.
         </p>
@@ -172,7 +175,10 @@ export function WebSearchSettings() {
       {message && (
         <p
           role="status"
-          style={{ ...note, color: message.ok ? '#188038' : '#b3261e' }}
+          style={{
+            ...note,
+            color: message.ok ? 'var(--c-ok)' : 'var(--c-danger)',
+          }}
         >
           {message.text}
         </p>

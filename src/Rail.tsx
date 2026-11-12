@@ -1,36 +1,25 @@
-import type { CSSProperties } from 'react';
 import { RAIL_WIDTH } from './layout';
 import { isPanelRelevant } from './model';
 import type { RightPanel, ViewMode } from './model';
+import { IconButton } from './ui/controls';
+import type { IconName } from './ui/Icon';
 
-const buttonStyle = (active: boolean): CSSProperties => ({
-  width: 36,
-  height: 36,
-  border: 'none',
-  borderRadius: 10,
-  background: active ? '#ffffff' : 'transparent',
-  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.15)' : 'none',
-  fontSize: 17,
-  cursor: 'pointer',
-  // The symbols are emoji: draw them in grey so they match the rest of the frame.
-  filter: 'grayscale(1)',
-});
-
-// Every button on the rail. Which view each belongs to (chat, web, or both) is
-// declared with the panel in model.ts (PANEL_CONTEXT): add a panel there and a
-// line here, and the rail shows it only when it is relevant.
+// Every button on the rail, top to bottom: the page's things first, the chat's
+// things last. Which view each belongs to (chat, web, or both) is declared with
+// the panel in model.ts (PANEL_CONTEXT): add a panel there and a line here, and the
+// rail shows it only when it is relevant.
 const RAIL_ITEMS: {
   panel: RightPanel;
   label: string;
-  icon: string;
+  icon: IconName;
   // Pinned to the bottom of the rail instead of the top.
   bottom?: boolean;
 }[] = [
-  { panel: 'skills', label: 'Skills', icon: '⚡' },
-  { panel: 'tools', label: 'Tools', icon: '🔧' },
-  { panel: 'artifacts', label: 'Artifacts', icon: '📄' },
-  { panel: 'extensions', label: 'Extensions', icon: '🧩' },
-  { panel: 'settings', label: 'Settings', icon: '⚙️', bottom: true },
+  { panel: 'extensions', label: 'Extensions', icon: 'puzzle' },
+  { panel: 'artifacts', label: 'Artifacts', icon: 'doc' },
+  { panel: 'skills', label: 'Skills', icon: 'sparkle' },
+  { panel: 'tools', label: 'Tools', icon: 'tools' },
+  { panel: 'settings', label: 'Settings', icon: 'settings', bottom: true },
 ];
 
 // The column of buttons down the right edge of the frame. Each opens a panel to
@@ -47,17 +36,15 @@ export function Rail({
     isPanelRelevant(item.panel, viewMode),
   );
   const button = ({ panel, label, icon }: (typeof RAIL_ITEMS)[number]) => (
-    <button
+    <IconButton
       key={panel}
-      type="button"
-      aria-label={label}
-      aria-pressed={open === panel}
-      title={label}
+      icon={icon}
+      large
+      label={label}
+      pressed={open === panel}
       onClick={() => window.browserApi.togglePanel(panel)}
-      style={buttonStyle(open === panel)}
-    >
-      {icon}
-    </button>
+      style={{ width: 36, height: 36 }}
+    />
   );
 
   return (
@@ -74,7 +61,7 @@ export function Rail({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 6,
+        gap: 4,
       }}
     >
       {shown.filter((item) => !item.bottom).map(button)}

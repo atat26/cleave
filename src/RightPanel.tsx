@@ -1,11 +1,12 @@
 import { useRef } from 'react';
 import { ArtifactsPanel } from './ArtifactsPanel';
-import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
+import { PAGE_INSET, RAIL_WIDTH } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
 import { SettingsPanel } from './SettingsPanel';
 import { ToolsPanel } from './ToolsPanel';
 import type { ArtifactInfo, SpaceInfo } from './types';
+import { IconButton } from './ui/controls';
 
 const TITLES: Record<RightPanelName, string> = {
   skills: 'Skills',
@@ -51,8 +52,9 @@ export function RightPanel({
           right: RAIL_WIDTH,
           width: 'var(--panel)',
           boxSizing: 'border-box',
-          background: '#ffffff',
-          borderRadius: PAGE_RADIUS,
+          background: 'var(--c-surface)',
+          border: '1px solid var(--c-border)',
+          borderRadius: 'var(--r-lg)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -62,34 +64,29 @@ export function RightPanel({
           style={{
             display: 'flex',
             alignItems: 'center',
-            padding: '12px 16px',
-            fontSize: 15,
+            height: 48,
+            flex: 'none',
+            padding: '0 var(--s-2) 0 var(--s-4)',
+            fontSize: 'var(--fs-lg)',
             fontWeight: 600,
             whiteSpace: 'nowrap',
           }}
         >
           <span style={{ flex: 1 }}>{TITLES[panel]}</span>
-          <button
-            type="button"
-            aria-label={`Close ${TITLES[panel]}`}
+          <IconButton
+            icon="x"
+            size="sm"
+            label={`Close ${TITLES[panel]}`}
             title="Close"
             onClick={() => window.browserApi.togglePanel(panel)}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              fontSize: 18,
-              cursor: 'pointer',
-            }}
-          >
-            ×
-          </button>
+          />
         </header>
         <div
           style={{
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
-            padding: '0 16px 16px',
+            padding: '0 var(--s-4) var(--s-5)',
           }}
         >
           {panel === 'settings' ? (
@@ -107,8 +104,8 @@ export function RightPanel({
             <p
               style={{
                 margin: 0,
-                color: '#5f6368',
-                fontSize: 13,
+                color: 'var(--c-text-2)',
+                fontSize: 'var(--fs-sm)',
                 lineHeight: 1.5,
               }}
             >

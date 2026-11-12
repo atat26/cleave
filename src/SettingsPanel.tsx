@@ -19,23 +19,26 @@ const note: CSSProperties = {
   margin: '4px 0',
   fontSize: 12,
   lineHeight: 1.45,
-  color: '#5f6368',
+  color: 'var(--c-text-2)',
 };
 const field: CSSProperties = {
+  background: 'var(--c-surface)',
+  color: 'var(--c-text)',
   width: '100%',
   boxSizing: 'border-box',
   height: 32,
   padding: '0 10px',
-  border: '1px solid #c4c4c4',
+  border: '1px solid var(--c-border-strong)',
   borderRadius: 8,
   fontSize: 13,
 };
 const button: CSSProperties = {
+  color: 'var(--c-text)',
   height: 30,
   padding: '0 12px',
-  border: '1px solid #c4c4c4',
+  border: '1px solid var(--c-border-strong)',
   borderRadius: 8,
-  background: '#ffffff',
+  background: 'var(--c-surface)',
   fontSize: 13,
   cursor: 'pointer',
 };
@@ -93,7 +96,7 @@ function SectionList({ onOpen }: { onOpen: (id: SectionId) => void }) {
             gap: 8,
             padding: '12px 4px',
             border: 'none',
-            borderBottom: '1px solid #f0f0f0',
+            borderBottom: '1px solid var(--c-border)',
             background: 'transparent',
             textAlign: 'left',
             cursor: 'pointer',
@@ -103,11 +106,20 @@ function SectionList({ onOpen }: { onOpen: (id: SectionId) => void }) {
             <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>
               {label}
             </span>
-            <span style={{ display: 'block', fontSize: 12, color: '#5f6368' }}>
+            <span
+              style={{
+                display: 'block',
+                fontSize: 12,
+                color: 'var(--c-text-2)',
+              }}
+            >
               {about}
             </span>
           </span>
-          <span aria-hidden="true" style={{ color: '#9aa0a6', fontSize: 18 }}>
+          <span
+            aria-hidden="true"
+            style={{ color: 'var(--c-text-3)', fontSize: 18 }}
+          >
             ›
           </span>
         </button>
@@ -130,8 +142,8 @@ function BackBar({ title, onBack }: { title: string; onBack: () => void }) {
         gap: 8,
         margin: '0 -16px 8px',
         padding: '6px 16px',
-        background: '#ffffff',
-        borderBottom: '1px solid #e0e0e0',
+        background: 'var(--c-surface)',
+        borderBottom: '1px solid var(--c-border)',
       }}
     >
       <button
@@ -144,7 +156,7 @@ function BackBar({ title, onBack }: { title: string; onBack: () => void }) {
           background: 'transparent',
           cursor: 'pointer',
           fontSize: 13,
-          color: '#1a73e8',
+          color: 'var(--c-accent)',
           padding: '4px 6px 4px 0',
         }}
       >
@@ -335,11 +347,13 @@ export function SettingsPanel() {
       {section === 'model' && (
         <>
           <h3 style={{ ...heading, marginTop: 4 }}>Provider</h3>
-          <p style={{ ...note, color: '#202124', fontSize: 13 }}>OpenRouter</p>
+          <p style={{ ...note, color: 'var(--c-text)', fontSize: 13 }}>
+            OpenRouter
+          </p>
 
           <h3 style={heading}>API key</h3>
           {!status.encryptionAvailable && (
-            <p style={{ ...note, color: '#b3261e' }}>
+            <p style={{ ...note, color: 'var(--c-danger)' }}>
               Secure storage isn&apos;t available on this computer, so a key
               can&apos;t be saved safely.
             </p>
@@ -388,7 +402,10 @@ export function SettingsPanel() {
           </div>
           {keyMessage && (
             <p
-              style={{ ...note, color: keyMessage.ok ? '#188038' : '#b3261e' }}
+              style={{
+                ...note,
+                color: keyMessage.ok ? 'var(--c-ok)' : 'var(--c-danger)',
+              }}
               role="status"
             >
               {keyMessage.text}
@@ -406,7 +423,10 @@ export function SettingsPanel() {
           </button>
           {test && (
             <p
-              style={{ ...note, color: test.ok ? '#188038' : '#b3261e' }}
+              style={{
+                ...note,
+                color: test.ok ? 'var(--c-ok)' : 'var(--c-danger)',
+              }}
               role="status"
             >
               {test.text}
@@ -414,7 +434,7 @@ export function SettingsPanel() {
           )}
 
           <h3 style={heading}>Model</h3>
-          <p style={{ ...note, color: '#202124', fontSize: 13 }}>
+          <p style={{ ...note, color: 'var(--c-text)', fontSize: 13 }}>
             {status.model ? (
               <>
                 Default for new chats: <strong>{status.model}</strong>
@@ -430,12 +450,12 @@ export function SettingsPanel() {
 
           {status.pinned.length > 0 && (
             <>
-              <p style={{ ...note, fontWeight: 600, color: '#202124' }}>
+              <p style={{ ...note, fontWeight: 600, color: 'var(--c-text)' }}>
                 Pinned
               </p>
               <div
                 style={{
-                  border: '1px solid #e0e0e0',
+                  border: '1px solid var(--c-border)',
                   borderRadius: 8,
                   overflow: 'hidden',
                 }}
@@ -470,7 +490,7 @@ export function SettingsPanel() {
 
           {modelsState === 'loading' && <p style={note}>Loading models…</p>}
           {modelsState === 'error' && (
-            <p style={{ ...note, color: '#b3261e' }} role="status">
+            <p style={{ ...note, color: 'var(--c-danger)' }} role="status">
               {modelsError}
             </p>
           )}
@@ -481,7 +501,7 @@ export function SettingsPanel() {
                   marginTop: 8,
                   maxHeight: 280,
                   overflowY: 'auto',
-                  border: '1px solid #e0e0e0',
+                  border: '1px solid var(--c-border)',
                   borderRadius: 8,
                 }}
               >
@@ -541,7 +561,7 @@ export function SettingsPanel() {
             </button>
           </div>
           {modelMessage && (
-            <p style={{ ...note, color: '#b3261e' }} role="status">
+            <p style={{ ...note, color: 'var(--c-danger)' }} role="status">
               {modelMessage}
             </p>
           )}
@@ -607,7 +627,7 @@ export function SettingsPanel() {
             </span>
           </div>
           {promptMessage && (
-            <p style={{ ...note, color: '#188038' }} role="status">
+            <p style={{ ...note, color: 'var(--c-ok)' }} role="status">
               {promptMessage}
             </p>
           )}
@@ -641,8 +661,8 @@ function ModelRow({
       style={{
         display: 'flex',
         alignItems: 'stretch',
-        borderBottom: '1px solid #f0f0f0',
-        background: selected ? '#e8f0fe' : 'transparent',
+        borderBottom: '1px solid var(--c-border)',
+        background: selected ? 'var(--c-accent-tint)' : 'transparent',
       }}
     >
       <button
@@ -662,12 +682,16 @@ function ModelRow({
       >
         <div style={{ fontWeight: 600 }}>{name}</div>
         <div
-          style={{ fontSize: 11, color: '#5f6368', overflowWrap: 'anywhere' }}
+          style={{
+            fontSize: 11,
+            color: 'var(--c-text-2)',
+            overflowWrap: 'anywhere',
+          }}
         >
           {id}
         </div>
         {detail && (
-          <div style={{ fontSize: 11, color: '#5f6368' }}>{detail}</div>
+          <div style={{ fontSize: 11, color: 'var(--c-text-2)' }}>{detail}</div>
         )}
       </button>
       <button
@@ -682,7 +706,7 @@ function ModelRow({
           fontSize: 17,
           padding: '0 12px',
           cursor: 'pointer',
-          color: pinned ? '#f9ab00' : '#9aa0a6',
+          color: pinned ? 'var(--c-warn)' : 'var(--c-text-3)',
         }}
       >
         {pinned ? '★' : '☆'}
