@@ -16,5 +16,5 @@ If Electron's binary is missing after `npm install`, run `node node_modules\elec
 - Small changes. One feature per branch. Commit only when checks pass.
 - Never commit secrets. Store API keys with Electron safeStorage.
 - Web content is untrusted: contextIsolation on, nodeIntegration off, sandbox on, expose APIs only through the preload contextBridge.
-- The agent that reads web pages must never have file-editing tools.
+- The agent that reads web pages must never have file-editing tools. (Artifact tools are not file tools: they write only to the app's own artifact store, never to files on disk, only to artifacts linked to the chat, and always ask first after web content has been read in the same reply.)
 - Ask before adding dependencies.
