@@ -1,4 +1,4 @@
-import { RAIL_WIDTH } from './layout';
+import { RAIL_WIDTH, TOOLBAR_HEIGHT } from './layout';
 import { isPanelRelevant } from './model';
 import type { RightPanel, ViewMode } from './model';
 import { IconButton } from './ui/controls';
@@ -57,7 +57,8 @@ export function Rail({
         bottom: 0,
         width: RAIL_WIDTH,
         boxSizing: 'border-box',
-        padding: '12px 0',
+        // Starts below the window's own buttons (top right).
+        padding: `${TOOLBAR_HEIGHT + 6}px 0 12px`,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

@@ -78,6 +78,13 @@ export const MIN_PAGE_HEIGHT = 120;
 export const FRAME_COLOR = '#e6e9ef';
 // The same, in the dark theme (--c-frame in tokens.css).
 export const FRAME_COLOR_DARK = '#121419';
+// The window's own minimize / maximize / close buttons are drawn by Windows over
+// the top right corner (there is no title bar). They are this wide and as tall as
+// the toolbar; nothing of ours may sit under them.
+export const WINDOW_CONTROLS_WIDTH = 140;
+// The colours of the buttons' icons on each theme.
+export const CONTROLS_SYMBOL = '#1f2430';
+export const CONTROLS_SYMBOL_DARK = '#e9ecf3';
 
 // How long the frame takes to slide when something opens, closes or snaps.
 export const FRAME_ANIMATION_MS = 160;

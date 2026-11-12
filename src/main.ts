@@ -1,7 +1,15 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import { FRAME_COLOR, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from './layout';
+import {
+  CONTROLS_SYMBOL,
+  CONTROLS_SYMBOL_DARK,
+  FRAME_COLOR,
+  FRAME_COLOR_DARK,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  TOOLBAR_HEIGHT,
+} from './layout';
 import { openSecretStore } from './electronSecrets';
 import { registerLlm } from './llm';
 import { registerSearch } from './search';
@@ -15,6 +23,7 @@ if (started) {
 
 const createWindow = () => {
   // Create the browser window.
+  const dark = nativeTheme.shouldUseDarkColors;
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -22,7 +31,16 @@ const createWindow = () => {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     // The frame's colour, so there is no white flash before the UI paints.
-    backgroundColor: FRAME_COLOR,
+    backgroundColor: dark ? FRAME_COLOR_DARK : FRAME_COLOR,
+    // No title bar and no menu bar: the toolbar is the top of the window. Windows
+    // still draws its own minimize / maximize / close buttons over the top right
+    // (so snapping and the maximize pop-up keep working), in the theme's colours.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: dark ? FRAME_COLOR_DARK : FRAME_COLOR,
+      symbolColor: dark ? CONTROLS_SYMBOL_DARK : CONTROLS_SYMBOL,
+      height: TOOLBAR_HEIGHT,
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       // Security: the UI page is isolated from Node.js and from Electron
@@ -68,6 +86,8 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  // No menu bar (our own right-click menus and shortcuts replace it).
+  Menu.setApplicationMenu(null);
   createWindow();
 
   // On OS X it's common to re-create a window in the app when the

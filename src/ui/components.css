@@ -788,6 +788,18 @@ button {
   align-items: center;
   gap: var(--s-2);
 }
+/* The top of the window is its title bar: the empty strip drags the window, and
+   everything you can click in the toolbar is carved out of it. */
+.drag-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  -webkit-app-region: drag;
+}
+.toolbar :is(button, input, .addressbar, .seg, h1, .tb-title) {
+  -webkit-app-region: no-drag;
+}
 .tb-nav,
 .tb-actions {
   display: flex;

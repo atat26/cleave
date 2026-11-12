@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { ArtifactsPanel } from './ArtifactsPanel';
-import { PAGE_INSET, RAIL_WIDTH } from './layout';
+import { PAGE_INSET, RAIL_WIDTH, TOOLBAR_HEIGHT } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
 import { SettingsPanel } from './SettingsPanel';
@@ -47,7 +47,8 @@ export function RightPanel({
         aria-label={TITLES[panel]}
         style={{
           position: 'fixed',
-          top: PAGE_INSET,
+          // Level with the page card, below the window's own buttons.
+          top: TOOLBAR_HEIGHT,
           bottom: PAGE_INSET,
           right: RAIL_WIDTH,
           width: 'var(--panel)',
@@ -122,7 +123,7 @@ export function RightPanel({
         title="Drag to resize. Drag all the way right to close."
         style={{
           position: 'fixed',
-          top: 0,
+          top: TOOLBAR_HEIGHT,
           bottom: 0,
           // Straddles the panel's left edge, on the frame side of the page card.
           right: `calc(${RAIL_WIDTH}px + var(--panel) - 8px)`,
