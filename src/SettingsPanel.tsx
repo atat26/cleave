@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { takeRequestedSection } from './settingsNav';
+import { AppearanceSettings } from './AppearanceSettings';
 import { WebSearchSettings } from './WebSearchSettings';
 import type { CSSProperties } from 'react';
 import { MAX_SYSTEM_PROMPT } from './providerSettings';
@@ -62,6 +63,11 @@ const MAX_SHOWN = 60;
 // page with a Back button. To add one, add it here and give it a block in
 // SettingsPanel below.
 const SECTIONS = [
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    about: 'Light, dark, or match your computer',
+  },
   {
     id: 'model',
     label: 'Model & provider',
@@ -569,6 +575,7 @@ export function SettingsPanel() {
       )}
 
       {section === 'web-search' && <WebSearchSettings />}
+      {section === 'appearance' && <AppearanceSettings />}
 
       {section === 'prompt' && (
         <>

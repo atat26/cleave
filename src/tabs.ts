@@ -4,6 +4,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  nativeTheme,
   screen,
   session,
   WebContentsView,
@@ -24,6 +25,8 @@ import type { FrameSizes, Size } from './frame';
 import type { ChatNeed } from './layout';
 import {
   FRAME_ANIMATION_MS,
+  FRAME_COLOR,
+  FRAME_COLOR_DARK,
   PAGE_RADIUS,
   SIDEBAR_CLOSE_MARGIN,
   SIDEBAR_COLLAPSED_WIDTH,
@@ -65,6 +68,11 @@ import {
   loadJson,
   loadState,
 } from './storage';
+import {
+  defaultThemeSettings,
+  isThemeChoice,
+  parseThemeSettings,
+} from './themeSettings';
 import { isApprovalLevel } from './toolPolicy';
 import {
   defaultToolSettings,
@@ -146,6 +154,26 @@ export async function createTabs(
     defaultToolSettings,
   );
   const toolsSaver = createSaver(toolsFile, () => toolSettings);
+  // Light, dark or follow the computer. Every window (and web pages) follow it.
+  const themeFile = path.join(app.getPath('userData'), 'theme.json');
+  let themeSettings = await loadJson(
+    themeFile,
+    parseThemeSettings,
+    defaultThemeSettings,
+  );
+  nativeTheme.themeSource = themeSettings.theme;
+  // The window's own background shows at its edges (a thin line at the top
+  // otherwise): keep it the frame's colour in either theme.
+  const paintWindow = () => {
+    if (win.isDestroyed()) return;
+    win.setBackgroundColor(
+      nativeTheme.shouldUseDarkColors ? FRAME_COLOR_DARK : FRAME_COLOR,
+    );
+  };
+  paintWindow();
+  nativeTheme.on('updated', paintWindow);
+  win.on('closed', () => nativeTheme.off('updated', paintWindow));
+  const themeSaver = createSaver(themeFile, () => themeSettings);
   if (win.isDestroyed()) return;
 
   // Artifact tabs only make sense for artifacts that still exist.
@@ -2257,6 +2285,19 @@ export async function createTabs(
   // change applies from the assistant's next reply.
   const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
     event.sender === win.webContents;
+  ipcMain.handle('theme:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return themeSettings.theme;
+  });
+  ipcMain.handle('theme:set', (event, choice: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (isThemeChoice(choice)) {
+      themeSettings = { ...themeSettings, theme: choice };
+      nativeTheme.themeSource = choice;
+      themeSaver.schedule();
+    }
+    return themeSettings.theme;
+  });
   ipcMain.handle('tools:list', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return describeTools(toolSettings);

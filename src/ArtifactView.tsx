@@ -334,7 +334,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             minHeight: 0,
             border: 'none',
             borderTop: '1px solid var(--c-border)',
-            background: '#ffffff',
+            background: '#ffffff', // pages assume a white sheet, even in dark mode
           }}
         />
       ) : (

@@ -1,5 +1,6 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
+import type { ThemeChoice } from './themeSettings';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
@@ -245,6 +246,9 @@ export interface BrowserApi {
   searchTest: () => Promise<SearchTestResult>;
   // The Tools panel: every tool with its level, change one level, or put them all
   // back to the defaults. Each answers with the updated list.
+  // The look of the app: light, dark, or follow the computer.
+  themeGet: () => Promise<ThemeChoice>;
+  themeSet: (choice: ThemeChoice) => Promise<ThemeChoice>;
   toolsList: () => Promise<ToolRow[]>;
   toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
   toolsReset: () => Promise<ToolRow[]>;

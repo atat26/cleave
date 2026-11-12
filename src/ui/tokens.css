@@ -95,6 +95,8 @@
   --focus-ring: 2px solid var(--c-focus);
 }
 :root[data-theme='dark'] {
+  /* Scroll bars, form controls and spell-check menus draw dark too. */
+  color-scheme: dark;
   --c-frame: #121419;
   --c-surface: #1b1e26;
   --c-surface-2: #232731;

@@ -8,7 +8,7 @@ import { IconButton } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { ChatList, ChatStrip } from './ChatHistory';
 import { SPACE_COLOR_HEX } from './colors';
-import { FRAME_COLOR, SIDEBAR_FULL_MIN_WIDTH } from './layout';
+import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
 import { iconButtonStyle, stripButton } from './sidebarStyles';
 import type { ArtifactTabInfo, SpaceInfo, TabInfo, UiState } from './types';
@@ -38,7 +38,7 @@ export function Favicon({ tab }: { tab: TabInfo }) {
         width: 16,
         height: 16,
         borderRadius: 8,
-        background: '#b0b4ba',
+        background: 'var(--c-text-3)',
         flexShrink: 0,
       }}
     />
@@ -65,8 +65,8 @@ function WorkingDot() {
         width: 8,
         height: 8,
         borderRadius: 4,
-        background: '#1a73e8',
-        boxShadow: '0 0 0 3px rgba(26, 115, 232, 0.25)',
+        background: 'var(--c-accent)',
+        boxShadow: '0 0 0 3px var(--c-accent-tint)',
         flexShrink: 0,
       }}
     />
@@ -545,7 +545,7 @@ function StripSpace({
           style={{
             ...stripButton(false),
             fontSize: 11,
-            color: '#5f6368',
+            color: 'var(--c-text-2)',
           }}
         >
           {tabs.length}
@@ -682,7 +682,7 @@ export function Sidebar({
         flexDirection: 'column',
         boxSizing: 'border-box',
         // Same colour as the rest of the frame, so it reads as part of it.
-        background: FRAME_COLOR,
+        background: 'var(--c-frame)',
         // A shadow shows it floating over the page (when it is open but not pinned).
         boxShadow:
           full && !state.sidebarPinned
