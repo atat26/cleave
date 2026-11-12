@@ -1,17 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
 import type { ChatsInfo } from './types';
-
-const buttonStyle: CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  fontSize: 13,
-  lineHeight: 1,
-  padding: '5px 8px',
-  borderRadius: 8,
-  cursor: 'pointer',
-  color: '#202124',
-};
+import { Button, IconButton } from './ui/controls';
+import { Icon } from './ui/Icon';
 
 // The conversation's name, with controls to manage your chats: click the name to
 // switch chats, start a new one, rename or delete the current one; "+" starts a
@@ -52,6 +42,7 @@ export function ChatSwitcher({
     <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
       {editing && active ? (
         <input
+          className="input"
           autoFocus
           defaultValue={active.title}
           maxLength={80}
@@ -62,13 +53,15 @@ export function ChatSwitcher({
             if (e.key === 'Enter') e.currentTarget.blur();
             if (e.key === 'Escape') setEditing(false);
           }}
-          style={{ width: compact ? 120 : 200, fontSize: 13 }}
+          style={{ width: compact ? 140 : 220, height: 28 }}
         />
       ) : (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           title="Switch, rename or delete chats"
           aria-label="Chats"
+          aria-haspopup="menu"
           onClick={(event) => {
             const box = event.currentTarget.getBoundingClientRect();
             // The open chat in the list lines up with the name, and the list
@@ -81,26 +74,21 @@ export function ChatSwitcher({
             );
           }}
           style={{
-            ...buttonStyle,
-            fontWeight: compact ? 400 : 600,
-            maxWidth: compact ? 130 : 280,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            fontWeight: compact ? 500 : 600,
+            maxWidth: compact ? 150 : 300,
+            minWidth: 0,
           }}
         >
-          {active?.title ?? 'Chat'} ▾
-        </button>
+          <span className="truncate">{active?.title ?? 'Chat'}</span>
+          <Icon name="chev-d" />
+        </Button>
       )}
-      <button
-        type="button"
-        aria-label="New chat"
-        title="New chat"
+      <IconButton
+        icon="plus"
+        label="New chat"
+        size="sm"
         onClick={() => window.browserApi.newChat()}
-        style={{ ...buttonStyle, fontSize: 16, padding: '4px 8px' }}
-      >
-        +
-      </button>
+      />
     </div>
   );
 }

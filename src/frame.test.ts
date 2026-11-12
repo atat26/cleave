@@ -17,6 +17,8 @@ import {
 } from './frame.ts';
 import type { FrameSizes } from './frame.ts';
 import {
+  CHAT_ACTIVITY_HEIGHT,
+  CHAT_APPROVAL_HEIGHT,
   CHAT_COMPACT_HEIGHT,
   CHAT_SNAP_HEIGHT,
   MIN_PAGE_HEIGHT,
@@ -233,5 +235,39 @@ test('a sidebar that was only hover-opened is never "collapsed" by this rule', (
   assert.equal(
     fit({ width: 900, height: 700 }, false, true).sidebarCollapsed,
     false,
+  );
+});
+
+test('a slim chat grows to show a reply being written, and any chat opens for an approval', () => {
+  // Nothing going on: as before.
+  assert.equal(
+    restingChatHeight('both', false, 500, WINDOW, 'none'),
+    CHAT_COMPACT_HEIGHT,
+  );
+  // A reply being written: the slim bar gets room for one more line.
+  assert.equal(
+    restingChatHeight('both', false, 500, WINDOW, 'activity'),
+    CHAT_ACTIVITY_HEIGHT,
+  );
+  assert.ok(CHAT_ACTIVITY_HEIGHT > CHAT_COMPACT_HEIGHT);
+  // An expanded chat is left as it is while a reply is written.
+  assert.equal(restingChatHeight('both', true, 500, WINDOW, 'activity'), 500);
+  // An approval is waiting: even the slim bar opens up, but a taller chat stays.
+  assert.equal(
+    restingChatHeight('both', false, 500, WINDOW, 'approval'),
+    CHAT_APPROVAL_HEIGHT,
+  );
+  assert.equal(restingChatHeight('both', true, 500, WINDOW, 'approval'), 500);
+  // It never takes more than the window allows.
+  const short = { width: 1200, height: 400 };
+  assert.equal(
+    restingChatHeight('both', false, 500, short, 'approval'),
+    maxChatHeight(short),
+  );
+  // With the chat closed there is nothing to make room for; chat only already fills the room.
+  assert.equal(restingChatHeight('page', false, 500, WINDOW, 'approval'), 0);
+  assert.equal(
+    restingChatHeight('chat', false, 500, WINDOW, 'approval'),
+    restingChatHeight('chat', false, 500, WINDOW, 'none'),
   );
 });

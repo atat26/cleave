@@ -900,3 +900,359 @@ button {
     display: inline-flex !important;
   }
 }
+
+/* ---- The chat (from the design) --------------------------------------------- */
+.chat-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  font-size: var(--fs-sm);
+}
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 44px;
+  padding: 0 var(--s-2) 0 var(--s-2);
+  border-bottom: 1px solid var(--c-border);
+  flex: none;
+}
+.chat-foot {
+  flex: none;
+  padding: var(--s-2) var(--s-3) var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.chat-card.is-compact {
+  justify-content: center;
+}
+.chat-card.is-compact .chat-foot {
+  padding: var(--s-2) var(--s-3);
+}
+
+/* ---- Chat messages, tool calls and approvals (from the design) -------------- */
+.msg-user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--c-surface-2);
+  border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-lg);
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--fs-md);
+  line-height: var(--lh-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.msg-ai-text {
+  font-size: var(--fs-md);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.msg-actions .btn {
+  color: var(--c-text-2);
+  font-weight: var(--fw-normal);
+}
+.think {
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  margin: 0 0 var(--s-1);
+}
+.think-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--r-sm);
+  padding: 0 var(--s-1);
+  font-size: var(--fs-sm);
+}
+.think-summary:hover {
+  background: var(--c-hover);
+}
+.think-body {
+  border-left: 2px solid var(--c-border);
+  margin: var(--s-1) 0 0 var(--s-2);
+  padding: 0 0 0 var(--s-3);
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  line-height: var(--lh-body);
+}
+.tool {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  font-size: var(--fs-sm);
+  margin: 0 0 var(--s-1);
+}
+.tool-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--h-md);
+  padding: 0 var(--s-2);
+  border: 0;
+  background: transparent;
+  color: var(--c-text);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+.tool-summary:hover {
+  background: var(--c-hover);
+}
+.tool .st {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.tool[data-status='ok'] .st {
+  color: var(--c-ok);
+}
+.tool[data-status='error'] .st {
+  color: var(--c-danger);
+}
+.tool[data-status='declined'] .st,
+.tool[data-status='waiting'] .st {
+  color: var(--c-text-3);
+}
+.tool[data-status='running'] .st {
+  color: var(--c-accent);
+}
+.tool[data-status='running'] .st .i {
+  animation: spin 1s linear infinite;
+}
+.tool[data-status='error'] {
+  border-color: color-mix(in srgb, var(--c-danger) 45%, transparent);
+}
+.tool-detail {
+  margin: 0;
+  padding: var(--s-2) var(--s-3) var(--s-3);
+  border-top: 1px solid var(--c-border);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s-1) var(--s-3);
+  font-size: var(--fs-xs);
+}
+.tool-detail dt {
+  color: var(--c-text-3);
+}
+.tool-detail dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  word-break: break-word;
+  user-select: text;
+}
+.approval {
+  border: 1px solid var(--c-accent);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+}
+.approval.risky {
+  border-color: var(--c-warn);
+  background: var(--c-warn-tint);
+}
+.approval .actions {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.choices {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.choices .btn {
+  border-radius: var(--r-pill);
+  height: auto;
+  min-height: var(--h-sm);
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* ---- The message box (from the design) -------------------------------------- */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-1);
+  padding: var(--s-1);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+}
+.composer:focus-within {
+  border-color: var(--c-focus);
+  outline: var(--focus-ring);
+  outline-offset: 0;
+}
+.composer-field {
+  box-sizing: border-box;
+  min-height: var(--h-md);
+  padding: 5px var(--s-2);
+  font-size: var(--fs-md);
+  line-height: 22px;
+  outline: 0;
+  overflow-wrap: anywhere;
+}
+.composer-hint {
+  position: absolute;
+  left: var(--s-2);
+  right: var(--s-2);
+  top: 5px;
+  font-size: var(--fs-md);
+  line-height: 22px;
+  color: var(--c-text-3);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-chip {
+  height: var(--h-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+  border-radius: var(--r-pill);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  white-space: nowrap;
+  max-width: 160px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-chip:hover {
+  background: var(--c-hover);
+}
+.chips {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pick-list {
+  position: fixed;
+  z-index: 100;
+  overflow-y: auto;
+  padding: var(--s-1);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-popup);
+  font-size: var(--fs-sm);
+}
+.pick-group {
+  padding: 6px var(--s-2) 2px;
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
+.pick-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 30px;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-text);
+  text-align: left;
+  font-size: var(--fs-sm);
+}
+.pick-item[aria-selected='true'],
+.pick-item:hover {
+  background: var(--c-hover);
+}
+.pick-empty {
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+}
+
+/* The buttons under a message (Retry, Branch, Copy) show only while the mouse is
+   near the message, or a button has the keyboard. */
+.msg-wrap .msg-actions .btn {
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.msg-wrap:hover .msg-actions .btn,
+.msg-wrap:focus-within .msg-actions .btn {
+  opacity: 1;
+}
+
+/* One line of the reply being written, shown above the slim chat bar. */
+.chat-live {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4) 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  min-width: 0;
+}
+
+/* One line only: more chips than fit scroll sideways instead of adding rows. */
+.chips-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.chips-row > * {
+  flex: none;
+}
+
+.chat-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  border: 0;
+  background: transparent;
+  color: var(--c-text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-sm);
+  border-radius: var(--r-md);
+}
+.chat-notice:hover {
+  background: var(--c-hover);
+}
+.chat-notice > .i {
+  color: var(--c-ok);
+}

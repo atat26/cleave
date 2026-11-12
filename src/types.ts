@@ -4,6 +4,7 @@ import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 import type { ArtifactKind } from './artifacts';
+import type { ChatNeed } from './layout';
 import type { MenuItem } from './menuTypes';
 
 export type { ChatMessage, ChatRef, LinkKind, MessagePart, ModelInfo };
@@ -218,6 +219,8 @@ export interface BrowserApi {
   goForward: () => void;
   // Reload the active page, or stop it while it is still loading.
   reloadPage: () => void;
+  // What the chat needs on screen right now (see layout.ts).
+  setChatNeed: (need: ChatNeed) => void;
   stopLoading: () => void;
   // New tab inside a Space, or ungrouped when spaceId is null.
   newTab: (spaceId: number | null) => void;

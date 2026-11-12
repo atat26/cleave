@@ -41,6 +41,15 @@ export const PANEL_SNAP_WIDTH = 220;
 // Bottom chat: a compact bar (one or two lines), or expanded and resizable.
 // Drag it shorter than this and, on release, it shrinks back to the compact bar.
 export const CHAT_COMPACT_HEIGHT = 64;
+
+// What the chat needs to stay useful even when it is slim:
+//   activity: a reply is being written, so the slim bar grows to also show one
+//             line of it;
+//   approval: an action is waiting for you, so the chat opens up (whatever you had
+//             set) until it is answered, so the question is never out of sight.
+export type ChatNeed = 'none' | 'activity' | 'approval';
+export const CHAT_ACTIVITY_HEIGHT = 96;
+export const CHAT_APPROVAL_HEIGHT = 320;
 export const CHAT_SNAP_HEIGHT = 110;
 // While the chat is shorter than this it draws the compact look.
 export const CHAT_FULL_MIN_HEIGHT = 120;

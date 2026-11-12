@@ -1,11 +1,13 @@
-import { useRef } from 'react';
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
 import { ChatComposer } from './ChatComposer';
-import { MessageList } from './ChatMessages';
+import { MessageList, useChatMessages } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
-import { PAGE_INSET, PAGE_RADIUS, RAIL_WIDTH } from './layout';
+import { PAGE_INSET, RAIL_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ResizeHandle } from './ResizeHandle';
+import { IconButton } from './ui/controls';
+import { Icon } from './ui/Icon';
 import type {
   ArtifactInfo,
   ChatsInfo,
@@ -13,17 +15,6 @@ import type {
   SpaceInfo,
   TabInfo,
 } from './types';
-
-const smallButton: CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  fontSize: 14,
-  lineHeight: 1,
-  padding: '4px 6px',
-  borderRadius: 6,
-  cursor: 'pointer',
-  color: '#5f6368',
-};
 
 // The chat. It is a card on the frame: a compact bar (one row) along the bottom
 // that you can drag taller, an expanded look with the conversation, or, when the
@@ -59,16 +50,49 @@ export function ChatBar({
   const chatOnly = viewMode === 'chat';
   const chat = chats.conversations.find((c) => c.id === chats.activeId);
 
+  // What the chat needs on screen, even when it is slim: a line of a reply being
+  // written, or the room to show an approval that is waiting.
+  const messages = useChatMessages(chats.activeId);
+  const generating = chat?.generating ?? false;
+  const live = liveLine(messages);
+
+  // A reply that finishes while the chat is too slim to show it: say so, until the
+  // chat is opened enough to read it (or something new is sent).
+  const [unreadReply, setUnreadReply] = useState(false);
+  const wasWriting = useRef(false);
+  const writingNow = live?.working === true;
+  useEffect(() => {
+    if (wasWriting.current && !writingNow && !full && !chatOnly) {
+      setUnreadReply(true);
+    }
+    wasWriting.current = writingNow;
+  }, [writingNow, full, chatOnly]);
+  useEffect(() => {
+    // Opened enough to read, or a new reply started, or a different chat.
+    if (full || chatOnly || writingNow) setUnreadReply(false);
+  }, [full, chatOnly, writingNow]);
+  useEffect(() => {
+    setUnreadReply(false);
+    wasWriting.current = false;
+  }, [chats.activeId]);
+  const notice = unreadReply
+    ? finishedNotice(messages[messages.length - 1])
+    : null;
+
+  // The slim chat needs room for the notice too, or it would be out of sight.
+  const baseNeed = chatNeedOf(messages, generating);
+  const need = baseNeed === 'none' && notice ? 'activity' : baseNeed;
+  useEffect(() => {
+    window.browserApi.setChatNeed(need);
+  }, [need]);
+
   const closeChat = (
-    <button
-      type="button"
-      aria-label="Close chat"
-      title="Close chat (show only the page)"
+    <IconButton
+      icon="x"
+      size="sm"
+      label="Close chat (show only the page)"
       onClick={() => window.browserApi.setViewMode('page')}
-      style={smallButton}
-    >
-      ×
-    </button>
+    />
   );
 
   return (
@@ -85,24 +109,11 @@ export function ChatBar({
         padding: `0 ${PAGE_INSET}px ${PAGE_INSET}px`,
       }}
     >
-      <div
-        style={{
-          height: '100%',
-          boxSizing: 'border-box',
-          background: '#ffffff',
-          borderRadius: PAGE_RADIUS,
-          padding: '8px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          overflow: 'hidden',
-          fontSize: 13,
-        }}
-      >
+      <div className={full ? 'chat-card' : 'chat-card is-compact'}>
         {/* With only the chat open, its name is shown up in the top strip
             and the chat list is in the sidebar, so no header is needed here. */}
         {full && !chatOnly && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <div className="chat-head">
             <div style={{ flex: 1, minWidth: 0 }}>
               <ChatSwitcher
                 chats={chats}
@@ -111,15 +122,12 @@ export function ChatBar({
                 compact={false}
               />
             </div>
-            <button
-              type="button"
-              aria-label="Shrink chat"
-              title="Shrink chat (Ctrl+J)"
+            <IconButton
+              icon="chev-d"
+              size="sm"
+              label="Shrink chat (Ctrl+J)"
               onClick={() => window.browserApi.toggleChat()}
-              style={smallButton}
-            >
-              ⌄
-            </button>
+            />
             {closeChat}
           </div>
         )}
@@ -131,6 +139,26 @@ export function ChatBar({
             spaces={spaces}
             artifacts={artifacts}
           />
+        )}
+        {!full && !chatOnly && live?.working && (
+          <div className="chat-live" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <span className="truncate">{live.text}</span>
+          </div>
+        )}
+        {!full && !chatOnly && notice && (
+          <div className="chat-live">
+            <button
+              type="button"
+              className="chat-notice"
+              role="status"
+              title="Open the chat to read the reply"
+              onClick={() => window.browserApi.toggleChat()}
+            >
+              <Icon name="check" />
+              <span className="truncate">{notice}</span>
+            </button>
+          </div>
         )}
         {chat && (
           <ChatComposer
@@ -155,15 +183,12 @@ export function ChatBar({
             after={
               !full ? (
                 <>
-                  <button
-                    type="button"
-                    aria-label="Expand chat"
-                    title="Expand chat (Ctrl+J)"
+                  <IconButton
+                    icon="chev-u"
+                    size="sm"
+                    label="Expand chat (Ctrl+J)"
                     onClick={() => window.browserApi.toggleChat()}
-                    style={smallButton}
-                  >
-                    ⌃
-                  </button>
+                  />
                   {closeChat}
                 </>
               ) : undefined

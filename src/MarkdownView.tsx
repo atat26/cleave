@@ -11,13 +11,13 @@ import type { Align, Block, Inline } from './markdown';
 const codeStyle: CSSProperties = {
   fontFamily: 'ui-monospace, Consolas, monospace',
   fontSize: '0.9em',
-  background: '#f1f3f4',
+  background: 'var(--c-surface-3)',
   borderRadius: 4,
   padding: '1px 4px',
 };
 
 const linkStyle: CSSProperties = {
-  color: '#1a56c4',
+  color: 'var(--c-accent)',
   textDecoration: 'underline',
   cursor: 'pointer',
 };
@@ -127,8 +127,8 @@ function BlockNodes({
                 style={{
                   margin: '0 0 8px',
                   padding: '8px 10px',
-                  background: '#f8f9fa',
-                  border: '1px solid #e3e3e3',
+                  background: 'var(--c-surface-2)',
+                  border: '1px solid var(--c-border)',
                   borderRadius: 8,
                   overflowX: 'auto',
                   fontFamily: 'ui-monospace, Consolas, monospace',
@@ -163,8 +163,8 @@ function BlockNodes({
                 style={{
                   margin: '0 0 8px',
                   paddingLeft: 10,
-                  borderLeft: '3px solid #dadce0',
-                  color: '#5f6368',
+                  borderLeft: '3px solid var(--c-border)',
+                  color: 'var(--c-text-2)',
                 }}
               >
                 <BlockNodes blocks={block.children} />
@@ -176,7 +176,7 @@ function BlockNodes({
                 key={i}
                 style={{
                   border: 'none',
-                  borderTop: '1px solid #dadce0',
+                  borderTop: '1px solid var(--c-border)',
                   margin: '10px 0',
                 }}
               />
@@ -191,9 +191,9 @@ function BlockNodes({
                         <th
                           key={c}
                           style={{
-                            border: '1px solid #dadce0',
+                            border: '1px solid var(--c-border)',
                             padding: '4px 8px',
-                            background: '#f1f3f4',
+                            background: 'var(--c-surface-3)',
                             textAlign: textAlign(block.align[c] ?? null),
                           }}
                         >
@@ -209,7 +209,7 @@ function BlockNodes({
                           <td
                             key={c}
                             style={{
-                              border: '1px solid #dadce0',
+                              border: '1px solid var(--c-border)',
                               padding: '4px 8px',
                               textAlign: textAlign(block.align[c] ?? null),
                             }}

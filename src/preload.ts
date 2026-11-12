@@ -10,6 +10,7 @@ const browserApi: BrowserApi = {
   goBack: () => ipcRenderer.send('tab:back'),
   goForward: () => ipcRenderer.send('tab:forward'),
   reloadPage: () => ipcRenderer.send('tab:reload'),
+  setChatNeed: (need) => ipcRenderer.send('chat:need', need),
   stopLoading: () => ipcRenderer.send('tab:stop'),
   newTab: (spaceId) => ipcRenderer.send('tab:new', spaceId),
   closeTab: (id) => ipcRenderer.send('tab:close', id),

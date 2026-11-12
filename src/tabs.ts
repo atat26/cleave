@@ -21,6 +21,7 @@ import {
   settlePanel,
 } from './frame';
 import type { FrameSizes, Size } from './frame';
+import type { ChatNeed } from './layout';
 import {
   FRAME_ANIMATION_MS,
   PAGE_RADIUS,
@@ -290,6 +291,10 @@ export async function createTabs(
     return { width, height };
   };
 
+  // What the chat on screen needs (a reply being written, an approval waiting): the
+  // chat page tells us, and the frame makes room for it.
+  let chatNeed: ChatNeed = 'none';
+
   // Where each part of the frame should be right now.
   const targetSizes = (): FrameSizes => {
     const s = state.settings;
@@ -305,7 +310,13 @@ export async function createTabs(
       sidebar: expanded() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH,
       left: fit.left,
       panel: fit.panel,
-      chat: restingChatHeight(s.viewMode, s.chatExpanded, s.chatHeight, window),
+      chat: restingChatHeight(
+        s.viewMode,
+        s.chatExpanded,
+        s.chatHeight,
+        window,
+        chatNeed,
+      ),
     };
     // The part being dragged follows the mouse exactly.
     if (drag?.kind === 'sidebar') {
@@ -1827,6 +1838,14 @@ export async function createTabs(
       void views.get(id)?.webContents.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
       commitAndShow(revealPage(state));
+    },
+    // The chat says what it needs: a line of a reply being written, or room for
+    // an approval. The frame slides to fit.
+    'chat:need': (need) => {
+      if (need !== 'none' && need !== 'activity' && need !== 'approval') return;
+      if (need === chatNeed) return;
+      chatNeed = need;
+      applyLayout(true);
     },
     'tab:reload': () => {
       const id = activeTabId();

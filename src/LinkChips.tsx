@@ -5,6 +5,7 @@ import type { Workspace } from './chatLinks';
 import { SPACE_COLOR_HEX } from './colors';
 import { labelFor } from './Sidebar';
 import type { LinkKind, Mention } from './chats';
+import { Button } from './ui/controls';
 import type { ArtifactInfo, ChatRef, SpaceInfo, TabInfo } from './types';
 
 // Linking Spaces and tabs to a chat. This file draws the link chips above the
@@ -40,11 +41,14 @@ const chipStyle: CSSProperties = {
   alignItems: 'center',
   gap: 6,
   maxWidth: 220,
-  padding: '3px 4px 3px 8px',
-  border: '1px solid #d0d0d0',
-  borderRadius: 14,
-  background: '#ffffff',
-  fontSize: 12,
+  height: 'var(--h-pill)',
+  boxSizing: 'border-box',
+  padding: '0 4px 0 10px',
+  border: '1px solid var(--c-border)',
+  borderRadius: 'var(--r-pill)',
+  background: 'var(--c-surface-2)',
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--c-text)',
 };
 
 const chipButton: CSSProperties = {
@@ -66,7 +70,7 @@ const tinyButton: CSSProperties = {
   padding: '0 4px',
   fontSize: 12,
   cursor: 'pointer',
-  color: '#5f6368',
+  color: 'var(--c-text-2)',
   flexShrink: 0,
 };
 
@@ -110,7 +114,7 @@ function LinkIcon({
         width: 10,
         height: 10,
         borderRadius: kind === 'space' ? 3 : 5,
-        background: open ? (color ?? '#9aa0a6') : '#dadce0',
+        background: open ? (color ?? 'var(--c-text-3)') : 'var(--c-border)',
         flexShrink: 0,
       }}
     />
@@ -135,16 +139,9 @@ export function LinkChips({
   if (refs.length === 0) return null;
   const workspace = toWorkspace(tabs, spaces, artifacts);
 
+  // Just the chips: the row they sit in (with the Add button) is the caller's.
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 6,
-        alignItems: 'center',
-        margin: '0 0 6px',
-      }}
-    >
+    <>
       {refs.map((ref) => {
         const link = resolveLink(ref, workspace);
         const tab =
@@ -187,8 +184,9 @@ export function LinkChips({
             }}
             style={{
               ...chipStyle,
-              color: link.open ? '#202124' : '#80868b',
-              background: link.open ? '#ffffff' : '#f8f9fa',
+              color: link.open ? 'var(--c-text)' : 'var(--c-text-3)',
+              background: link.open ? 'var(--c-surface-2)' : 'transparent',
+              borderStyle: link.open ? 'solid' : 'dashed',
             }}
           >
             <LinkIcon
@@ -219,7 +217,7 @@ export function LinkChips({
                 onClick={() =>
                   window.browserApi.chatReopenLink(chatId, link.id)
                 }
-                style={{ ...tinyButton, color: '#1a73e8' }}
+                style={{ ...tinyButton, color: 'var(--c-accent)' }}
               >
                 Reopen
               </button>
@@ -238,10 +236,7 @@ export function LinkChips({
           </span>
         );
       })}
-      <span style={{ fontSize: 11, color: '#5f6368' }}>
-        The assistant can read linked pages, and act on them with your approval.
-      </span>
-    </div>
+    </>
   );
 }
 
@@ -287,8 +282,9 @@ export function MentionToken({
         padding: '1px 4px 1px 6px',
         verticalAlign: 'baseline',
         whiteSpace: 'nowrap',
-        color: link.open ? '#202124' : '#80868b',
-        background: link.open ? '#ffffff' : '#f8f9fa',
+        color: link.open ? 'var(--c-text)' : 'var(--c-text-3)',
+        background: link.open ? 'var(--c-surface-2)' : 'transparent',
+        borderStyle: link.open ? 'solid' : 'dashed',
       }}
     >
       <LinkIcon
@@ -310,7 +306,7 @@ export function MentionToken({
         <button
           type="button"
           onClick={() => window.browserApi.chatReopenLink(chatId, link.id)}
-          style={{ ...tinyButton, color: '#1a73e8' }}
+          style={{ ...tinyButton, color: 'var(--c-accent)' }}
         >
           Reopen
         </button>
@@ -331,57 +327,50 @@ export function AddMenuButton({
   onAddArtifact: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const choice: CSSProperties = {
-    ...chipStyle,
-    padding: '3px 10px',
-    cursor: 'pointer',
-    color: '#1a73e8',
-    borderColor: '#c6dafc',
-  };
   // Keep the text box focused, so the list's arrow keys work.
   const keepFocus = (e: React.MouseEvent) => e.preventDefault();
   return (
-    <div style={{ margin: '0 0 6px', display: 'flex', gap: 6 }}>
-      <button
-        type="button"
+    <>
+      <Button
+        size="sm"
+        icon="plus"
         aria-label="Add"
         aria-expanded={open}
         onMouseDown={keepFocus}
         onClick={() => setOpen(!open)}
         title="Add a page or an artifact to the chat"
-        style={{ ...choice, padding: '3px 12px', fontWeight: 600 }}
       >
-        +
-      </button>
+        Add
+      </Button>
       {open && (
         <>
-          <button
-            type="button"
+          <Button
+            size="sm"
+            icon="globe"
             onMouseDown={keepFocus}
             onClick={() => {
               setOpen(false);
               onAddPage();
             }}
             title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
-            style={choice}
           >
-            Add page
-          </button>
-          <button
-            type="button"
+            Page
+          </Button>
+          <Button
+            size="sm"
+            icon="doc"
             onMouseDown={keepFocus}
             onClick={() => {
               setOpen(false);
               onAddArtifact();
             }}
             title="Attach an artifact to the chat (the assistant gets its title and kind)"
-            style={choice}
           >
-            Add artifact
-          </button>
+            Artifact
+          </Button>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -500,25 +489,18 @@ export function LinkPicker({
     <div
       role="listbox"
       aria-label="Link a Space, tab or artifact"
+      className="pick-list"
       style={{
-        position: 'fixed',
         left: anchor.left,
         bottom: window.innerHeight - anchor.top + 6,
         width: Math.min(360, Math.max(240, anchor.width)),
         // Never taller than the room inside the chat: anything above it would be
         // hidden behind the web page.
         maxHeight: Math.max(60, Math.min(280, anchor.room)),
-        overflowY: 'auto',
-        background: '#ffffff',
-        border: '1px solid #d0d0d0',
-        borderRadius: 10,
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.18)',
-        zIndex: 100,
-        padding: 4,
       }}
     >
       {items.length === 0 ? (
-        <div style={{ padding: '8px 10px', fontSize: 12, color: '#5f6368' }}>
+        <div className="pick-empty">
           Nothing matches. Open tabs, Spaces and artifacts you have not linked
           yet appear here.
         </div>
@@ -526,16 +508,7 @@ export function LinkPicker({
         items.map((item, i) => (
           <div key={item.key}>
             {(i === 0 || items[i - 1].group !== item.group) && (
-              <div
-                style={{
-                  padding: '6px 8px 2px',
-                  fontSize: 11,
-                  color: '#5f6368',
-                  fontWeight: 600,
-                }}
-              >
-                {item.group}
-              </div>
+              <div className="pick-group">{item.group}</div>
             )}
             <button
               type="button"
@@ -546,19 +519,7 @@ export function LinkPicker({
                 onPick(item);
               }}
               onMouseEnter={() => onHover(i)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                padding: '6px 8px',
-                border: 'none',
-                borderRadius: 6,
-                background: i === index ? '#e8f0fe' : 'transparent',
-                fontSize: 13,
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
+              className="pick-item"
             >
               <LinkIcon
                 kind={item.kind}

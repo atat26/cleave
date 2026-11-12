@@ -2,6 +2,8 @@
 // each panel can be dragged, and what happens when you let go. Pure numbers, no
 // Electron, so it is easy to test. See layout.ts for the picture.
 import {
+  CHAT_ACTIVITY_HEIGHT,
+  CHAT_APPROVAL_HEIGHT,
   CHAT_COMPACT_HEIGHT,
   CHAT_SNAP_HEIGHT,
   MAX_CHAT_SHARE,
@@ -14,6 +16,7 @@ import {
   SIDEBAR_COLLAPSED_WIDTH,
   TOOLBAR_HEIGHT,
 } from './layout.ts';
+import type { ChatNeed } from './layout.ts';
 import {
   CHAT_MAX_HEIGHT,
   CHAT_MIN_HEIGHT,
@@ -114,17 +117,34 @@ export function settleChat(
 //   chat only: all the room below the toolbar (the page is hidden); the sidebar
 //              and the rail stay, as they do in every view
 //   both:      compact, or expanded (but never so tall that the page would
-//              disappear, e.g. after the window gets smaller)
+//              disappear, e.g. after the window gets smaller); and if the chat
+//              needs room, a little more (see ChatNeed): a slim chat grows to
+//              show a line of a reply being written, and any chat opens up
+//              enough to show an approval that is waiting
 export function restingChatHeight(
   viewMode: ViewMode,
   expanded: boolean,
   savedHeight: number,
   window: Size,
+  need: ChatNeed = 'none',
 ): number {
   if (viewMode === 'page') return 0;
   if (viewMode === 'chat') return Math.max(0, window.height - TOOLBAR_HEIGHT);
-  if (!expanded) return CHAT_COMPACT_HEIGHT;
-  return clamp(CHAT_COMPACT_HEIGHT, maxChatHeight(window), savedHeight);
+  const max = maxChatHeight(window);
+  const base = expanded
+    ? clamp(CHAT_COMPACT_HEIGHT, max, savedHeight)
+    : CHAT_COMPACT_HEIGHT;
+  if (need === 'approval') {
+    return clamp(
+      CHAT_COMPACT_HEIGHT,
+      max,
+      Math.max(base, CHAT_APPROVAL_HEIGHT),
+    );
+  }
+  if (need === 'activity' && !expanded) {
+    return clamp(CHAT_COMPACT_HEIGHT, max, CHAT_ACTIVITY_HEIGHT);
+  }
+  return base;
 }
 
 // ---- Right panel -------------------------------------------------------------
