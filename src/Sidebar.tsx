@@ -8,6 +8,8 @@ import { IconButton, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { ChatList, ChatStrip } from './ChatHistory';
 import { PinButton } from './PinButton';
+import { DndProvider, useDnd } from './sidebarDnd';
+import type { RowDnd } from './sidebarDnd';
 import { SPACE_COLOR_HEX } from './colors';
 import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
@@ -74,6 +76,9 @@ function WorkingDot() {
   );
 }
 
+// Something dragged over a collapsed Space for this long opens it.
+const EXPAND_AFTER_MS = 600;
+
 // Pressing Enter or Space on a focused row does what clicking it does.
 const rowKeys = (open: () => void) => (event: ReactKeyboardEvent) => {
   if (event.target !== event.currentTarget) return; // Not from a button inside.
@@ -95,7 +100,10 @@ function Row({
   icon,
   children,
   trailing,
+  dnd,
 }: {
+  // Drag and drop (see sidebarDnd.tsx).
+  dnd?: RowDnd;
   active: boolean;
   dim?: boolean;
   title: string;
@@ -107,15 +115,22 @@ function Row({
 }) {
   return (
     <div
-      className={
-        active ? 'lrow collapse-actions is-active' : 'lrow collapse-actions'
-      }
+      {...dnd}
+      className={[
+        active ? 'lrow collapse-actions is-active' : 'lrow collapse-actions',
+        dnd?.className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       role="button"
       tabIndex={0}
       aria-current={active || undefined}
       title={title}
       onClick={onOpen}
-      onKeyDown={rowKeys(onOpen)}
+      onKeyDown={(event) => {
+        dnd?.onKeyDown?.(event);
+        if (!event.defaultPrevented) rowKeys(onOpen)(event);
+      }}
       onContextMenu={onContextMenu}
       style={{ opacity: dim ? 0.6 : 1 }}
     >
@@ -126,9 +141,23 @@ function Row({
   );
 }
 
-function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
+function TabRow({
+  tab,
+  active,
+  nextId,
+}: {
+  tab: TabInfo;
+  active: boolean;
+  // The tab after this one in its group (null: it is the last).
+  nextId: number | null;
+}) {
+  const dnd = useDnd().itemProps(
+    { kind: 'tab', id: tab.id },
+    { spaceId: tab.spaceId, nextId },
+  );
   return (
     <Row
+      dnd={dnd}
       active={active}
       dim={!tab.loaded}
       title={labelFor(tab)}
@@ -165,12 +194,19 @@ function TabRow({ tab, active }: { tab: TabInfo; active: boolean }) {
 function ArtifactRow({
   tab,
   active,
+  nextId,
 }: {
   tab: ArtifactTabInfo;
   active: boolean;
+  nextId: number | null;
 }) {
+  const dnd = useDnd().itemProps(
+    { kind: 'artifact', id: tab.id },
+    { spaceId: tab.spaceId, nextId },
+  );
   return (
     <Row
+      dnd={dnd}
       active={active}
       title={tab.title}
       onOpen={() => window.browserApi.artifactSelect(tab.id)}
@@ -206,6 +242,7 @@ function ArtifactRow({
 // and clicking it opens the Space's overview (the name IS the overview).
 function SpaceGroup({
   space,
+  nextSpaceId,
   tabs,
   artifacts,
   active,
@@ -213,6 +250,8 @@ function SpaceGroup({
   onRenameHandled,
 }: {
   space: SpaceInfo;
+  // The Space after this one (null: it is the last).
+  nextSpaceId: number | null;
   tabs: TabInfo[];
   artifacts: ArtifactTabInfo[];
   active: UiState['active'];
@@ -221,6 +260,23 @@ function SpaceGroup({
   onRenameHandled: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const dnd = useDnd();
+  const spaceDnd = dnd.spaceProps(space.id, nextSpaceId);
+  const { grip, ...headerDnd } = spaceDnd;
+  // Something dragged over a collapsed Space for a moment opens it.
+  const hoveredWhileDragging =
+    dnd.drag !== null &&
+    dnd.drag.kind !== 'space' &&
+    dnd.over?.type === 'into' &&
+    dnd.over.spaceId === space.id;
+  useEffect(() => {
+    if (!space.collapsed || !hoveredWhileDragging) return;
+    const timer = window.setTimeout(
+      () => window.browserApi.setSpaceCollapsed(space.id, false),
+      EXPAND_AFTER_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [space.collapsed, space.id, hoveredWhileDragging]);
 
   useEffect(() => {
     if (renameRequest === space.id) {
@@ -267,12 +323,21 @@ function SpaceGroup({
         </div>
       ) : (
         <Row
+          dnd={headerDnd}
           active={leadActive}
           title={`${space.name}: open the overview`}
           onOpen={() => window.browserApi.selectLead(space.id)}
           onContextMenu={openMenu}
           icon={
             <>
+              <span
+                {...grip}
+                className="hover-only dnd-grip"
+                title="Drag to move this Space"
+                aria-hidden="true"
+              >
+                <Icon name="grip" />
+              </span>
               <IconButton
                 icon={space.collapsed ? 'chev-r' : 'chev-d'}
                 size="sm"
@@ -322,20 +387,24 @@ function SpaceGroup({
             paddingLeft: 4,
           }}
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, i) => (
             <TabRow
               key={tab.id}
               tab={tab}
+              nextId={tabs[i + 1]?.id ?? null}
               active={active?.kind === 'tab' && active.id === tab.id}
             />
           ))}
-          {artifacts.map((a) => (
+          {dnd.endSlot({ type: 'tab', spaceId: space.id, beforeId: null })}
+          {artifacts.map((a, i) => (
             <ArtifactRow
               key={`a${a.id}`}
               tab={a}
+              nextId={artifacts[i + 1]?.id ?? null}
               active={active?.kind === 'artifact' && active.id === a.id}
             />
           ))}
+          {dnd.endSlot({ type: 'artifact', spaceId: space.id, beforeId: null })}
         </div>
       )}
     </div>
@@ -352,6 +421,8 @@ function FullSidebar({
   onRenameHandled: () => void;
 }) {
   const ungrouped = state.tabs.filter((tab) => tab.spaceId === null);
+  const looseArtifacts = state.artifactTabs.filter((a) => a.spaceId === null);
+  const dnd = useDnd();
 
   return (
     <>
@@ -396,29 +467,35 @@ function FullSidebar({
         <PinButton pinned={state.sidebarPinned} />
       </div>
 
-      <div style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}>
-        {ungrouped.map((tab) => (
+      <div
+        {...dnd.backgroundProps()}
+        style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}
+      >
+        {ungrouped.map((tab, i) => (
           <TabRow
             key={tab.id}
             tab={tab}
+            nextId={ungrouped[i + 1]?.id ?? null}
             active={state.active?.kind === 'tab' && state.active.id === tab.id}
           />
         ))}
-        {state.artifactTabs
-          .filter((a) => a.spaceId === null)
-          .map((a) => (
-            <ArtifactRow
-              key={`a${a.id}`}
-              tab={a}
-              active={
-                state.active?.kind === 'artifact' && state.active.id === a.id
-              }
-            />
-          ))}
-        {state.spaces.map((space) => (
+        {dnd.endSlot({ type: 'tab', spaceId: null, beforeId: null })}
+        {looseArtifacts.map((a, i) => (
+          <ArtifactRow
+            key={`a${a.id}`}
+            tab={a}
+            nextId={looseArtifacts[i + 1]?.id ?? null}
+            active={
+              state.active?.kind === 'artifact' && state.active.id === a.id
+            }
+          />
+        ))}
+        {dnd.endSlot({ type: 'artifact', spaceId: null, beforeId: null })}
+        {state.spaces.map((space, i) => (
           <SpaceGroup
             key={space.id}
             space={space}
+            nextSpaceId={state.spaces[i + 1]?.id ?? null}
             tabs={state.tabs.filter(
               (tab) => tab.spaceId === space.id && !tab.closed,
             )}
@@ -428,6 +505,7 @@ function FullSidebar({
             onRenameHandled={onRenameHandled}
           />
         ))}
+        {dnd.endSlot({ type: 'space', beforeId: null })}
       </div>
     </>
   );
@@ -438,14 +516,26 @@ function FullSidebar({
 // ---------------------------------------------------------------------------
 
 function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
+  // In the strip a tab dropped on another goes just before it.
+  const dnd = useDnd().itemProps(
+    { kind: 'tab', id: tab.id },
+    { spaceId: tab.spaceId, nextId: null },
+    { halves: false },
+  );
   return (
     <div
+      {...dnd}
       role="button"
       tabIndex={0}
       aria-current={active || undefined}
       aria-label={labelFor(tab)}
       onClick={() => window.browserApi.selectTab(tab.id)}
-      onKeyDown={rowKeys(() => window.browserApi.selectTab(tab.id))}
+      onKeyDown={(event) => {
+        dnd.onKeyDown?.(event);
+        if (!event.defaultPrevented) {
+          rowKeys(() => window.browserApi.selectTab(tab.id))(event);
+        }
+      }}
       onContextMenu={showTabMenu(tab)}
       title={labelFor(tab)}
       style={{
@@ -471,14 +561,25 @@ function StripArtifact({
   tab: ArtifactTabInfo;
   active: boolean;
 }) {
+  const dnd = useDnd().itemProps(
+    { kind: 'artifact', id: tab.id },
+    { spaceId: tab.spaceId, nextId: null },
+    { halves: false },
+  );
   return (
     <div
+      {...dnd}
       role="button"
       tabIndex={0}
       aria-current={active || undefined}
       aria-label={tab.title}
       onClick={() => window.browserApi.artifactSelect(tab.id)}
-      onKeyDown={rowKeys(() => window.browserApi.artifactSelect(tab.id))}
+      onKeyDown={(event) => {
+        dnd.onKeyDown?.(event);
+        if (!event.defaultPrevented) {
+          rowKeys(() => window.browserApi.artifactSelect(tab.id))(event);
+        }
+      }}
       title={tab.title}
       style={stripButton(active)}
     >
@@ -489,11 +590,13 @@ function StripArtifact({
 
 function StripSpace({
   space,
+  nextSpaceId,
   tabs,
   artifacts,
   active,
 }: {
   space: SpaceInfo;
+  nextSpaceId: number | null;
   tabs: TabInfo[];
   artifacts: ArtifactTabInfo[];
   active: UiState['active'];
@@ -504,6 +607,11 @@ function StripSpace({
     event.preventDefault();
     window.browserApi.showSpaceMenu(space.id, event.clientX, event.clientY);
   };
+  // The Space's icon is a drop target: a tab dropped on it joins the Space.
+  const { grip: _grip, ...spaceDnd } = useDnd().spaceProps(
+    space.id,
+    nextSpaceId,
+  );
 
   return (
     <div
@@ -515,12 +623,18 @@ function StripSpace({
       }}
     >
       <div
+        {...spaceDnd}
         role="button"
         tabIndex={0}
         aria-current={leadActive || undefined}
         aria-label={`${space.name} overview`}
         onClick={() => window.browserApi.selectLead(space.id)}
-        onKeyDown={rowKeys(() => window.browserApi.selectLead(space.id))}
+        onKeyDown={(event) => {
+          spaceDnd.onKeyDown?.(event);
+          if (!event.defaultPrevented) {
+            rowKeys(() => window.browserApi.selectLead(space.id))(event);
+          }
+        }}
         onContextMenu={openMenu}
         title={`${space.name} overview`}
         style={stripButton(leadActive)}
@@ -569,6 +683,7 @@ function StripSpace({
 
 function Strip({ state }: { state: UiState }) {
   const ungrouped = state.tabs.filter((tab) => tab.spaceId === null);
+  const dnd = useDnd();
 
   return (
     <>
@@ -591,7 +706,10 @@ function Strip({ state }: { state: UiState }) {
           +
         </button>
       </div>
-      <div style={{ overflowY: 'hidden', flex: 1, paddingBottom: 12 }}>
+      <div
+        {...dnd.backgroundProps()}
+        style={{ overflowY: 'hidden', flex: 1, paddingBottom: 12 }}
+      >
         {ungrouped.map((tab) => (
           <StripTab
             key={tab.id}
@@ -599,6 +717,7 @@ function Strip({ state }: { state: UiState }) {
             active={state.active?.kind === 'tab' && state.active.id === tab.id}
           />
         ))}
+        {dnd.endSlot({ type: 'tab', spaceId: null, beforeId: null })}
         {state.artifactTabs
           .filter((a) => a.spaceId === null)
           .map((a) => (
@@ -610,10 +729,12 @@ function Strip({ state }: { state: UiState }) {
               }
             />
           ))}
-        {state.spaces.map((space) => (
+        {dnd.endSlot({ type: 'artifact', spaceId: null, beforeId: null })}
+        {state.spaces.map((space, i) => (
           <StripSpace
             key={space.id}
             space={space}
+            nextSpaceId={state.spaces[i + 1]?.id ?? null}
             tabs={state.tabs.filter(
               (tab) => tab.spaceId === space.id && !tab.closed,
             )}
@@ -684,54 +805,62 @@ export function Sidebar({
   useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
 
   return (
-    <nav
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        boxSizing: 'border-box',
-        // Same colour as the rest of the frame, so it reads as part of it.
-        background: 'var(--c-frame)',
-        // A shadow shows it floating over the page (when it is open but not pinned).
-        boxShadow:
-          full && !state.sidebarPinned
-            ? '2px 0 8px rgba(0, 0, 0, 0.25)'
-            : 'none',
-        userSelect: 'none',
-        overflow: 'hidden',
-      }}
-    >
-      {chatOnly ? (
-        full ? (
-          <ChatList
-            chats={state.chats}
-            pinned={state.sidebarPinned}
-            renameRequest={chatRenameRequest}
-            onRenameHandled={onChatRenameHandled}
+    <DndProvider api={window.browserApi}>
+      <nav
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box',
+          // Same colour as the rest of the frame, so it reads as part of it.
+          background: 'var(--c-frame)',
+          // A shadow shows it floating over the page (when it is open but not pinned).
+          boxShadow:
+            full && !state.sidebarPinned
+              ? '2px 0 8px rgba(0, 0, 0, 0.25)'
+              : 'none',
+          userSelect: 'none',
+          overflow: 'hidden',
+        }}
+      >
+        {chatOnly ? (
+          full ? (
+            <ChatList
+              chats={state.chats}
+              pinned={state.sidebarPinned}
+              renameRequest={chatRenameRequest}
+              onRenameHandled={onChatRenameHandled}
+            />
+          ) : (
+            <ChatStrip chats={state.chats} />
+          )
+        ) : full ? (
+          <FullSidebar
+            state={state}
+            renameRequest={renameRequest}
+            onRenameHandled={onRenameHandled}
           />
         ) : (
-          <ChatStrip chats={state.chats} />
-        )
-      ) : full ? (
-        <FullSidebar
-          state={state}
-          renameRequest={renameRequest}
-          onRenameHandled={onRenameHandled}
+          <Strip state={state} />
+        )}
+        <ResizeHandle
+          kind="sidebar"
+          axis="x"
+          grows={1}
+          measure={() => window.innerWidth}
+          title="Drag to resize. Drag all the way left to collapse."
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: 8,
+          }}
         />
-      ) : (
-        <Strip state={state} />
-      )}
-      <ResizeHandle
-        kind="sidebar"
-        axis="x"
-        grows={1}
-        measure={() => window.innerWidth}
-        title="Drag to resize. Drag all the way left to collapse."
-        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 8 }}
-      />
-    </nav>
+      </nav>
+    </DndProvider>
   );
 }

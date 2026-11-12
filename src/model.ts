@@ -820,3 +820,167 @@ export function setSidebarPinned(
 ): SavedState {
   return { ...state, settings: { ...state.settings, sidebarPinned: pinned } };
 }
+
+// ---- Putting things in order (drag and drop, and Alt+Up / Alt+Down) -------------
+// The sidebar lists, in order: the tabs and artifacts outside any Space, then each
+// Space with its tabs and then its artifacts. The order in these lists IS the order
+// of the saved arrays, so moving an item is moving it in its array. None of this
+// changes which tab is selected.
+
+// Insert `item` just before the first element for which `isTarget` is true, or at
+// the end when there is none.
+function insertBefore<T>(
+  list: T[],
+  item: T,
+  isTarget: ((other: T) => boolean) | null,
+): T[] {
+  const at = isTarget ? list.findIndex(isTarget) : -1;
+  return at < 0
+    ? [...list, item]
+    : [...list.slice(0, at), item, ...list.slice(at)];
+}
+
+// Put a tab into a Space (null: outside every Space), just before another tab of
+// that Space. With no `beforeTabId` (or one that is not in that Space) it goes to
+// the end. A tab taken out of every Space is an ordinary open tab again.
+export function placeTab(
+  state: SavedState,
+  tabId: number,
+  spaceId: number | null,
+  beforeTabId: number | null,
+): SavedState {
+  const tab = findTab(state, tabId);
+  if (!tab) return state;
+  if (spaceId !== null && !findSpace(state, spaceId)) return state;
+  // Dropped on itself: nothing to do.
+  if (beforeTabId === tabId) return state;
+  const moved: SavedTab = {
+    ...tab,
+    spaceId,
+    closed: spaceId === null ? false : tab.closed,
+  };
+  const others = state.tabs.filter((t) => t.id !== tabId);
+  const before =
+    beforeTabId !== null && beforeTabId !== tabId
+      ? others.find((t) => t.id === beforeTabId && t.spaceId === spaceId)
+      : undefined;
+  const tabs = insertBefore(
+    others,
+    moved,
+    before ? (t) => t.id === before.id : null,
+  );
+  // Nothing moved at all: keep the very same state.
+  const sameOrder = tabs.every((t, i) => t.id === state.tabs[i].id);
+  return sameOrder &&
+    moved.spaceId === tab.spaceId &&
+    moved.closed === tab.closed
+    ? state
+    : { ...state, tabs };
+}
+
+// Put an open artifact in a position among the open artifacts: just before another
+// one (or at the end). Which Space it belongs to is decided by the artifact itself
+// (see reconcileArtifactTabs), so move the artifact first, then call this.
+export function placeArtifactTab(
+  state: SavedState,
+  artifactId: number,
+  beforeArtifactId: number | null,
+): SavedState {
+  const tab = state.artifactTabs.find((t) => t.artifactId === artifactId);
+  if (!tab || beforeArtifactId === artifactId) return state;
+  const others = state.artifactTabs.filter((t) => t.artifactId !== artifactId);
+  const before =
+    beforeArtifactId !== null && beforeArtifactId !== artifactId
+      ? others.find(
+          (t) => t.artifactId === beforeArtifactId && t.spaceId === tab.spaceId,
+        )
+      : undefined;
+  const artifactTabs = insertBefore(
+    others,
+    tab,
+    before ? (t) => t.artifactId === before.artifactId : null,
+  );
+  return artifactTabs.every((t, i) => t === state.artifactTabs[i])
+    ? state
+    : { ...state, artifactTabs };
+}
+
+// Put a Space just before another Space (or at the end).
+export function placeSpace(
+  state: SavedState,
+  spaceId: number,
+  beforeSpaceId: number | null,
+): SavedState {
+  const space = findSpace(state, spaceId);
+  if (!space || beforeSpaceId === spaceId) return state;
+  const others = state.spaces.filter((s) => s.id !== spaceId);
+  const before =
+    beforeSpaceId !== null && beforeSpaceId !== spaceId
+      ? others.find((s) => s.id === beforeSpaceId)
+      : undefined;
+  const spaces = insertBefore(
+    others,
+    space,
+    before ? (s) => s.id === before.id : null,
+  );
+  return spaces.every((s, i) => s === state.spaces[i])
+    ? state
+    : { ...state, spaces };
+}
+
+// What can be nudged one place up or down.
+export type Nudgeable =
+  | { kind: 'tab'; id: number }
+  | { kind: 'artifact'; id: number }
+  | { kind: 'space'; id: number };
+
+// Move an item one place up (-1) or down (1) among its neighbours as the sidebar
+// shows them (a tab among the open tabs of its Space, and so on). At the edge
+// nothing happens.
+export function nudge(
+  state: SavedState,
+  item: Nudgeable,
+  direction: -1 | 1,
+): SavedState {
+  if (item.kind === 'space') {
+    const ids = state.spaces.map((s) => s.id);
+    const at = ids.indexOf(item.id);
+    const to = at + direction;
+    if (at < 0 || to < 0 || to >= ids.length) return state;
+    // Before the one it jumps over (moving up), or before the one after (down).
+    return placeSpace(
+      state,
+      item.id,
+      direction === -1 ? ids[to] : (ids[to + 1] ?? null),
+    );
+  }
+  if (item.kind === 'tab') {
+    const tab = findTab(state, item.id);
+    if (!tab || tab.closed) return state;
+    const group = state.tabs.filter(
+      (t) => t.spaceId === tab.spaceId && !t.closed,
+    );
+    const at = group.findIndex((t) => t.id === item.id);
+    const to = at + direction;
+    if (to < 0 || to >= group.length) return state;
+    return placeTab(
+      state,
+      item.id,
+      tab.spaceId,
+      direction === -1 ? group[to].id : (group[to + 1]?.id ?? null),
+    );
+  }
+  const tab = state.artifactTabs.find((t) => t.artifactId === item.id);
+  if (!tab) return state;
+  const group = state.artifactTabs.filter((t) => t.spaceId === tab.spaceId);
+  const at = group.findIndex((t) => t.artifactId === item.id);
+  const to = at + direction;
+  if (to < 0 || to >= group.length) return state;
+  return placeArtifactTab(
+    state,
+    item.id,
+    direction === -1
+      ? group[to].artifactId
+      : (group[to + 1]?.artifactId ?? null),
+  );
+}

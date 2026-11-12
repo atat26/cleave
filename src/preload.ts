@@ -11,6 +11,19 @@ const browserApi: BrowserApi = {
   goForward: () => ipcRenderer.send('tab:forward'),
   reloadPage: () => ipcRenderer.send('tab:reload'),
   toggleSidebarPin: () => ipcRenderer.send('sidebar:toggle-pin'),
+  moveTab: (tabId, spaceId, beforeTabId) =>
+    ipcRenderer.send('sidebar:move-tab', tabId, spaceId, beforeTabId),
+  moveArtifactTab: (artifactId, spaceId, beforeArtifactId) =>
+    ipcRenderer.send(
+      'sidebar:move-artifact',
+      artifactId,
+      spaceId,
+      beforeArtifactId,
+    ),
+  moveSpace: (spaceId, beforeSpaceId) =>
+    ipcRenderer.send('sidebar:move-space', spaceId, beforeSpaceId),
+  nudgeItem: (kind, id, direction) =>
+    ipcRenderer.send('sidebar:nudge', kind, id, direction),
   setChatNeed: (need) => ipcRenderer.send('chat:need', need),
   stopLoading: () => ipcRenderer.send('tab:stop'),
   newTab: (spaceId) => ipcRenderer.send('tab:new', spaceId),
