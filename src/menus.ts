@@ -35,54 +35,6 @@ const label = (text: string) => {
 const capitalize = (text: string) =>
   text.charAt(0).toUpperCase() + text.slice(1);
 
-export function tabMenu(
-  state: SavedState,
-  tabId: number,
-  actions: MenuActions,
-): Menu | null {
-  const tab = model.findTab(state, tabId);
-  if (!tab) return null;
-
-  const moveItems: MenuItemConstructorOptions[] = state.spaces.map((space) => ({
-    label: label(space.name),
-    type: 'radio',
-    checked: space.id === tab.spaceId,
-    click: () => actions.moveTab(tabId, space.id),
-  }));
-
-  const template: MenuItemConstructorOptions[] = [
-    {
-      label: 'Move to Space',
-      submenu: [
-        ...moveItems,
-        ...(moveItems.length > 0 ? [{ type: 'separator' as const }] : []),
-        { label: 'New Space', click: () => actions.moveTabToNewSpace(tabId) },
-      ],
-    },
-  ];
-  if (tab.spaceId !== null) {
-    template.push({
-      label: 'Remove from Space',
-      click: () => actions.moveTab(tabId, null),
-    });
-  }
-  template.push(
-    { type: 'separator' },
-    {
-      label: tab.spaceId === null ? 'Close tab' : 'Close tab (keep in Space)',
-      click: () => actions.closeTab(tabId),
-    },
-  );
-  if (tab.spaceId !== null) {
-    template.push({
-      label: 'Delete tab',
-      click: () => actions.removeTab(tabId),
-    });
-  }
-
-  return Menu.buildFromTemplate(template);
-}
-
 export function spaceMenu(
   state: SavedState,
   spaceId: number,

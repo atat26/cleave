@@ -4,6 +4,7 @@ import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 import type { ArtifactKind } from './artifacts';
+import type { MenuItem } from './menuTypes';
 
 export type { ChatMessage, ChatRef, LinkKind, MessagePart, ModelInfo };
 
@@ -260,6 +261,15 @@ export interface BrowserApi {
     content: string,
     revision: number,
   ) => Promise<ArtifactWriteResult>;
+  // The popup layer (see PopupApp.tsx): the page asks for it to show a menu at a
+  // place in the window, and reports what was chosen. Only that page uses these.
+  onPopupShow: (
+    callback: (menu: { items: MenuItem[]; x: number; y: number }) => void,
+  ) => () => void;
+  onPopupHide: (callback: () => void) => () => void;
+  popupReady: () => void;
+  popupChoose: (id: string) => void;
+  popupClose: () => void;
   // Called when the assistant changed an artifact's text (so an open editor can
   // show it). Returns an unsubscribe function.
   onArtifactChanged: (callback: (id: number) => void) => () => void;
@@ -355,7 +365,8 @@ export interface BrowserApi {
   // Returns an unsubscribe function.
   onLayout: (callback: (layout: FrameLayout) => void) => () => void;
   // Right-click menus. The app shows a native menu and performs the choice.
-  showTabMenu: (id: number) => void;
+  // x and y are where you clicked, in the window (the pointer's client position).
+  showTabMenu: (id: number, x: number, y: number) => void;
   showSpaceMenu: (id: number) => void;
   // Called when "Rename Space" is chosen from a menu: show the rename box.
   onRenameRequest: (callback: (spaceId: number) => void) => () => void;

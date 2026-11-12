@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   screen,
@@ -52,7 +53,7 @@ import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
-import { chatMenu, chatRowMenu, spaceMenu, tabMenu } from './menus';
+import { chatMenu, chatRowMenu, spaceMenu } from './menus';
 import type { ChatMenuActions, MenuActions } from './menus';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
@@ -75,6 +76,9 @@ import {
 } from './toolSettings';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
+import { parseTabChoice, tabMenuItems } from './menuData';
+import { isChoosable } from './menuTypes';
+import type { MenuItem } from './menuTypes';
 import { resolveInput } from './url';
 
 // What a new tab shows. Later this could become an AI chat / search page.
@@ -200,6 +204,41 @@ export async function createTabs(
   // Like the main window, the sidebar never opens windows or navigates away.
   sidebar.setWindowOpenHandler(() => ({ action: 'deny' }));
   sidebar.on('will-navigate', (event) => event.preventDefault());
+
+  // ---- The popup layer: a transparent page above everything, for menus -------
+  //
+  // Web pages are drawn by the system above the window's own page, so a menu
+  // drawn in a page could be hidden behind one. This view is added last (and
+  // again whenever another view is added), so it is always on top. It stays
+  // hidden until a menu opens; then it covers the whole window.
+
+  const popupView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  popupView.setBackgroundColor('#00000000');
+  popupView.setVisible(false);
+  win.contentView.addChildView(popupView);
+  const popup = popupView.webContents;
+  popup.setWindowOpenHandler(() => ({ action: 'deny' }));
+  popup.on('will-navigate', (event) => event.preventDefault());
+  // The popup page says when it is listening, so a menu is never sent too early.
+  let popupReady = false;
+  let waitingForPopup: (() => void) | null = null;
+  // The menu that is open now: what it holds, what a choice does, and which page
+  // had the keyboard (it gets it back).
+  // Which UI page sent the request being handled right now (so a menu it opens
+  // gives the keyboard back to it).
+  let requestSender: Electron.WebContents | null = null;
+  let openMenu: {
+    items: MenuItem[];
+    choose: (id: string) => void;
+    opener: Electron.WebContents;
+  } | null = null;
 
   // ---- Layout ----------------------------------------------------------------
   //
@@ -502,6 +541,39 @@ export async function createTabs(
     sendState();
   };
 
+  // Show a menu in the popup layer, at a place in the window. `choose` is called
+  // with the id of the item picked. The sidebar does not close under it.
+  const showMenu = (
+    items: MenuItem[],
+    x: number,
+    y: number,
+    choose: (id: string) => void,
+    opener: Electron.WebContents,
+  ) => {
+    if (openMenu) closeMenu(false);
+    openMenu = { items, choose, opener };
+    busy++;
+    const send = () => popup.send('popup:show', { items, x, y });
+    const size = windowSize();
+    popupView.setBounds({ x: 0, y: 0, width: size.width, height: size.height });
+    popupView.setVisible(true);
+    win.contentView.addChildView(popupView); // On top of everything.
+    if (popupReady) send();
+    else waitingForPopup = send;
+    popup.focus();
+  };
+
+  const closeMenu = (giveBackKeyboard = true) => {
+    if (!openMenu) return;
+    const { opener } = openMenu;
+    openMenu = null;
+    busy = Math.max(0, busy - 1);
+    waitingForPopup = null;
+    if (!popup.isDestroyed()) popup.send('popup:hide');
+    popupView.setVisible(false);
+    if (giveBackKeyboard && !opener.isDestroyed()) opener.focus();
+  };
+
   // Show a right-click menu without letting the sidebar close under it.
   const popupMenu = (menu: Electron.Menu | null) => {
     if (!menu) return;
@@ -536,8 +608,10 @@ export async function createTabs(
     });
     views.set(tab.id, view);
     win.contentView.addChildView(view);
-    // Adding an existing view again moves it to the top: keep the sidebar above.
+    // Adding an existing view again moves it to the top: keep the sidebar above,
+    // and the popup layer above that.
     win.contentView.addChildView(sidebarView);
+    win.contentView.addChildView(popupView);
     // The page is a rounded card inset in the frame.
     view.setBorderRadius(PAGE_RADIUS);
     view.setBounds(pageBounds());
@@ -1154,6 +1228,76 @@ export async function createTabs(
     deleteSpace: (spaceId) => void deleteSpace(spaceId),
   };
 
+  // What a tab menu item does.
+  const runTabChoice = (tabId: number, choiceId: string) => {
+    const tab = model.findTab(state, tabId);
+    const choice = parseTabChoice(choiceId);
+    if (!tab || !choice) return;
+    switch (choice.action) {
+      case 'new-below':
+        commitAndShow(
+          revealPage(
+            model.addTab(state, {
+              url: NEW_TAB_URL,
+              spaceId: tab.spaceId,
+              after: tabId,
+            }).state,
+          ),
+        );
+        break;
+      case 'duplicate':
+        commitAndShow(
+          revealPage(
+            model.addTab(state, {
+              url: tab.url,
+              spaceId: tab.spaceId,
+              after: tabId,
+            }).state,
+          ),
+        );
+        break;
+      case 'reload':
+        views.get(tabId)?.webContents.reload();
+        break;
+      case 'add-to-chat':
+        commitChats(
+          chatsModel.addRef(chats, chats.activeId, {
+            kind: 'tab',
+            id: tabId,
+            title: tab.title,
+            url: tab.url,
+          }),
+        );
+        // The chat may be closed (page only): bring it back.
+        if (state.settings.viewMode === 'page') {
+          commitAndShow(model.setViewMode(state, 'both'));
+        }
+        break;
+      case 'move':
+        commit(model.moveTab(state, tabId, choice.spaceId));
+        break;
+      case 'move-new-space':
+        menuActions.moveTabToNewSpace(tabId);
+        break;
+      case 'copy-link':
+        clipboard.writeText(tab.url);
+        break;
+      case 'close-others':
+        for (const other of state.tabs.filter(
+          (t) => t.id !== tabId && t.spaceId === tab.spaceId && !t.closed,
+        )) {
+          closeTab(other.id);
+        }
+        break;
+      case 'close':
+        closeTab(tabId);
+        break;
+      case 'delete':
+        removeTab(tabId);
+        break;
+    }
+  };
+
   const select = (ref: ActiveRef) =>
     commitAndShow(revealPage(model.setActive(state, ref)));
 
@@ -1501,13 +1645,50 @@ export async function createTabs(
         popupMenu(chatRowMenu(id, chatMenuActions));
       }
     },
-    'tab:menu': (id) => {
-      if (isId(id)) popupMenu(tabMenu(state, id, menuActions));
+    'tab:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const items = tabMenuItems(state, id);
+      if (!items) return;
+      showMenu(
+        items,
+        x,
+        y,
+        (choice) => runTabChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
     },
     'space:menu': (id) => {
       if (isId(id)) popupMenu(spaceMenu(state, id, menuActions));
     },
   };
+  // The popup page reports: ready, a choice, or a close. Only that page is heard.
+  const onPopupReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender !== popup) return;
+    popupReady = true;
+    const waiting = waitingForPopup;
+    waitingForPopup = null;
+    waiting?.();
+  };
+  const onPopupChoose = (event: Electron.IpcMainEvent, id: unknown) => {
+    if (event.sender !== popup || !openMenu) return;
+    // Only an item of the menu that is open (and enabled) counts.
+    if (!isChoosable(openMenu.items, id)) return;
+    const { choose } = openMenu;
+    closeMenu(true);
+    choose(id);
+  };
+  const onPopupClose = (event: Electron.IpcMainEvent) => {
+    if (event.sender === popup) closeMenu(true);
+  };
+  ipcMain.on('popup:ready', onPopupReady);
+  ipcMain.on('popup:choose', onPopupChoose);
+  ipcMain.on('popup:close', onPopupClose);
+  // A menu closes when the window is left or resized, like a native one.
+  win.on('blur', () => closeMenu(false));
+  win.on('resize', () => {
+    if (openMenu) closeMenu(false);
+  });
+
   // A UI page says it is listening and asks for the current state. That, not
   // the page's "finished loading" event (which can come before the page is
   // listening, or long after), is what marks the page ready for messages.
@@ -1524,7 +1705,12 @@ export async function createTabs(
   const listeners = Object.entries(requests).map(([channel, handle]) => {
     const listener = (event: Electron.IpcMainEvent, ...args: unknown[]) => {
       if (event.sender === win.webContents || event.sender === sidebar) {
-        handle(...args);
+        requestSender = event.sender;
+        try {
+          handle(...args);
+        } finally {
+          requestSender = null;
+        }
       }
     };
     ipcMain.on(channel, listener);
@@ -1669,6 +1855,7 @@ export async function createTabs(
     sendState();
   }
   void loadUi(sidebar, 'sidebar');
+  void loadUi(popup, 'popup');
 
   // While developing, the dev server sometimes rebuilds its bundled libraries just
   // as the app starts, and a page that loads in that moment fails to start (it
@@ -1714,6 +1901,9 @@ export async function createTabs(
     stopWatching();
     for (const timer of startupTimers) clearTimeout(timer);
     ipcMain.removeListener('ui:ready', onUiReady);
+    ipcMain.removeListener('popup:ready', onPopupReady);
+    ipcMain.removeListener('popup:choose', onPopupChoose);
+    ipcMain.removeListener('popup:close', onPopupClose);
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');

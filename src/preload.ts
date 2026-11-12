@@ -124,7 +124,25 @@ const browserApi: BrowserApi = {
       ipcRenderer.removeListener('ui:layout', listener);
     };
   },
-  showTabMenu: (id) => ipcRenderer.send('tab:menu', id),
+  showTabMenu: (id, x, y) => ipcRenderer.send('tab:menu', id, x, y),
+  onPopupShow: (callback) => {
+    const listener = (_event: unknown, menu: Parameters<typeof callback>[0]) =>
+      callback(menu);
+    ipcRenderer.on('popup:show', listener);
+    return () => {
+      ipcRenderer.removeListener('popup:show', listener);
+    };
+  },
+  onPopupHide: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('popup:hide', listener);
+    return () => {
+      ipcRenderer.removeListener('popup:hide', listener);
+    };
+  },
+  popupReady: () => ipcRenderer.send('popup:ready'),
+  popupChoose: (id) => ipcRenderer.send('popup:choose', id),
+  popupClose: () => ipcRenderer.send('popup:close'),
   showSpaceMenu: (id) => ipcRenderer.send('space:menu', id),
 
   onRenameRequest: (callback) => {

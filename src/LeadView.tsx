@@ -460,7 +460,11 @@ export function LeadView({
               onOpen={() => window.browserApi.selectTab(tab.id)}
               onContextMenu={(event) => {
                 event.preventDefault();
-                window.browserApi.showTabMenu(tab.id);
+                window.browserApi.showTabMenu(
+                  tab.id,
+                  event.clientX,
+                  event.clientY,
+                );
               }}
             >
               {tab.closed ? (

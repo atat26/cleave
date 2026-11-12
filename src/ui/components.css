@@ -542,6 +542,15 @@ button {
 .lrow:focus-within .hover-only {
   opacity: 1;
 }
+/* A row whose hover-only buttons take no room until the mouse is on it (so a
+   narrow list shows as much of each name as it can). */
+.lrow.collapse-actions .hover-only {
+  display: none;
+}
+.lrow.collapse-actions:hover .hover-only,
+.lrow.collapse-actions:focus-within .hover-only {
+  display: inline-flex;
+}
 .lrow .btn-icon {
   width: 24px;
   height: 24px;
@@ -754,7 +763,11 @@ button {
 .menu li.open {
   background: var(--c-hover);
 }
+.menu-root {
+  animation: pop var(--dur-med) var(--ease-out);
+}
 .menu .submenu {
+  z-index: 1;
   position: absolute;
   left: calc(100% - 4px);
   top: -5px;

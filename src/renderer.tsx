@@ -10,10 +10,17 @@ import './ui/tokens.css';
 import './ui/components.css';
 import { App } from './App';
 import { KitPage } from './KitPage';
+import { PopupApp } from './PopupApp';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {/* #kit shows every shared control (for checking the look). */}
-    {window.location.hash === '#kit' ? <KitPage /> : <App />}
+    {window.location.hash === '#kit' ? (
+      <KitPage />
+    ) : window.location.hash === '#popup' ? (
+      <PopupApp />
+    ) : (
+      <App />
+    )}
   </StrictMode>,
 );
