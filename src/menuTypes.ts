@@ -15,6 +15,8 @@ export interface MenuEntry {
   shortcut?: string;
   // A small square of this colour, drawn in place of an icon (for colour choices).
   swatch?: string;
+  // An emoji drawn in place of an icon (a chat, Space or artifact's picture).
+  emoji?: string;
   // Ticked: this is the current choice. Drawn as a check at the right.
   checked?: boolean;
   // For a menu opened from a control (a button that shows the current choice):

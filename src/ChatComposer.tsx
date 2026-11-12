@@ -37,7 +37,8 @@ function makePill(item: PickerItem): HTMLSpanElement {
   pill.dataset.id = String(item.id);
   pill.dataset.tag = tag;
   pill.title = 'Double-click to turn into plain text';
-  pill.textContent = tag;
+  // The emoji is only for looking at: what is sent is the tag.
+  pill.textContent = item.emoji ? `${item.emoji} ${tag}` : tag;
   Object.assign(pill.style, {
     display: 'inline-block',
     padding: '0 8px',

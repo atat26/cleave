@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import { ItemEmoji } from './ui/controls';
 import {
   ellipsis,
   iconButtonStyle,
@@ -59,9 +60,7 @@ function ChatRow({
       title={chat.title}
       style={rowStyle(active)}
     >
-      <span aria-hidden="true" style={{ filter: 'grayscale(1)' }}>
-        💬
-      </span>
+      <ItemEmoji emoji={chat.emoji} />
       {chat.generating && (
         <span
           role="img"

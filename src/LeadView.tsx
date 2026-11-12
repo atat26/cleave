@@ -4,7 +4,7 @@ import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
-import { Button } from './ui/controls';
+import { Button, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
 import type { ArtifactInfo, SpaceInfo, TabInfo } from './types';
 
@@ -148,10 +148,7 @@ export function LeadView({
           flexWrap: 'wrap',
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{ width: 14, height: 14, borderRadius: 4, background: color }}
-        />
+        <SpaceIcon emoji={space.emoji} tint={color} />
         {editing ? (
           <input
             className="input"
@@ -287,7 +284,7 @@ export function LeadView({
               <OverviewCard
                 key={a.id}
                 color={color}
-                icon={<Icon name="doc" large />}
+                icon={<ItemEmoji emoji={a.emoji} />}
                 title={a.title}
                 subtitle={`${KIND_WORDS[a.kind]} · ${open ? 'open' : 'closed'}`}
                 open={open}

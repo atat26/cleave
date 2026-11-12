@@ -2,6 +2,7 @@
 // They are kept in artifacts.json in the app's data folder. Pure data and
 // functions with no Electron, so it is easy to test. Uploaded files are a separate
 // thing, to be added later.
+import { cleanEmoji } from './emoji.ts';
 
 // What kind of document it is. Every kind here has a text editor. Kinds that can
 // only be previewed (PDFs, images) come back with uploads.
@@ -17,6 +18,8 @@ export interface Artifact {
   title: string;
   kind: ArtifactKind;
   content: string;
+  // Its emoji, or null to show the default for its kind (see emoji.ts).
+  emoji: string | null;
   // The Space it belongs to, or null for one outside any Space.
   spaceId: number | null;
   createdAt: number;
@@ -106,6 +109,7 @@ export function parseArtifacts(raw: unknown): ArtifactsState {
       title: cleanTitle(item.title),
       kind,
       content: content.slice(0, MAX_ARTIFACT_CHARS),
+      emoji: cleanEmoji(item.emoji),
       spaceId: isCount(spaceId) ? spaceId : null,
       createdAt: isCount(item.createdAt) ? item.createdAt : 0,
       updatedAt: isCount(item.updatedAt) ? item.updatedAt : 0,
@@ -125,6 +129,7 @@ export interface NewArtifact {
   title?: string;
   kind: string;
   content?: string;
+  emoji?: string | null;
   spaceId?: number | null;
 }
 
@@ -144,6 +149,7 @@ export function createArtifact(
     title: cleanTitle(input.title),
     kind: input.kind,
     content,
+    emoji: cleanEmoji(input.emoji),
     spaceId: input.spaceId ?? null,
     createdAt: now,
     updatedAt: now,
@@ -170,6 +176,8 @@ export interface ArtifactChanges {
   content?: string;
   // Move into a Space (a number) or out of every Space (null).
   spaceId?: number | null;
+  // A new emoji (null = back to the default). Not a single emoji: ignored.
+  emoji?: string | null;
 }
 
 export function updateArtifact(
@@ -190,6 +198,12 @@ export function updateArtifact(
     ...old,
     title: changes.title === undefined ? old.title : cleanTitle(changes.title),
     content: changes.content ?? old.content,
+    emoji:
+      changes.emoji === undefined
+        ? old.emoji
+        : changes.emoji === null
+          ? null
+          : (cleanEmoji(changes.emoji) ?? old.emoji),
     spaceId: changes.spaceId === undefined ? old.spaceId : changes.spaceId,
     updatedAt: now,
     revision:

@@ -1295,3 +1295,61 @@ button {
   gap: var(--s-2);
   flex-wrap: wrap;
 }
+
+/* ---- The emoji picker -------------------------------------------------------- */
+.emoji-picker {
+  width: 300px;
+  max-height: min(420px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: var(--s-2);
+  outline: none;
+}
+.emoji-reset {
+  width: 100%;
+  margin-bottom: var(--s-1);
+}
+.emoji-group {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--c-text-3);
+  padding: var(--s-2) var(--s-1) var(--s-1);
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+}
+.emoji-cell {
+  height: 32px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+.emoji-cell[aria-selected='true'] {
+  background: var(--c-accent-tint);
+}
+.emoji-cell.is-active {
+  background: var(--c-active);
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.item-emoji {
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.menu-emoji {
+  width: var(--icon);
+  flex: none;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
+}

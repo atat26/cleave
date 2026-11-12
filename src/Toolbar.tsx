@@ -4,7 +4,7 @@ import { PAGE_INSET, TOOLBAR_HEIGHT, WINDOW_CONTROLS_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { describeSite } from './site';
 import type { ChatsInfo } from './types';
-import { IconButton, Segmented } from './ui/controls';
+import { IconButton, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
 
 interface ToolbarProps {
@@ -55,13 +55,26 @@ function ChatTitle({ chats }: { chats: ChatsInfo }) {
   }
 
   return (
-    <h1
-      className="tb-title truncate"
-      onDoubleClick={() => setEditing(true)}
-      title="Double-click to rename"
-    >
-      {active?.title ?? 'Chat'}
-    </h1>
+    <>
+      {active && <ItemEmoji emoji={active.emoji} />}
+      <h1
+        className="tb-title truncate"
+        onDoubleClick={() => setEditing(true)}
+        // Right-click for the same menu as a chat's row in the chat list.
+        onContextMenu={(event) => {
+          if (!active) return;
+          event.preventDefault();
+          window.browserApi.showChatMenu(
+            active.id,
+            event.clientX,
+            event.clientY,
+          );
+        }}
+        title="Double-click to rename"
+      >
+        {active?.title ?? 'Chat'}
+      </h1>
+    </>
   );
 }
 

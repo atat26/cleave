@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ChatsInfo } from './types';
-import { Button, IconButton } from './ui/controls';
+import { Button, IconButton, ItemEmoji } from './ui/controls';
 import { Icon } from './ui/Icon';
 
 // The conversation's name, with controls to manage your chats: click the name to
@@ -39,7 +39,15 @@ export function ChatSwitcher({
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+    <div
+      style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}
+      // Right-click the name for the same menu as a chat's row in the chat list.
+      onContextMenu={(event) => {
+        if (!active || event.target instanceof HTMLInputElement) return;
+        event.preventDefault();
+        window.browserApi.showChatMenu(active.id, event.clientX, event.clientY);
+      }}
+    >
       {editing && active ? (
         <input
           className="input"
@@ -79,6 +87,7 @@ export function ChatSwitcher({
             minWidth: 0,
           }}
         >
+          {active && <ItemEmoji emoji={active.emoji} />}
           <span className="truncate">{active?.title ?? 'Chat'}</span>
           <Icon name="chev-d" />
         </Button>

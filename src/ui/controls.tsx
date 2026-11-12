@@ -352,17 +352,30 @@ export function Badge({
 export function SpaceIcon({
   emoji,
   color = 'blue',
+  tint,
   suggested = false,
 }: {
   emoji: string;
   color?: SpaceColorName;
+  // Any CSS colour for the square behind the emoji (a Space's own colour).
+  tint?: string;
   suggested?: boolean;
 }) {
   return (
     <span
       className={join('sicon', `sp-${color}`, suggested && 'suggested')}
+      style={tint ? ({ '--sp': tint } as React.CSSProperties) : undefined}
       aria-hidden="true"
     >
+      {emoji}
+    </span>
+  );
+}
+
+// The emoji of a chat or an artifact, drawn plain (no square) beside its name.
+export function ItemEmoji({ emoji }: { emoji: string }) {
+  return (
+    <span className="item-emoji" aria-hidden="true">
       {emoji}
     </span>
   );
