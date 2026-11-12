@@ -77,9 +77,10 @@ export function App() {
   // the two on/off flags below are React state (and they change rarely).
   useEffect(() => {
     if (IS_SIDEBAR) return;
-    return window.browserApi.onLayout(({ left, panel, chat }) => {
+    return window.browserApi.onLayout(({ left, sidebar, panel, chat }) => {
       const root = document.documentElement.style;
       root.setProperty('--left', `${left}px`);
+      root.setProperty('--sidebar-edge', `${sidebar}px`);
       root.setProperty('--panel', `${panel}px`);
       root.setProperty('--chat', `${chat}px`);
       setPanelVisible(panel > 1);

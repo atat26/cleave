@@ -443,6 +443,7 @@ export async function createTabs(
     if (ready.has(win.webContents) && !win.webContents.isDestroyed()) {
       const layout: FrameLayout = {
         left: Math.round(now.left),
+        sidebar: Math.round(now.sidebar),
         panel: Math.round(now.panel),
         chat: Math.round(now.chat),
       };
@@ -510,6 +511,7 @@ export async function createTabs(
           id: c.id,
           title: c.title,
           emoji: emojiOr(c.emoji, DEFAULT_CHAT_EMOJI),
+          updatedAt: c.updatedAt,
           messageCount: c.messages.length,
           model: c.model,
           generating: generating.includes(c.id),
@@ -2229,6 +2231,21 @@ export async function createTabs(
       saver.schedule();
       applyLayout(true);
       sendState();
+    },
+    // The pin in the sidebar's header: pin it open, or back to the strip (which
+    // slides open over the page while the mouse is on it).
+    'sidebar:toggle-pin': () => {
+      const pin = !pinned();
+      state = model.setSidebarPinned(state, pin);
+      if (pin) {
+        hover = false;
+        stopWatching();
+      }
+      saver.schedule();
+      applyLayout(true);
+      sendState();
+      // Unpinned with the mouse on it: it stays open until the mouse leaves.
+      if (!pin) setHover(true);
     },
     // Linking Spaces and tabs to a chat. Only things that exist can be linked.
     'chats:link': (chatId, kind, id) => {

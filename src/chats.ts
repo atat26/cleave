@@ -464,6 +464,14 @@ export function newConversation(
   };
 }
 
+// Chats as they are listed: the one used most recently first, so a message sent to
+// an old chat brings it back to the top. Chats at the same moment: newest made first.
+export function byRecency<T extends { id: number; updatedAt: number }>(
+  list: readonly T[],
+): T[] {
+  return [...list].sort((a, b) => b.updatedAt - a.updatedAt || b.id - a.id);
+}
+
 export function setActiveConversation(
   state: ChatsState,
   id: number,

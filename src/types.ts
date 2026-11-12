@@ -159,6 +159,8 @@ export interface ChatInfo {
   id: number;
   title: string;
   emoji: string;
+  // When it was last used (a message was sent or a reply written).
+  updatedAt: number;
   messageCount: number;
   // The model this chat uses instead of the default, or null for the default.
   model: string | null;
@@ -211,6 +213,9 @@ export type ResizeKind = 'sidebar' | 'chat' | 'panel';
 export interface FrameLayout {
   // Where the toolbar, page and chat start (the sidebar's reserved width).
   left: number;
+  // How far right the sidebar view reaches right now (wider than `left` while it
+  // floats open over the page).
+  sidebar: number;
   // Width of the right panel (0 when closed), not counting the rail.
   panel: number;
   // Height of the chat at the bottom.
@@ -226,6 +231,8 @@ export interface BrowserApi {
   goForward: () => void;
   // Reload the active page, or stop it while it is still loading.
   reloadPage: () => void;
+  // Pin the sidebar open, or unpin it (back to the strip).
+  toggleSidebarPin: () => void;
   // What the chat needs on screen right now (see layout.ts).
   setChatNeed: (need: ChatNeed) => void;
   stopLoading: () => void;

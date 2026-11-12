@@ -6,6 +6,7 @@ import * as model from './model.ts';
 import type { SavedState } from './model.ts';
 import { ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
 import type { ArtifactKind, ArtifactsState } from './artifacts.ts';
+import { byRecency } from './chats.ts';
 import type { ChatRef, ChatsState } from './chats.ts';
 import { resolveLink } from './chatLinks.ts';
 import type { Workspace } from './chatLinks.ts';
@@ -364,7 +365,7 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     { type: 'separator' },
     { type: 'header', label: 'Switch chat' },
-    ...[...chats.conversations].reverse().map(
+    ...byRecency(chats.conversations).map(
       (chat): MenuItem => ({
         type: 'item',
         id: `chat.select:${chat.id}`,
