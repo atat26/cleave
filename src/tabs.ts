@@ -420,6 +420,8 @@ export async function createTabs(
         closed: tab.closed,
       })),
       active: state.active,
+      loading:
+        id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
       canGoForward: history?.canGoForward() ?? false,
       sidebarPinned: pinned(),
@@ -650,6 +652,9 @@ export async function createTabs(
       return { action: 'deny' };
     });
     contents.on('before-input-event', handleShortcut);
+    // The reload button turns into Stop while the page loads.
+    contents.on('did-start-loading', () => sendState());
+    contents.on('did-stop-loading', () => sendState());
     // Right-click in the page: a menu for what is under the pointer.
     contents.on('context-menu', (_event, params) =>
       showPageMenu(tab.id, view, contents, params),
@@ -1784,6 +1789,10 @@ export async function createTabs(
     if (key === 't') {
       event.preventDefault();
       openTab(NEW_TAB_URL, currentSpaceId());
+    } else if (key === 'r') {
+      event.preventDefault();
+      const id = activeTabId();
+      if (id !== null) views.get(id)?.webContents.reload();
     } else if (key === 'w') {
       event.preventDefault();
       const id = activeTabId();
@@ -1818,6 +1827,14 @@ export async function createTabs(
       void views.get(id)?.webContents.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
       commitAndShow(revealPage(state));
+    },
+    'tab:reload': () => {
+      const id = activeTabId();
+      if (id !== null) views.get(id)?.webContents.reload();
+    },
+    'tab:stop': () => {
+      const id = activeTabId();
+      if (id !== null) views.get(id)?.webContents.stop();
     },
     'tab:back': () => {
       const id = activeTabId();

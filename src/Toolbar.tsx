@@ -1,18 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, FormEvent } from 'react';
+import type { FormEvent } from 'react';
 import { PAGE_INSET, TOOLBAR_HEIGHT } from './layout';
 import type { ViewMode } from './model';
+import { describeSite } from './site';
 import type { ChatsInfo } from './types';
-
-const buttonStyle: CSSProperties = {
-  width: 32,
-  height: 32,
-  border: 'none',
-  borderRadius: 16,
-  background: 'transparent',
-  fontSize: 18,
-  cursor: 'pointer',
-};
+import { IconButton, Segmented } from './ui/controls';
+import { Icon } from './ui/Icon';
 
 interface ToolbarProps {
   url: string;
@@ -20,6 +13,8 @@ interface ToolbarProps {
   canGoForward: boolean;
   // True when no web page is selected (e.g. on a Space's Overview).
   disabled: boolean;
+  // The selected page is still loading (the reload button becomes Stop).
+  loading: boolean;
   // What the middle of the window shows right now.
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
@@ -39,20 +34,11 @@ function ChatTitle({ chats }: { chats: ChatsInfo }) {
     }
   };
 
-  const text: CSSProperties = {
-    flex: 1,
-    minWidth: 0,
-    height: 32,
-    boxSizing: 'border-box',
-    padding: '0 8px',
-    fontSize: 18,
-    outline: 'none',
-  };
-
   if (editing && active) {
     // While renaming it is a box, so you can see where you are typing.
     return (
       <input
+        className="input"
         autoFocus
         defaultValue={active.title}
         maxLength={80}
@@ -63,81 +49,69 @@ function ChatTitle({ chats }: { chats: ChatsInfo }) {
           if (e.key === 'Enter') e.currentTarget.blur();
           if (e.key === 'Escape') setEditing(false);
         }}
-        style={{
-          ...text,
-          border: 'none',
-          background: '#ffffff',
-          borderRadius: 8,
-          fontWeight: 600,
-        }}
+        style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
       />
     );
   }
 
   return (
-    <div
+    <h1
+      className="tb-title truncate"
       onDoubleClick={() => setEditing(true)}
       title="Double-click to rename"
-      style={{
-        ...text,
-        display: 'flex',
-        alignItems: 'center',
-        fontWeight: 600,
-        color: '#202124',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        userSelect: 'none',
-      }}
     >
       {active?.title ?? 'Chat'}
-    </div>
+    </h1>
   );
 }
 
-// At the right end of the address bar, by the page's top corner: a × closes the
-// page (leaving the chat on its own). When the chat has been closed instead, a
-// "+ Chat" button brings it back.
-function PaneButton({ viewMode }: { viewMode: ViewMode }) {
-  if (viewMode === 'page') {
-    return (
-      <button
-        type="button"
-        title="Open the chat"
-        onClick={() => window.browserApi.setViewMode('both')}
-        style={{
-          ...buttonStyle,
-          width: 'auto',
-          padding: '0 12px',
-          fontSize: 13,
-        }}
-      >
-        + Chat
-      </button>
-    );
-  }
+const VIEW_ORDER: ViewMode[] = ['page', 'both', 'chat'];
+const VIEW_ICON = { page: 'page', both: 'split', chat: 'chat' } as const;
+
+// Page only, page and chat, or chat only: one switch for what used to be two
+// buttons. In a narrow toolbar it becomes one button that cycles through them.
+function ViewSwitch({ viewMode }: { viewMode: ViewMode }) {
+  const next = VIEW_ORDER[(VIEW_ORDER.indexOf(viewMode) + 1) % 3];
   return (
-    <button
-      type="button"
-      aria-label="Close page"
-      title="Close the page (chat only)"
-      onClick={() => window.browserApi.setViewMode('chat')}
-      style={buttonStyle}
-    >
-      ×
-    </button>
+    <>
+      <div className="tb-view">
+        <Segmented<ViewMode>
+          label="View mode"
+          value={viewMode}
+          onChange={(mode) => window.browserApi.setViewMode(mode)}
+          options={[
+            { value: 'page', label: 'Page only', icon: 'page', iconOnly: true },
+            {
+              value: 'both',
+              label: 'Page and chat',
+              icon: 'split',
+              iconOnly: true,
+            },
+            { value: 'chat', label: 'Chat only', icon: 'chat', iconOnly: true },
+          ]}
+        />
+      </div>
+      <IconButton
+        className="tb-view-compact"
+        icon={VIEW_ICON[viewMode]}
+        label="Change view (page, page and chat, chat)"
+        onClick={() => window.browserApi.setViewMode(next)}
+      />
+    </>
   );
 }
 
-// The strip along the top of the frame: back/forward buttons and the address
-// bar. It always shows the active tab's address. It sits on the frame itself
-// (no bar of its own), between the sidebar and the right panel; the app keeps
-// the --left and --panel variables up to date while those slide (see App.tsx).
+// The strip along the top of the frame: back, forward and reload, the address
+// bar, and the view switch. It sits on the frame itself (no bar of its own),
+// between the sidebar and the right panel; the app keeps the --left and --panel
+// variables up to date while those slide (see App.tsx). With only the chat open
+// there is no address: the chat's name takes the address bar's place.
 export function Toolbar({
   url,
   canGoBack,
   canGoForward,
   disabled,
+  loading,
   viewMode,
   chats,
 }: ToolbarProps) {
@@ -155,45 +129,15 @@ export function Toolbar({
     inputRef.current?.blur();
   };
 
-  // With the page closed there is no address to show. The chat's name takes the
-  // address bar's place, and the strip offers to bring a web view back.
-  if (viewMode === 'chat') {
-    return (
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 'var(--left)',
-          right: 'calc(var(--rail) + var(--panel))',
-          height: TOOLBAR_HEIGHT,
-          boxSizing: 'border-box',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: `0 ${PAGE_INSET}px`,
-        }}
-      >
-        <ChatTitle chats={chats} />
-        <button
-          type="button"
-          title="Add a web view next to the chat"
-          onClick={() => window.browserApi.setViewMode('both')}
-          style={{
-            ...buttonStyle,
-            width: 'auto',
-            padding: '0 14px',
-            fontSize: 13,
-            background: '#ffffff',
-          }}
-        >
-          + Web view
-        </button>
-      </div>
-    );
-  }
+  const site = disabled ? null : describeSite(url);
+  const chatOnly = viewMode === 'chat';
 
   return (
     <form
+      className="toolbar"
+      data-loading={loading && !chatOnly ? 'on' : 'off'}
+      role="toolbar"
+      aria-label="Browser toolbar"
       onSubmit={submit}
       style={{
         position: 'fixed',
@@ -202,64 +146,84 @@ export function Toolbar({
         right: 'calc(var(--rail) + var(--panel))',
         height: TOOLBAR_HEIGHT,
         boxSizing: 'border-box',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
         padding: `0 ${PAGE_INSET}px`,
       }}
     >
-      <button
-        type="button"
-        aria-label="Back"
-        title="Back"
-        disabled={!canGoBack}
-        onClick={() => window.browserApi.goBack()}
-        style={{ ...buttonStyle, opacity: canGoBack ? 1 : 0.35 }}
-      >
-        ←
-      </button>
-      <button
-        type="button"
-        aria-label="Forward"
-        title="Forward"
-        disabled={!canGoForward}
-        onClick={() => window.browserApi.goForward()}
-        style={{ ...buttonStyle, opacity: canGoForward ? 1 : 0.35 }}
-      >
-        →
-      </button>
-      <input
-        ref={inputRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={(e) => e.target.select()}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          const box = event.currentTarget;
-          window.browserApi.showEditMenu(
-            'address',
-            event.clientX,
-            event.clientY,
-            box.selectionStart !== box.selectionEnd,
-          );
-        }}
-        disabled={disabled}
-        placeholder={disabled ? 'Space overview' : 'Search or enter address'}
-        spellCheck={false}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          height: 32,
-          marginLeft: 4,
-          padding: '0 14px',
-          border: 'none',
-          background: '#ffffff',
-          borderRadius: 16,
-          fontSize: 14,
-          outline: 'none',
-        }}
-      />
-      <PaneButton viewMode={viewMode} />
+      {chatOnly ? (
+        <>
+          <div className="tb-chat">
+            <ChatTitle chats={chats} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="tb-nav">
+            <IconButton
+              icon="arrow-left"
+              label="Back"
+              disabled={!canGoBack}
+              onClick={() => window.browserApi.goBack()}
+            />
+            <IconButton
+              icon="arrow-right"
+              label="Forward"
+              disabled={!canGoForward}
+              onClick={() => window.browserApi.goForward()}
+            />
+            <IconButton
+              icon={loading ? 'x' : 'reload'}
+              label={loading ? 'Stop loading' : 'Reload'}
+              disabled={disabled}
+              onClick={() =>
+                loading
+                  ? window.browserApi.stopLoading()
+                  : window.browserApi.reloadPage()
+              }
+            />
+          </div>
+          <div className="addressbar" role="search">
+            {site && (
+              <span
+                className="site"
+                title={
+                  site.secure
+                    ? 'The connection to this site is secure'
+                    : 'The connection to this site is not secure'
+                }
+              >
+                <Icon name={site.secure ? 'lock' : 'warn'} />
+                <span className="truncate">{site.host}</span>
+              </span>
+            )}
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                const box = event.currentTarget;
+                window.browserApi.showEditMenu(
+                  'address',
+                  event.clientX,
+                  event.clientY,
+                  box.selectionStart !== box.selectionEnd,
+                );
+              }}
+              disabled={disabled}
+              aria-label="Address or search"
+              placeholder={
+                disabled ? 'Space overview' : 'Search or enter address'
+              }
+              spellCheck={false}
+            />
+          </div>
+        </>
+      )}
+      <div className="tb-actions">
+        <ViewSwitch viewMode={viewMode} />
+      </div>
+      <div className="loadbar" aria-hidden="true" />
     </form>
   );
 }

@@ -129,6 +129,7 @@ export function App() {
         url={activeTab?.url ?? ''}
         canGoBack={state.canGoBack}
         canGoForward={state.canGoForward}
+        loading={state.loading}
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}

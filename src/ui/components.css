@@ -780,3 +780,123 @@ button {
   border-radius: var(--r-pill);
   padding: 0 5px;
 }
+
+/* ---- The toolbar and address bar (from the design) ------------------------ */
+.toolbar {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.tb-nav,
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.tb-actions {
+  margin-left: auto;
+}
+.addressbar {
+  flex: 1;
+  min-width: 120px;
+  max-width: 760px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: var(--h-md);
+  padding: 0 var(--s-1);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  position: relative;
+}
+.addressbar:hover {
+  border-color: var(--c-border-strong);
+}
+.addressbar:focus-within {
+  border-color: var(--c-focus);
+  outline: var(--focus-ring);
+  outline-offset: 0;
+}
+.addressbar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: 0;
+  font-size: var(--fs-sm);
+  height: 100%;
+  padding: 0 var(--s-2) 0 var(--s-1);
+}
+.addressbar .site {
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-3);
+  padding: 0 var(--s-2);
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  max-width: 45%;
+  flex: none;
+}
+.tb-chat {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.tb-title {
+  font-size: var(--fs-md);
+  margin: 0;
+  font-weight: var(--fw-bold);
+  color: var(--c-text);
+  padding: 0 var(--s-2);
+  user-select: none;
+}
+.tb-view-compact {
+  display: none;
+}
+.loadbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  height: 2px;
+  background: var(--c-accent);
+  transform-origin: left;
+  transform: scaleX(0);
+  opacity: 0;
+}
+.toolbar[data-loading='on'] .loadbar {
+  opacity: 1;
+  animation: load 1.6s var(--ease-inout) infinite;
+}
+@keyframes load {
+  0% {
+    transform: scaleX(0.05);
+  }
+  70% {
+    transform: scaleX(0.8);
+  }
+  100% {
+    transform: scaleX(0.95);
+  }
+}
+@container (max-width: 560px) {
+  .addressbar .site span {
+    display: none;
+  }
+}
+@container (max-width: 470px) {
+  .tb-view {
+    display: none !important;
+  }
+  .tb-view-compact {
+    display: inline-flex !important;
+  }
+}

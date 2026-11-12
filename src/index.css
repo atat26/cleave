@@ -14,7 +14,7 @@ body {
   margin: 0;
   overflow: hidden;
   /* The colour of the frame (FRAME_COLOR in layout.ts): every panel shares it. */
-  background: #e8eaed;
+  background: var(--c-frame, #e6e9ef);
 }
 
 /* The thin grab handles on the edges of the sidebar, chat and right panel. */

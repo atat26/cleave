@@ -177,6 +177,8 @@ export interface UiState {
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
+  // The ACTIVE web tab is still loading (its reload button becomes Stop).
+  loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
   canGoBack: boolean;
   canGoForward: boolean;
@@ -214,6 +216,9 @@ export interface BrowserApi {
   navigate: (input: string) => void;
   goBack: () => void;
   goForward: () => void;
+  // Reload the active page, or stop it while it is still loading.
+  reloadPage: () => void;
+  stopLoading: () => void;
   // New tab inside a Space, or ungrouped when spaceId is null.
   newTab: (spaceId: number | null) => void;
   // Close a tab. In a Space the page is kept as a closed link on the overview.

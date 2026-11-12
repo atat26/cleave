@@ -66,7 +66,7 @@ export const MIN_PAGE_WIDTH = 240;
 export const MIN_PAGE_HEIGHT = 120;
 
 // The colour of the frame itself (all the panels share it, so they read as one).
-export const FRAME_COLOR = '#e8eaed';
+export const FRAME_COLOR = '#e6e9ef';
 
 // How long the frame takes to slide when something opens, closes or snaps.
 export const FRAME_ANIMATION_MS = 160;
