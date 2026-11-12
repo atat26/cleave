@@ -253,6 +253,15 @@ export interface BrowserApi {
   // The Tools panel: every tool with its level, change one level, or put them all
   // back to the defaults. Each answers with the updated list.
   // The look of the app: light, dark, or follow the computer.
+  // Automatic naming of new chats (on or off).
+  namingGet: () => Promise<boolean>;
+  namingSet: (auto: boolean) => Promise<boolean>;
+  // "Name it with AI": the model picks a name and emoji for a chat, Space or
+  // artifact and the app applies them. The result says how it went.
+  nameWithAi: (
+    kind: 'chat' | 'space' | 'artifact',
+    id: number,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   themeGet: () => Promise<ThemeChoice>;
   themeSet: (choice: ThemeChoice) => Promise<ThemeChoice>;
   toolsList: () => Promise<ToolRow[]>;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ChatsInfo } from './types';
 import { Button, IconButton, ItemEmoji } from './ui/controls';
+import { NameButton } from './NameButton';
 import { Icon } from './ui/Icon';
 
 // The conversation's name, with controls to manage your chats: click the name to
@@ -98,6 +99,7 @@ export function ChatSwitcher({
         size="sm"
         onClick={() => window.browserApi.newChat()}
       />
+      {active && <NameButton kind="chat" id={active.id} />}
     </div>
   );
 }

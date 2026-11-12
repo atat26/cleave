@@ -144,7 +144,7 @@ const clampPanelWidth = (width: number) =>
   clampTo(PANEL_MIN_WIDTH, PANEL_MAX_WIDTH, width);
 
 const MAX_TABS = 1000;
-const MAX_SPACES = 200;
+export const MAX_SPACES = 200;
 const MAX_NAME = 60;
 const MAX_TITLE = 200;
 const MAX_URL = 4096;

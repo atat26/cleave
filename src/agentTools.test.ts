@@ -85,7 +85,17 @@ function setup(
     [2, { title: 'Private', kind: 'text', content: 'secret', spaceId: null }],
   ]);
   let nextDoc = 3;
+  // Spaces the assistant made.
+  const madeSpaces: {
+    name: string;
+    emoji: string | null;
+    color: string | null;
+  }[] = [];
   const env: AgentEnv = {
+    createSpace: (input) => {
+      madeSpaces.push(input);
+      return { ok: true as const, id: 50 + madeSpaces.length };
+    },
     linkedArtifacts: () =>
       [...docs]
         .filter(([id]) => id === 1 || id >= 3)
@@ -220,6 +230,7 @@ function setup(
     searched,
     linksRead,
     docs,
+    madeSpaces,
   };
 }
 
@@ -1150,4 +1161,71 @@ test('only so many artifacts can be made or changed in one reply', async () => {
   assert.equal(tools.plan(over).kind, 'refuse');
   assert.equal((await tools.run(over, ABORT)).ok, false);
   assert.equal(docs.size, 12);
+});
+
+test('making a Space asks first, then makes it with the name, emoji and colour it chose', async () => {
+  const { tools, madeSpaces } = setup();
+  const make = call('create_space', {
+    name: ' Tax prep ',
+    emoji: '🧾',
+    color: 'green',
+  });
+  const plan = tools.plan(make);
+  assert.equal(plan.kind, 'ask');
+  assert.match(plan.kind === 'ask' ? plan.text : '', /Space "Tax prep" 🧾/);
+  const outcome = await tools.run(make, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(madeSpaces, [
+    { name: 'Tax prep', emoji: '🧾', color: 'green' },
+  ]);
+  assert.match(outcome.result, /Space 51/);
+  assert.match(outcome.result, /create_artifact_in_space/);
+});
+
+test('a Space needs a name, and a made-up emoji or colour does not get through', async () => {
+  const { tools, madeSpaces } = setup();
+  for (const args of [
+    {},
+    { name: '' },
+    { name: 5 },
+    { name: 'X', emoji: 'abc' },
+  ]) {
+    const request = call('create_space', args);
+    assert.equal(tools.plan(request).kind, 'refuse');
+    assert.equal((await tools.run(request, ABORT)).ok, false);
+  }
+  // An unknown colour is simply not used.
+  await tools.run(
+    call('create_space', { name: 'Plain', color: 'sparkle' }),
+    ABORT,
+  );
+  assert.deepEqual(madeSpaces, [{ name: 'Plain', emoji: null, color: null }]);
+});
+
+test('an artifact can be made, and changed, with an emoji', async () => {
+  const { tools, docs } = setup();
+  const make = call('create_artifact', {
+    title: 'Plan',
+    kind: 'markdown',
+    content: '# Plan',
+    emoji: '📚',
+  });
+  assert.equal((await tools.run(make, ABORT)).ok, true);
+  assert.equal((docs.get(3) as { emoji?: string }).emoji, '📚');
+  const bad = call('create_artifact', {
+    title: 'Plan',
+    kind: 'markdown',
+    content: 'x',
+    emoji: 'nope',
+  });
+  assert.equal(tools.plan(bad).kind, 'refuse');
+  // An emoji alone is a valid edit.
+  const edit = call('edit_artifact', { artifact: 1, emoji: '🧪' });
+  assert.equal(tools.plan(edit).kind, 'ask');
+  assert.equal((await tools.run(edit, ABORT)).ok, true);
+  assert.equal((docs.get(1) as { emoji?: string }).emoji, '🧪');
+  assert.equal(
+    tools.plan(call('edit_artifact', { artifact: 1, emoji: 'x' })).kind,
+    'refuse',
+  );
 });

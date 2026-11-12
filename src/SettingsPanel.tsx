@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { takeRequestedSection } from './settingsNav';
 import { AppearanceSettings } from './AppearanceSettings';
+import { NamingSection } from './NamingSection';
 import { WebSearchSettings } from './WebSearchSettings';
 import type { CSSProperties } from 'react';
 import { MAX_SYSTEM_PROMPT } from './providerSettings';
@@ -67,6 +68,11 @@ const SECTIONS = [
     id: 'appearance',
     label: 'Appearance',
     about: 'Light, dark, or match your computer',
+  },
+  {
+    id: 'naming',
+    label: 'Naming',
+    about: 'Let the assistant name new chats',
   },
   {
     id: 'model',
@@ -576,6 +582,7 @@ export function SettingsPanel() {
 
       {section === 'web-search' && <WebSearchSettings />}
       {section === 'appearance' && <AppearanceSettings />}
+      {section === 'naming' && <NamingSection />}
 
       {section === 'prompt' && (
         <>

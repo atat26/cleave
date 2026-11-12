@@ -14,6 +14,8 @@
 //   - Limits per reply, and the same size limit as the editor.
 // Pure code: the store is passed in, so this is easy to test.
 import { cleanTitle, ARTIFACT_KINDS, MAX_ARTIFACT_CHARS } from './artifacts.ts';
+import { cleanEmoji } from './emoji.ts';
+import { SPACE_COLORS } from './model.ts';
 import type { ArtifactKind } from './artifacts.ts';
 import type { Plan } from './agentActions.ts';
 import { cleanLabel } from './chatLinks.ts';
@@ -26,6 +28,7 @@ export const ARTIFACT_TOOL_NAMES = [
   'create_artifact',
   'create_artifact_in_space',
   'edit_artifact',
+  'create_space',
 ] as const;
 export type ArtifactToolName = (typeof ARTIFACT_TOOL_NAMES)[number];
 
@@ -37,6 +40,7 @@ export const WRITING_ARTIFACT_TOOLS: ReadonlySet<string> = new Set([
   'create_artifact',
   'create_artifact_in_space',
   'edit_artifact',
+  'create_space',
 ]);
 
 export const MAX_ARTIFACT_READS = 10;
@@ -65,15 +69,28 @@ export interface ArtifactToolEnv {
     title: string;
     kind: ArtifactKind;
     content: string;
+    emoji: string | null;
     spaceId: number | null;
   }):
     | { ok: true; id: number }
     | { ok: false; reason: 'too-many' | 'too-long' | 'bad-kind' };
   updateArtifact(
     id: number,
-    changes: { title?: string; content?: string },
+    changes: { title?: string; content?: string; emoji?: string },
   ): { ok: true } | { ok: false; reason: 'not-found' | 'too-long' };
+  // Make a Space; the app links it to the chat.
+  createSpace(input: {
+    name: string;
+    emoji: string | null;
+    color: string | null;
+  }): { ok: true; id: number } | { ok: false; reason: 'too-many' };
 }
+
+const EMOJI_SCHEMA = {
+  type: 'string',
+  description:
+    'One emoji that stands for it (optional but nice), for example 🧾 for tax notes.',
+};
 
 const KIND_SCHEMA = {
   type: 'string',
@@ -120,6 +137,7 @@ export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [
           type: 'string',
           description: 'The full text of the document.',
         },
+        emoji: EMOJI_SCHEMA,
       },
       required: ['title', 'kind', 'content'],
       additionalProperties: false,
@@ -145,8 +163,31 @@ export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [
           type: 'string',
           description: 'The full text of the document.',
         },
+        emoji: EMOJI_SCHEMA,
       },
       required: ['space', 'title', 'kind', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_space',
+    description:
+      'Make a new, empty Space (a named group for tabs and documents) and link it to this conversation, so you can then make artifacts in it with create_artifact_in_space. Choose a short name and an emoji that fit what it is for. The user approves it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'A short name, two to four words.',
+        },
+        emoji: EMOJI_SCHEMA,
+        color: {
+          type: 'string',
+          enum: [...SPACE_COLORS],
+          description: 'A colour for it (optional).',
+        },
+      },
+      required: ['name'],
       additionalProperties: false,
     },
   },
@@ -159,6 +200,7 @@ export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [
       properties: {
         artifact: { type: 'integer', description: 'The artifact number.' },
         title: { type: 'string', description: 'A new name (optional).' },
+        emoji: EMOJI_SCHEMA,
         content: {
           type: 'string',
           description: 'The new full text, replacing the old text.',
@@ -266,7 +308,14 @@ export function createArtifactTools(
   const newDocument = (
     args: Args,
     what: string,
-  ): { title: string; kind: ArtifactKind; content: string } | Plan => {
+  ):
+    | {
+        title: string;
+        kind: ArtifactKind;
+        content: string;
+        emoji: string | null;
+      }
+    | Plan => {
     const kind = asKind(args.kind);
     if (
       typeof args.title !== 'string' ||
@@ -285,7 +334,38 @@ export function createArtifactTools(
         `An artifact can hold at most ${formatCount(MAX_ARTIFACT_CHARS)} characters. Make it shorter.`,
       );
     }
-    return { title: cleanTitle(args.title), kind, content: args.content };
+    if (args.emoji !== undefined && cleanEmoji(args.emoji) === null) {
+      return badRequest(what, '"emoji" must be a single emoji, or left out.');
+    }
+    return {
+      title: cleanTitle(args.title),
+      kind,
+      content: args.content,
+      emoji: cleanEmoji(args.emoji),
+    };
+  };
+
+  // The name, emoji and colour of a new Space, checked.
+  const newSpace = (
+    args: Args,
+  ): { name: string; emoji: string | null; color: string | null } | Plan => {
+    const name =
+      typeof args.name === 'string' ? cleanLabel(args.name, 60).trim() : '';
+    if (name === '') {
+      return badRequest('make a Space', 'Give a name (text) for the Space.');
+    }
+    if (args.emoji !== undefined && cleanEmoji(args.emoji) === null) {
+      return badRequest(
+        'make a Space',
+        '"emoji" must be a single emoji, or left out.',
+      );
+    }
+    const color =
+      typeof args.color === 'string' &&
+      (SPACE_COLORS as readonly string[]).includes(args.color)
+        ? args.color
+        : null;
+    return { name, emoji: cleanEmoji(args.emoji), color };
   };
 
   const plan = (call: ToolCall): Plan => {
@@ -359,6 +439,16 @@ export function createArtifactTools(
       };
     }
 
+    if (call.name === 'create_space') {
+      const space = newSpace(args);
+      if (!('name' in space)) return space;
+      return {
+        kind: 'ask',
+        text: `Make a Space "${cleanLabel(space.name, 60)}"${space.emoji ? ` ${space.emoji}` : ''}`,
+        risky: false,
+      };
+    }
+
     // edit_artifact
     if (!isWholeNumber(args.artifact)) {
       return badRequest(
@@ -371,6 +461,13 @@ export function createArtifactTools(
     const hasContent = args.content !== undefined;
     const hasFind = args.find !== undefined || args.replace !== undefined;
     const hasTitle = args.title !== undefined;
+    const hasEmoji = args.emoji !== undefined;
+    if (hasEmoji && cleanEmoji(args.emoji) === null) {
+      return badRequest(
+        'change an artifact',
+        '"emoji" must be a single emoji.',
+      );
+    }
     if (
       (hasContent && hasFind) ||
       (hasContent && typeof args.content !== 'string') ||
@@ -379,11 +476,11 @@ export function createArtifactTools(
         (typeof args.find !== 'string' ||
           args.find === '' ||
           typeof args.replace !== 'string')) ||
-      (!hasContent && !hasFind && !hasTitle)
+      (!hasContent && !hasFind && !hasTitle && !hasEmoji)
     ) {
       return badRequest(
         'change an artifact',
-        'Give either "content" (the whole new text), or "find" (not empty) with "replace", or a new "title".',
+        'Give either "content" (the whole new text), or "find" (not empty) with "replace", or a new "title" or "emoji".',
       );
     }
     if (
@@ -412,6 +509,9 @@ export function createArtifactTools(
     }
     if (typeof args.title === 'string') {
       parts.push(`rename it to "${cleanLabel(cleanTitle(args.title), 80)}"`);
+    }
+    if (typeof args.emoji === 'string') {
+      parts.push(`give it the emoji ${cleanEmoji(args.emoji)}`);
     }
     return {
       kind: 'ask',
@@ -505,6 +605,7 @@ export function createArtifactTools(
         title: string;
         kind: ArtifactKind;
         content: string;
+        emoji: string | null;
       };
       const spaceId =
         call.name === 'create_artifact_in_space'
@@ -539,6 +640,30 @@ export function createArtifactTools(
       };
     }
 
+    if (call.name === 'create_space') {
+      const space = newSpace(args) as {
+        name: string;
+        emoji: string | null;
+        color: string | null;
+      };
+      const made = env.createSpace(space);
+      if (!made.ok) {
+        return failed(
+          "Couldn't make the Space",
+          'Not made: there are too many Spaces already.',
+          'The Space was not made: there are too many Spaces already.',
+        );
+      }
+      writes++;
+      const name = cleanLabel(space.name, 60);
+      return {
+        label: `Made Space: ${name}`,
+        ok: true,
+        note: `Made Space ${made.id}.`,
+        result: `Done. Space ${made.id} "${name}" was made and is linked to this conversation. You can now make artifacts in it with create_artifact_in_space (space ${made.id}).`,
+      };
+    }
+
     // edit_artifact
     const id = args.artifact as number;
     const current = env.readArtifact(id);
@@ -549,7 +674,7 @@ export function createArtifactTools(
         `Artifact ${id} no longer exists.`,
       );
     }
-    const changes: { title?: string; content?: string } = {};
+    const changes: { title?: string; content?: string; emoji?: string } = {};
     let details = '';
     let summary = '';
     if (typeof args.content === 'string') {
@@ -594,6 +719,12 @@ export function createArtifactTools(
       summary = summary
         ? `${summary} and renamed it`
         : `renamed it to "${cleanLabel(changes.title, 80)}"`;
+    }
+    if (typeof args.emoji === 'string') {
+      changes.emoji = cleanEmoji(args.emoji) ?? undefined;
+      summary = summary
+        ? `${summary} and gave it an emoji`
+        : `gave it the emoji ${changes.emoji}`;
     }
     const updated = env.updateArtifact(id, changes);
     if (!updated.ok) {
