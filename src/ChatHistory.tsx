@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import { byRecency } from './chats';
+import { PinButton } from './PinButton';
 import { ItemEmoji } from './ui/controls';
 import {
   ellipsis,
@@ -15,9 +17,9 @@ import type { ChatInfo, ChatsInfo } from './types';
 //
 // Right-click a chat to rename or delete it; double-click to rename it in place.
 
-// Newest first.
+// The most recently used first.
 const newestFirst = (chats: ChatsInfo): ChatInfo[] =>
-  [...chats.conversations].reverse();
+  byRecency(chats.conversations);
 
 const openMenu = (chat: ChatInfo) => (event: ReactMouseEvent) => {
   event.preventDefault();
@@ -108,10 +110,12 @@ function ChatRow({
 // The full-width list.
 export function ChatList({
   chats,
+  pinned,
   renameRequest,
   onRenameHandled,
 }: {
   chats: ChatsInfo;
+  pinned: boolean;
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
@@ -130,21 +134,18 @@ export function ChatList({
           flexShrink: 0,
         }}
       >
-        <span style={{ flex: 1 }}>Chats</span>
+        {/* The new-chat "+" is in the same place (top left) as in the narrow strip. */}
         <button
           type="button"
           aria-label="New chat"
           title="New chat"
           onClick={() => window.browserApi.newChat()}
-          style={{
-            ...iconButtonStyle,
-            width: 'auto',
-            padding: '0 8px',
-            fontSize: 12,
-          }}
+          style={iconButtonStyle}
         >
-          + New chat
+          +
         </button>
+        <span style={{ flex: 1, paddingLeft: 4 }}>Chats</span>
+        <PinButton pinned={pinned} />
       </div>
       <div style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}>
         {newestFirst(chats).map((chat) => (
@@ -197,7 +198,7 @@ export function ChatStrip({ chats }: { chats: ChatsInfo }) {
               fontWeight: 600,
             }}
           >
-            {chat.title.trim().charAt(0).toUpperCase() || '?'}
+            {chat.emoji}
           </div>
         ))}
       </div>

@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import {
   addUserMessage,
   appendToMessage,
+  byRecency,
+  newConversation,
   applyAiName,
   chatNamingMaterial,
   defaultChats,
@@ -92,4 +94,36 @@ test('the "chosen by you" marks survive saving', () => {
   const back = chatOf(parseChats(JSON.parse(JSON.stringify(chats))));
   assert.equal(back.titleByUser, true);
   assert.equal(back.emojiByUser, true);
+});
+
+test('chats are listed by recent use, so an old chat that gets a message goes back to the top', () => {
+  let chats = defaultChats(1000);
+  const first = chats.activeId;
+  const second = newConversation(chats, 2000);
+  chats = second.state;
+  const third = newConversation(chats, 3000);
+  chats = third.state;
+  assert.deepEqual(
+    byRecency(chats.conversations).map((c) => c.id),
+    [third.id, second.id, first],
+  );
+  // A message in the oldest chat brings it to the top.
+  chats = addUserMessage(chats, first, 'hello again', 4000)!.state;
+  assert.deepEqual(
+    byRecency(chats.conversations).map((c) => c.id),
+    [first, third.id, second.id],
+  );
+  // The same moment: the newer chat first. The list given is not changed.
+  const same = [
+    { id: 1, updatedAt: 5 },
+    { id: 2, updatedAt: 5 },
+  ];
+  assert.deepEqual(
+    byRecency(same).map((c) => c.id),
+    [2, 1],
+  );
+  assert.deepEqual(
+    same.map((c) => c.id),
+    [1, 2],
+  );
 });

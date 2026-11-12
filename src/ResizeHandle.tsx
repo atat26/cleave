@@ -6,6 +6,9 @@ import type { ResizeKind } from './types';
 // or the right panel). Drag it to resize that part. While you drag, the app
 // moves the edge to follow the mouse; when you let go it either snaps (to the
 // icon strip, the compact chat bar, or closed) or stays at that size.
+// How far one arrow-key press moves the edge.
+const KEY_STEP = 16;
+
 export function ResizeHandle({
   kind,
   axis,
@@ -48,6 +51,23 @@ export function ResizeHandle({
   return (
     <div
       className="resize-handle"
+      // Also a keyboard control: focus it and use the arrow keys, 16 pixels at a time.
+      role="separator"
+      aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
+      aria-label={title}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const forward = axis === 'x' ? 'ArrowRight' : 'ArrowDown';
+        const backward = axis === 'x' ? 'ArrowLeft' : 'ArrowUp';
+        if (event.key !== forward && event.key !== backward) return;
+        event.preventDefault();
+        const direction = event.key === forward ? 1 : -1;
+        const size = measure() + grows * direction * KEY_STEP;
+        // The same three steps as a mouse drag, done at once.
+        window.browserApi.startResize(kind);
+        window.browserApi.resize(kind, size);
+        window.browserApi.endResize(kind, size);
+      }}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
         const size = measure();

@@ -7,6 +7,7 @@ import type {
 import { IconButton, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { ChatList, ChatStrip } from './ChatHistory';
+import { PinButton } from './PinButton';
 import { SPACE_COLOR_HEX } from './colors';
 import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
@@ -367,7 +368,17 @@ function FullSidebar({
           flexShrink: 0,
         }}
       >
-        <span style={{ flex: 1 }}>Tabs</span>
+        {/* The new-tab "+" is in the same place (top left) as in the narrow strip. */}
+        <button
+          type="button"
+          aria-label="New tab"
+          title="New tab (Ctrl+T)"
+          onClick={() => window.browserApi.newTab(null)}
+          style={iconButtonStyle}
+        >
+          +
+        </button>
+        <span style={{ flex: 1, paddingLeft: 4 }}>Tabs</span>
         <button
           type="button"
           aria-label="New Space"
@@ -382,15 +393,7 @@ function FullSidebar({
         >
           + Space
         </button>
-        <button
-          type="button"
-          aria-label="New tab"
-          title="New tab (Ctrl+T)"
-          onClick={() => window.browserApi.newTab(null)}
-          style={iconButtonStyle}
-        >
-          +
-        </button>
+        <PinButton pinned={state.sidebarPinned} />
       </div>
 
       <div style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}>
@@ -705,6 +708,7 @@ export function Sidebar({
         full ? (
           <ChatList
             chats={state.chats}
+            pinned={state.sidebarPinned}
             renameRequest={chatRenameRequest}
             onRenameHandled={onChatRenameHandled}
           />

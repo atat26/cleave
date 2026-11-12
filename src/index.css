@@ -46,3 +46,9 @@ body {
     animation-duration: 2.4s;
   }
 }
+
+/* Reached with the keyboard, the handle is as visible as when hovered. */
+.resize-handle:focus-visible {
+  background: rgba(26, 115, 232, 0.35);
+  outline: none;
+}
