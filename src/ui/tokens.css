@@ -1,0 +1,140 @@
+/* Design tokens: every colour, space, radius, shadow, type size and motion value.
+   From docs/design/browser-ui.html (light by default; dark under data-theme="dark"). */
+:root {
+  --font:
+    'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, 'SF Mono', monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --lh-tight: 1.25;
+  --lh-body: 1.5;
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --r-pill: 999px;
+  --h-pill: 26px;
+  --h-sm: 28px;
+  --h-md: 32px;
+  --h-lg: 40px;
+  --icon: 16px;
+  --icon-lg: 20px;
+
+  /* layout */
+  --inset: 6px;
+  --w-strip: 48px;
+  --w-sidebar: 248px;
+  --w-rail: 48px;
+  --w-panel: 340px;
+  --h-toolbar: 48px;
+  --h-chat-compact: 64px;
+  --chat-h: 360px;
+
+  /* colour: surfaces */
+  --c-frame: #e6e9ef;
+  --c-surface: #ffffff;
+  --c-surface-2: #f4f6fa;
+  --c-surface-3: #eceff5;
+  --c-hover: rgba(23, 27, 38, 0.06);
+  --c-active: rgba(23, 27, 38, 0.12);
+  --c-border: #dce0e8;
+  --c-border-strong: #7c869b;
+  /* colour: text */
+  --c-text: #171b26;
+  --c-text-2: #465065;
+  --c-text-3: #5a6479;
+  --c-on-accent: #ffffff;
+  /* colour: roles */
+  --c-accent: #2750d9;
+  --c-accent-hover: #1f42b8;
+  --c-accent-tint: #e4eafb;
+  --c-focus: #2750d9;
+  --c-danger: #b3261e;
+  --c-danger-tint: #fce9e7;
+  --c-warn: #8a5300;
+  --c-warn-tint: #fff1d6;
+  --c-ok: #11713b;
+  --c-ok-tint: #ddf3e5;
+  --c-info: #2750d9;
+  --c-info-tint: #e4eafb;
+  /* space colours (bar/dot). Tints are derived with color-mix */
+  --sp-blue: #3b6fe0;
+  --sp-teal: #0f8f83;
+  --sp-amber: #c77a00;
+  --sp-rose: #d1456b;
+  --sp-violet: #7b55d6;
+  --sp-green: #3f8f2f;
+  --sp-tint-mix: 26%;
+  /* shadow */
+  --sh-popup:
+    0 10px 32px rgba(15, 20, 40, 0.2), 0 1px 3px rgba(15, 20, 40, 0.14);
+  --sh-card: 0 1px 2px rgba(15, 20, 40, 0.06);
+  --sh-drag: 0 8px 20px rgba(15, 20, 40, 0.25);
+  /* motion */
+  --dur-fast: 120ms;
+  --dur-med: 220ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --focus-ring: 2px solid var(--c-focus);
+}
+:root[data-theme='dark'] {
+  --c-frame: #121419;
+  --c-surface: #1b1e26;
+  --c-surface-2: #232731;
+  --c-surface-3: #2b303b;
+  --c-hover: rgba(233, 236, 243, 0.07);
+  --c-active: rgba(233, 236, 243, 0.14);
+  --c-border: #2e3340;
+  --c-border-strong: #6d7589;
+  --c-text: #e9ecf3;
+  --c-text-2: #b4bbcb;
+  --c-text-3: #9aa2b5;
+  --c-on-accent: #0e1530;
+  --c-accent: #8ea8ff;
+  --c-accent-hover: #a9bdff;
+  --c-accent-tint: rgba(142, 168, 255, 0.16);
+  --c-focus: #8ea8ff;
+  --c-danger: #ff8f85;
+  --c-danger-tint: rgba(255, 143, 133, 0.14);
+  --c-warn: #f2b552;
+  --c-warn-tint: rgba(242, 181, 82, 0.14);
+  --c-ok: #6fd39a;
+  --c-ok-tint: rgba(111, 211, 154, 0.14);
+  --c-info: #8ea8ff;
+  --c-info-tint: rgba(142, 168, 255, 0.16);
+  --sp-blue: #6c97ff;
+  --sp-teal: #3cc1b3;
+  --sp-amber: #f0a93a;
+  --sp-rose: #f57fa1;
+  --sp-violet: #a58bff;
+  --sp-green: #7ccb63;
+  --sp-tint-mix: 22%;
+  --sh-popup:
+    0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --sh-card: none;
+  --sh-drag: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-med: 0ms;
+    --dur-slow: 0ms;
+  }
+}
