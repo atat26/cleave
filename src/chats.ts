@@ -5,6 +5,7 @@
 //
 // Linked Spaces/tabs (`refs`) are reserved here and filled in by the "@" feature
 // (a later step); for now they are always empty.
+import { cleanEmoji } from './emoji.ts';
 import { isWebUrl } from './model.ts';
 import { isValidModelId } from './openrouter.ts';
 import type { ChatErrorKind } from './openrouter.ts';
@@ -102,6 +103,8 @@ export interface ChatRef {
 export interface Conversation {
   id: number;
   title: string;
+  // Its emoji, or null to show the default (see emoji.ts).
+  emoji: string | null;
   createdAt: number;
   updatedAt: number;
   // The model this chat uses, or null to use the default from Settings.
@@ -175,6 +178,7 @@ function emptyConversation(id: number, now: number): Conversation {
   return {
     id,
     title: DEFAULT_CHAT_TITLE,
+    emoji: null,
     createdAt: now,
     updatedAt: now,
     model: null,
@@ -395,6 +399,7 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
     conversations.push({
       id: item.id,
       title: cleanTitle(item.title, DEFAULT_CHAT_TITLE),
+      emoji: cleanEmoji(item.emoji),
       createdAt,
       updatedAt: isTime(item.updatedAt) ? item.updatedAt : createdAt,
       model: isValidModelId(item.model) ? item.model : null,
@@ -469,6 +474,18 @@ export function renameConversation(
       c.id === id ? { ...c, title: cleanTitle(title, c.title) } : c,
     ),
   };
+}
+
+// Give a chat an emoji (null = back to the default). Anything that is not a
+// single emoji leaves it as it was.
+export function setConversationEmoji(
+  state: ChatsState,
+  id: number,
+  emoji: string | null,
+): ChatsState {
+  const clean = emoji === null ? null : cleanEmoji(emoji);
+  if (emoji !== null && clean === null) return state;
+  return update(state, id, (c) => ({ ...c, emoji: clean }));
 }
 
 // Choose the model a chat uses (null = use the default from Settings). A bad

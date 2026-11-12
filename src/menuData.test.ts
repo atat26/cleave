@@ -5,6 +5,7 @@ import {
   artifactMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
+  emojiPickerItems,
   editMenuItems,
   linkMenuItems,
   messageMenuItems,
@@ -18,6 +19,7 @@ import {
   parseArtifactChoice,
   parseChatChoice,
   parseEditChoice,
+  parseEmojiChoice,
   parseLinkChoice,
   parseMessageChoice,
   parseModelChoice,
@@ -42,6 +44,7 @@ import {
   closeTab,
   defaultState,
   openArtifactTab,
+  setSpaceEmoji,
 } from './model.ts';
 
 const entry = (items: MenuItem[], id: string): MenuEntry => {
@@ -260,15 +263,23 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const second = newConversation(chats);
   chats = renameConversation(second.state, second.state.activeId, 'Second');
   const items = chatSwitchMenuItems(chats);
-  // New chat, Rename and Delete chat come first, then the chats, newest first.
+  // New chat, Rename, Change icon and Delete chat come first, then the chats,
+  // newest first.
   const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(labels.slice(0, 3), ['New chat', 'Rename', 'Delete chat']);
-  assert.deepEqual(labels.slice(3), ['Second', 'First']);
+  assert.deepEqual(labels.slice(0, 4), [
+    'New chat',
+    'Rename',
+    'Change icon…',
+    'Delete chat',
+  ]);
+  assert.deepEqual(labels.slice(4), ['Second', 'First']);
   const activeId = chats.activeId;
-  assert.equal(entry(items, `chat.select:${activeId}`).icon, 'check');
-  assert.equal(entry(items, `chat.select:${firstId}`).icon, undefined);
+  assert.equal(entry(items, `chat.select:${activeId}`).checked, true);
+  assert.equal(entry(items, `chat.select:${firstId}`).checked, false);
+  // Each chat shows its picture (the default until it is given one).
+  assert.equal(entry(items, `chat.select:${activeId}`).emoji, '💬');
   assert.equal(entry(items, `chat.delete:${activeId}`).danger, true);
   // Rename and delete act on the open chat, even after switching.
   const switched = chatSwitchMenuItems(setActiveConversation(chats, firstId));
@@ -282,12 +293,17 @@ test('the chat row menu and chat ids', () => {
   assert.deepEqual(menuIds(items), [
     `chat.select:${id}`,
     `chat.rename:${id}`,
+    `chat.icon:${id}`,
     `chat.delete:${id}`,
   ]);
   assert.equal(chatRowMenuItems(chats, 99999), null);
   assert.deepEqual(parseChatChoice('chat.new'), { action: 'new' });
   assert.deepEqual(parseChatChoice('chat.rename:7'), {
     action: 'rename',
+    chatId: 7,
+  });
+  assert.deepEqual(parseChatChoice('chat.icon:7'), {
+    action: 'icon',
     chatId: 7,
   });
   assert.deepEqual(parseChatChoice('chat.delete:7'), {
@@ -740,4 +756,60 @@ test('the artifact editor menu can send the selection to the chat, only when som
       editMenuItems({ hasSelection: true, canPaste: true, pasteAndGo: false }),
     ).includes('edit.add-to-chat'),
   );
+});
+
+test('"Change icon…" is in the Space, chat and artifact menus and is read back', () => {
+  assert.deepEqual(parseSpaceChoice('space.icon'), { action: 'icon' });
+  assert.deepEqual(parseArtifactChoice('artifact.icon'), { action: 'icon' });
+  const spaces = addSpace(defaultState(), 'Trip');
+  assert.ok(
+    menuIds(spaceMenuItems(spaces.state, spaces.id)!).includes('space.icon'),
+  );
+  const made = createArtifact(defaultArtifacts(), { kind: 'text' }, 1);
+  assert.ok(made.ok);
+  assert.ok(
+    menuIds(
+      artifactMenuItems(defaultState(), made.state, made.artifact.id)!,
+    ).includes('artifact.icon'),
+  );
+});
+
+test('the emoji picker menu lists the choices, ticks the current one, and only real emoji parse', () => {
+  const items = emojiPickerItems('🚀');
+  assert.equal(entry(items, 'emoji:default').label, 'Use the default');
+  assert.equal(entry(items, 'emoji:🚀').checked, true);
+  assert.equal(entry(items, 'emoji:📁').checked, false);
+  assert.deepEqual(parseEmojiChoice('emoji:default'), { reset: true });
+  assert.deepEqual(parseEmojiChoice('emoji:🚀'), { emoji: '🚀' });
+  for (const bad of [
+    '',
+    'emoji:',
+    'emoji:a',
+    'emoji:abc',
+    'icon:🚀',
+    'emoji:🚀🚀',
+  ]) {
+    assert.equal(parseEmojiChoice(bad), null);
+  }
+});
+
+test('Spaces and artifacts show their emoji in the menus that list them', () => {
+  let { state, id } = addSpace(defaultState(), 'Trip');
+  state = setSpaceEmoji(state, id, '🗺️');
+  const made = createArtifact(defaultArtifacts(), { kind: 'html' }, 1);
+  assert.ok(made.ok);
+  const items = artifactMenuItems(state, made.state, made.artifact.id)!;
+  const move = items.find(
+    (i) => i.type === 'item' && i.id === 'artifact.move',
+  ) as MenuEntry;
+  assert.equal(entry(move.submenu!, `artifact.move:${id}`).emoji, '🗺️');
+  // A Space with no emoji of its own shows the default.
+  const plain = addSpace(defaultState(), 'Plain');
+  const tab = addTab(plain.state, { url: 'https://a.example' });
+  const other = addSpace(tab.state, 'Other');
+  const tabItems = tabMenuItems(other.state, tab.id)!;
+  const tabMove = tabItems.find(
+    (i) => i.type === 'item' && i.id === 'tab.move',
+  ) as MenuEntry;
+  assert.equal(entry(tabMove.submenu!, `tab.move:${plain.id}`).emoji, '📁');
 });

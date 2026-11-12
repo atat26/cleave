@@ -4,7 +4,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   ReactNode,
 } from 'react';
-import { IconButton } from './ui/controls';
+import { IconButton, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { ChatList, ChatStrip } from './ChatHistory';
 import { SPACE_COLOR_HEX } from './colors';
@@ -181,7 +181,7 @@ function ArtifactRow({
           event.clientY,
         );
       }}
-      icon={<Icon name="doc" />}
+      icon={<ItemEmoji emoji={tab.emoji} />}
       trailing={
         <IconButton
           icon="x"
@@ -242,19 +242,7 @@ function SpaceGroup({
     }
   };
 
-  const colourDot = (
-    <span
-      aria-hidden="true"
-      style={{
-        width: 10,
-        height: 10,
-        borderRadius: 3,
-        background: color,
-        flex: 'none',
-        margin: '0 3px',
-      }}
-    />
-  );
+  const colourDot = <SpaceIcon emoji={space.emoji} tint={color} />;
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -491,7 +479,7 @@ function StripArtifact({
       title={tab.title}
       style={stripButton(active)}
     >
-      📄
+      <ItemEmoji emoji={tab.emoji} />
     </div>
   );
 }
@@ -532,9 +520,9 @@ function StripSpace({
         onKeyDown={rowKeys(() => window.browserApi.selectLead(space.id))}
         onContextMenu={openMenu}
         title={`${space.name} overview`}
-        style={{ ...stripButton(leadActive), color, fontSize: 14 }}
+        style={stripButton(leadActive)}
       >
-        ★
+        <SpaceIcon emoji={space.emoji} tint={color} />
       </div>
       {!space.collapsed &&
         tabs.map((tab) => (

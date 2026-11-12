@@ -4,7 +4,7 @@ import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import type { ArtifactDocument, ArtifactTabInfo } from './types';
 import { HTML_SANDBOX, htmlDocument } from './artifactRender';
 import { Markdown } from './MarkdownView';
-import { Badge, Banner, Button, Segmented } from './ui/controls';
+import { Badge, Banner, Button, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
 
 const KIND_WORDS: Record<ArtifactTabInfo['kind'], string> = {
@@ -206,6 +206,16 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       }}
     >
       <header
+        // Right-click the header for the same menu as the artifact's sidebar row.
+        onContextMenu={(event) => {
+          if (event.target instanceof HTMLInputElement) return;
+          event.preventDefault();
+          window.browserApi.showArtifactMenu(
+            tab.id,
+            event.clientX,
+            event.clientY,
+          );
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -213,6 +223,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           padding: 'var(--s-4) var(--s-5) var(--s-3)',
         }}
       >
+        <ItemEmoji emoji={tab.emoji} />
         {renaming ? (
           <input
             className="input"

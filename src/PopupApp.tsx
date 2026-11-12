@@ -6,12 +6,14 @@
 import { useEffect, useState } from 'react';
 import type { MenuItem } from './menuTypes';
 import { ContextMenu } from './ui/ContextMenu';
+import { EmojiPicker } from './ui/EmojiPicker';
 
 interface Shown {
   items: MenuItem[];
   x: number;
   y: number;
   alignCenter?: number;
+  picker?: boolean;
 }
 
 export function PopupApp() {
@@ -48,17 +50,30 @@ export function PopupApp() {
       }}
     >
       <div onMouseDown={(event) => event.stopPropagation()}>
-        <ContextMenu
-          items={shown.items}
-          x={shown.x}
-          y={shown.y}
-          alignCenter={shown.alignCenter}
-          onClose={close}
-          onChoose={(id) => {
-            setShown(null);
-            window.browserApi.popupChoose(id);
-          }}
-        />
+        {shown.picker ? (
+          <EmojiPicker
+            items={shown.items}
+            x={shown.x}
+            y={shown.y}
+            onClose={close}
+            onChoose={(id) => {
+              setShown(null);
+              window.browserApi.popupChoose(id);
+            }}
+          />
+        ) : (
+          <ContextMenu
+            items={shown.items}
+            x={shown.x}
+            y={shown.y}
+            alignCenter={shown.alignCenter}
+            onClose={close}
+            onChoose={(id) => {
+              setShown(null);
+              window.browserApi.popupChoose(id);
+            }}
+          />
+        )}
       </div>
     </div>
   );

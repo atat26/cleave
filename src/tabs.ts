@@ -23,6 +23,12 @@ import {
 } from './frame';
 import type { FrameSizes, Size } from './frame';
 import type { ChatNeed } from './layout';
+import {
+  DEFAULT_CHAT_EMOJI,
+  DEFAULT_SPACE_EMOJI,
+  defaultArtifactEmoji,
+  emojiOr,
+} from './emoji';
 import { nextRegion } from './regions';
 import type { Region } from './regions';
 import {
@@ -92,6 +98,8 @@ import {
   addMenuItems,
   artifactMenuItems,
   chatRowMenuItems,
+  emojiPickerItems,
+  parseEmojiChoice,
   chatSwitchMenuItems,
   editMenuItems,
   linkMenuItems,
@@ -110,8 +118,9 @@ import {
   spaceMenuItems,
   tabMenuItems,
 } from './menuData';
-import type { ChatMenuActions, MenuActions } from './menuData';
+import type { ChatMenuActions, EmojiChoice, MenuActions } from './menuData';
 import { isChoosable } from './menuTypes';
+
 import type { MenuItem } from './menuTypes';
 
 // What a new tab shows. Later this could become an AI chat / search page.
@@ -436,21 +445,31 @@ export async function createTabs(
       id === null ? undefined : views.get(id)?.webContents.navigationHistory;
     const generating = chatService?.runningChats() ?? [];
     const ui: UiState = {
-      spaces: state.spaces.map(({ id, name, color, collapsed }) => ({
+      spaces: state.spaces.map(({ id, name, color, emoji, collapsed }) => ({
         id,
         name,
+        emoji: emojiOr(emoji, DEFAULT_SPACE_EMOJI),
         color,
         collapsed,
       })),
       artifactTabs: state.artifactTabs.flatMap((t) => {
         const a = artifactsModel.findArtifact(artifacts, t.artifactId);
         return a
-          ? [{ id: a.id, title: a.title, kind: a.kind, spaceId: t.spaceId }]
+          ? [
+              {
+                id: a.id,
+                title: a.title,
+                emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
+                kind: a.kind,
+                spaceId: t.spaceId,
+              },
+            ]
           : [];
       }),
       artifacts: artifacts.artifacts.map((a) => ({
         id: a.id,
         title: a.title,
+        emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
         kind: a.kind,
         spaceId: a.spaceId,
         updatedAt: a.updatedAt,
@@ -478,6 +497,7 @@ export async function createTabs(
         conversations: chats.conversations.map((c) => ({
           id: c.id,
           title: c.title,
+          emoji: emojiOr(c.emoji, DEFAULT_CHAT_EMOJI),
           messageCount: c.messages.length,
           model: c.model,
           generating: generating.includes(c.id),
@@ -625,6 +645,31 @@ export async function createTabs(
 
   // Show a menu in the popup layer, at a place in the window. `choose` is called
   // with the id of the item picked. The sidebar does not close under it.
+  // Where the last menu opened, so "Change icon…" can open the picker in the
+  // same place.
+  let lastMenu: { x: number; y: number; opener: Electron.WebContents } | null =
+    null;
+  // The emoji picker: choose an emoji (or the default) for something.
+  const pickEmoji = (
+    current: string | null,
+    apply: (choice: EmojiChoice) => void,
+  ) => {
+    const at = lastMenu;
+    if (!at) return;
+    showMenu(
+      emojiPickerItems(current),
+      at.x,
+      at.y,
+      (id) => {
+        const choice = parseEmojiChoice(id);
+        if (choice) apply(choice);
+      },
+      at.opener,
+      undefined,
+      true,
+    );
+  };
+
   const showMenu = (
     items: MenuItem[],
     x: number,
@@ -632,11 +677,14 @@ export async function createTabs(
     choose: (id: string) => void,
     opener: Electron.WebContents,
     alignCenter?: number,
+    picker = false,
   ) => {
     if (openMenu) closeMenu(false);
     openMenu = { items, choose, opener };
+    lastMenu = { x, y, opener };
     busy++;
-    const send = () => popup.send('popup:show', { items, x, y, alignCenter });
+    const send = () =>
+      popup.send('popup:show', { items, x, y, alignCenter, picker });
     const size = windowSize();
     popupView.setBounds({ x: 0, y: 0, width: size.width, height: size.height });
     popupView.setVisible(true);
@@ -1402,6 +1450,17 @@ export async function createTabs(
           win.webContents.send('artifact:begin-rename', id);
         }
         break;
+      case 'icon':
+        pickEmoji(artifact.emoji, (picked) => {
+          const result = artifactsModel.updateArtifact(
+            artifacts,
+            id,
+            { emoji: 'emoji' in picked ? picked.emoji : null },
+            Date.now(),
+          );
+          if (result.ok) commitArtifacts(result.state);
+        });
+        break;
       case 'add-to-chat':
         linkToChat({
           kind: 'artifact',
@@ -1683,6 +1742,17 @@ export async function createTabs(
       case 'rename':
         menuActions.renameSpace(spaceId);
         break;
+      case 'icon':
+        pickEmoji(space.emoji, (picked) =>
+          commit(
+            model.setSpaceEmoji(
+              state,
+              spaceId,
+              'emoji' in picked ? picked.emoji : null,
+            ),
+          ),
+        );
+        break;
       case 'color':
         menuActions.setSpaceColor(spaceId, choice.color);
         break;
@@ -1719,6 +1789,21 @@ export async function createTabs(
       case 'rename':
         chatMenuActions.renameChat(choice.chatId);
         break;
+      case 'icon': {
+        const chatId = choice.chatId;
+        pickEmoji(
+          chatsModel.findConversation(chats, chatId)?.emoji ?? null,
+          (picked) =>
+            commitChats(
+              chatsModel.setConversationEmoji(
+                chats,
+                chatId,
+                'emoji' in picked ? picked.emoji : null,
+              ),
+            ),
+        );
+        break;
+      }
       case 'delete':
         chatMenuActions.deleteChat(choice.chatId);
         break;

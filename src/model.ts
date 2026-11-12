@@ -1,6 +1,7 @@
 // The data model for Spaces and tabs: plain data plus pure functions that
 // return a NEW state instead of changing the old one. No Electron in here, so
 // it is easy to test. This is also exactly what gets saved to spaces.json.
+import { cleanEmoji } from './emoji.ts';
 
 export const SPACE_COLORS = [
   'grey',
@@ -39,6 +40,8 @@ export interface SavedSpace {
   id: number;
   name: string;
   color: SpaceColor;
+  // Its emoji, or null to show the default (see emoji.ts).
+  emoji: string | null;
   // Collapsed in the sidebar (its tabs are hidden, like a Chrome tab group).
   collapsed: boolean;
   // Reserved for the Space's whiteboard (milestone M3b). Unused for now.
@@ -201,6 +204,7 @@ export function parseState(raw: unknown): SavedState {
         id: item.id,
         name: cleanName(item.name, `Space ${state.spaces.length + 1}`),
         color: SPACE_COLORS.find((c) => c === item.color) ?? 'grey',
+        emoji: cleanEmoji(item.emoji),
         collapsed: item.collapsed === true,
         leadData: null,
       });
@@ -613,6 +617,7 @@ export function addSpace(
     id,
     name: cleanName(name, `Space ${state.spaces.length + 1}`),
     color: SPACE_COLORS[(state.spaces.length + 1) % SPACE_COLORS.length],
+    emoji: null,
     collapsed: false,
     leadData: null,
   };
@@ -644,6 +649,21 @@ export function setSpaceColor(
   return {
     ...state,
     spaces: state.spaces.map((s) => (s.id === id ? { ...s, color } : s)),
+  };
+}
+
+// Give a Space an emoji (null = back to the default). Anything that is not a
+// single emoji leaves it as it was.
+export function setSpaceEmoji(
+  state: SavedState,
+  id: number,
+  emoji: string | null,
+): SavedState {
+  const clean = emoji === null ? null : cleanEmoji(emoji);
+  if (emoji !== null && clean === null) return state;
+  return {
+    ...state,
+    spaces: state.spaces.map((s) => (s.id === id ? { ...s, emoji: clean } : s)),
   };
 }
 

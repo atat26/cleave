@@ -4,6 +4,7 @@ import { ARTIFACT_KINDS } from './artifacts';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import type { ArtifactInfo, SpaceInfo } from './types';
+import { ItemEmoji } from './ui/controls';
 
 const muted: CSSProperties = {
   color: 'var(--c-text-2)',
@@ -206,6 +207,7 @@ export function ArtifactsPanel({
         borderTop: '1px solid var(--c-border)',
       }}
     >
+      <ItemEmoji emoji={a.emoji} />
       <div
         style={{
           flex: 1,

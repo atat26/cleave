@@ -80,12 +80,25 @@ function LinkIcon({
   open,
   favicon,
   color,
+  emoji,
 }: {
   kind: LinkKind;
   open: boolean;
   favicon: string | null;
   color: string | null;
+  // The picture of a Space or artifact (shown instead of a dot or page icon).
+  emoji?: string | null;
 }) {
+  if (emoji && kind !== 'tab') {
+    return (
+      <span
+        aria-hidden="true"
+        style={{ fontSize: 12, flexShrink: 0, opacity: open ? 1 : 0.4 }}
+      >
+        {emoji}
+      </span>
+    );
+  }
   if (kind === 'artifact') {
     return (
       <span
@@ -150,6 +163,10 @@ export function LinkChips({
           link.kind === 'space'
             ? spaces.find((s) => s.id === link.id)
             : undefined;
+        const artifact =
+          link.kind === 'artifact'
+            ? artifacts.find((a) => a.id === link.id)
+            : undefined;
         const shared =
           link.kind === 'tab'
             ? `The assistant gets this title${link.address ? ' and address' : ''}, can read the page, and can act on it (click, type) only with your approval.`
@@ -194,6 +211,7 @@ export function LinkChips({
               open={link.open}
               favicon={tab?.favicon ?? null}
               color={space ? SPACE_COLOR_HEX[space.color] : null}
+              emoji={space?.emoji ?? artifact?.emoji}
             />
             <button
               type="button"
@@ -261,6 +279,10 @@ export function MentionToken({
     link.kind === 'tab' ? tabs.find((t) => t.id === link.id) : undefined;
   const space =
     link.kind === 'space' ? spaces.find((s) => s.id === link.id) : undefined;
+  const artifact =
+    link.kind === 'artifact'
+      ? artifacts.find((a) => a.id === link.id)
+      : undefined;
   return (
     <span
       onContextMenu={(event) => {
@@ -292,6 +314,7 @@ export function MentionToken({
         open={link.open}
         favicon={tab?.favicon ?? null}
         color={space ? SPACE_COLOR_HEX[space.color] : null}
+        emoji={space?.emoji ?? artifact?.emoji}
       />
       <button
         type="button"
@@ -384,6 +407,8 @@ export interface PickerItem {
   group: 'This page' | 'Spaces' | 'Tabs' | 'Artifacts';
   favicon: string | null;
   color: string | null;
+  // The picture of a Space or artifact.
+  emoji: string | null;
 }
 
 // What the "@" list offers: this page first, then Spaces, then tabs; anything
@@ -421,6 +446,7 @@ export function pickerItems(
       group: 'This page',
       favicon: active.favicon,
       color: null,
+      emoji: null,
     });
   }
   for (const space of only === 'artifact' ? [] : spaces) {
@@ -433,6 +459,7 @@ export function pickerItems(
       group: 'Spaces',
       favicon: null,
       color: SPACE_COLOR_HEX[space.color],
+      emoji: space.emoji,
     });
   }
   for (const tab of only === 'artifact' ? [] : tabs) {
@@ -451,6 +478,7 @@ export function pickerItems(
       group: 'Tabs',
       favicon: tab.favicon,
       color: null,
+      emoji: null,
     });
   }
   for (const artifact of only === 'page' ? [] : artifacts) {
@@ -463,6 +491,7 @@ export function pickerItems(
       group: 'Artifacts',
       favicon: null,
       color: null,
+      emoji: artifact.emoji,
     });
   }
   return items.slice(0, limit);
@@ -526,6 +555,7 @@ export function LinkPicker({
                 open
                 favicon={item.favicon}
                 color={item.color}
+                emoji={item.emoji}
               />
               <span
                 style={{

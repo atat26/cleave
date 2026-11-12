@@ -10,6 +10,22 @@ import type { ChatRef, ChatsState } from './chats.ts';
 import { resolveLink } from './chatLinks.ts';
 import type { Workspace } from './chatLinks.ts';
 import { SPACE_COLOR_HEX } from './colors.ts';
+import {
+  cleanEmoji,
+  DEFAULT_CHAT_EMOJI,
+  DEFAULT_SPACE_EMOJI,
+  defaultArtifactEmoji,
+  EMOJI_GROUPS,
+  emojiOr,
+} from './emoji.ts';
+
+// What each thing shows as its picture in a menu.
+const spaceEmoji = (space: { emoji: string | null }) =>
+  emojiOr(space.emoji, DEFAULT_SPACE_EMOJI);
+const chatEmoji = (chat: { emoji: string | null }) =>
+  emojiOr(chat.emoji, DEFAULT_CHAT_EMOJI);
+const artifactEmoji = (artifact: { emoji: string | null; kind: string }) =>
+  emojiOr(artifact.emoji, defaultArtifactEmoji(artifact.kind));
 
 // ---- The tab menu --------------------------------------------------------------
 
@@ -41,6 +57,7 @@ export function tabMenuItems(
         type: 'item',
         id: `tab.move:${space.id}`,
         label: space.name,
+        emoji: spaceEmoji(space),
       }),
     ),
     ...(tab.spaceId !== null
@@ -165,6 +182,7 @@ export type SpaceChoice =
   | { action: 'new-tab' }
   | { action: 'add-to-chat' }
   | { action: 'rename' }
+  | { action: 'icon' }
   | { action: 'color'; color: model.SpaceColor }
   | { action: 'toggle-collapse' }
   | { action: 'ungroup' }
@@ -199,6 +217,7 @@ export function spaceMenuItems(
     },
     { type: 'separator' },
     { type: 'item', id: 'space.rename', label: 'Rename', icon: 'pencil' },
+    { type: 'item', id: 'space.icon', label: 'Change icon…', icon: 'sparkle' },
     {
       type: 'item',
       id: 'space.color',
@@ -258,6 +277,8 @@ export function parseSpaceChoice(id: string): SpaceChoice | null {
       return { action: 'add-to-chat' };
     case 'space.rename':
       return { action: 'rename' };
+    case 'space.icon':
+      return { action: 'icon' };
     case 'space.toggle-collapse':
       return { action: 'toggle-collapse' };
     case 'space.ungroup':
@@ -278,6 +299,7 @@ export type ChatChoice =
   | { action: 'select'; chatId: number }
   | { action: 'new' }
   | { action: 'rename'; chatId: number }
+  | { action: 'icon'; chatId: number }
   | { action: 'delete'; chatId: number };
 
 const shortTitle = (title: string) =>
@@ -296,6 +318,12 @@ export function chatRowMenuItems(
       id: `chat.rename:${chatId}`,
       label: 'Rename',
       icon: 'pencil',
+    },
+    {
+      type: 'item',
+      id: `chat.icon:${chatId}`,
+      label: 'Change icon…',
+      icon: 'sparkle',
     },
     { type: 'separator' },
     {
@@ -323,6 +351,12 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     {
       type: 'item',
+      id: `chat.icon:${active}`,
+      label: 'Change icon…',
+      icon: 'sparkle',
+    },
+    {
+      type: 'item',
       id: `chat.delete:${active}`,
       label: 'Delete chat',
       icon: 'trash',
@@ -335,7 +369,8 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
         type: 'item',
         id: `chat.select:${chat.id}`,
         label: shortTitle(chat.title),
-        icon: chat.id === active ? 'check' : undefined,
+        emoji: chatEmoji(chat),
+        checked: chat.id === active,
         anchor: chat.id === active,
       }),
     ),
@@ -344,10 +379,10 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
 
 export function parseChatChoice(id: string): ChatChoice | null {
   if (id === 'chat.new') return { action: 'new' };
-  const m = /^chat\.(select|rename|delete):(\d+)$/.exec(id);
+  const m = /^chat\.(select|rename|icon|delete):(\d+)$/.exec(id);
   if (!m) return null;
   return {
-    action: m[1] as 'select' | 'rename' | 'delete',
+    action: m[1] as 'select' | 'rename' | 'icon' | 'delete',
     chatId: Number(m[2]),
   };
 }
@@ -418,6 +453,7 @@ export type ArtifactChoice =
   | { action: 'open' }
   | { action: 'close' }
   | { action: 'rename' }
+  | { action: 'icon' }
   | { action: 'add-to-chat' }
   | { action: 'move'; spaceId: number }
   | { action: 'move-new-space' }
@@ -440,6 +476,7 @@ export function artifactMenuItems(
       type: 'item',
       id: `artifact.move:${space.id}`,
       label: space.name,
+      emoji: spaceEmoji(space),
     }),
   );
   if (moveItems.length > 0) moveItems.push({ type: 'separator' });
@@ -459,6 +496,12 @@ export function artifactMenuItems(
       disabled: !open,
     },
     { type: 'item', id: 'artifact.rename', label: 'Rename', icon: 'pencil' },
+    {
+      type: 'item',
+      id: 'artifact.icon',
+      label: 'Change icon…',
+      icon: 'sparkle',
+    },
     {
       type: 'item',
       id: 'artifact.add-to-chat',
@@ -502,6 +545,8 @@ export function parseArtifactChoice(id: string): ArtifactChoice | null {
       return { action: 'close' };
     case 'artifact.rename':
       return { action: 'rename' };
+    case 'artifact.icon':
+      return { action: 'icon' };
     case 'artifact.add-to-chat':
       return { action: 'add-to-chat' };
     case 'artifact.move-new-space':
@@ -569,6 +614,7 @@ export function addMenuItems(
           type: 'item',
           id: `add.pick:${a.id}`,
           label: `${shortTitle(a.title)} · ${shortTitle(spaceName(a.spaceId))}`,
+          emoji: artifactEmoji(a),
           submenu: [
             {
               type: 'item',
@@ -920,6 +966,7 @@ export function pageLinkMenuItems(
         type: 'item',
         id: `page.open-link-in:${space.id}`,
         label: space.name,
+        emoji: spaceEmoji(space),
       }),
     );
   if (spaces.length > 0) spaces.push({ type: 'separator' });
@@ -1049,4 +1096,34 @@ export function parsePageChoice(id: string): PageChoice | null {
   return inSpace
     ? { action: 'open-link-in', spaceId: Number(inSpace[1]) }
     : null;
+}
+
+// ---- The emoji picker ----------------------------------------------------------
+// Drawn as a grid by the popup layer (ui/EmojiPicker.tsx), but described like a
+// menu so a choice is checked against what was sent, the same as every menu.
+
+export type EmojiChoice = { emoji: string } | { reset: true };
+
+export function emojiPickerItems(current: string | null): MenuItem[] {
+  return [
+    { type: 'item', id: 'emoji:default', label: 'Use the default' },
+    ...EMOJI_GROUPS.flatMap((group): MenuItem[] => [
+      { type: 'header', label: group.name },
+      ...group.emojis.map(
+        (emoji): MenuItem => ({
+          type: 'item',
+          id: `emoji:${emoji}`,
+          label: emoji,
+          checked: emoji === current,
+        }),
+      ),
+    ]),
+  ];
+}
+
+export function parseEmojiChoice(id: string): EmojiChoice | null {
+  if (id === 'emoji:default') return { reset: true };
+  if (!id.startsWith('emoji:')) return null;
+  const emoji = cleanEmoji(id.slice('emoji:'.length));
+  return emoji === null ? null : { emoji };
 }

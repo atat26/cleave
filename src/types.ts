@@ -30,6 +30,8 @@ export interface TabInfo {
 export interface ArtifactInfo {
   id: number;
   title: string;
+  // What it shows as its picture (its own emoji, or the default for its kind).
+  emoji: string;
   kind: ArtifactKind;
   // The Space it belongs to, or null for one outside every Space.
   spaceId: number | null;
@@ -58,6 +60,7 @@ export type ArtifactWriteResult =
 export interface ArtifactTabInfo {
   id: number;
   title: string;
+  emoji: string;
   kind: ArtifactKind;
   spaceId: number | null;
 }
@@ -65,6 +68,8 @@ export interface ArtifactTabInfo {
 export interface SpaceInfo {
   id: number;
   name: string;
+  // What it shows as its picture (its own emoji, or the default).
+  emoji: string;
   color: SpaceColor;
   collapsed: boolean;
 }
@@ -153,6 +158,7 @@ export type LlmModelsResult =
 export interface ChatInfo {
   id: number;
   title: string;
+  emoji: string;
   messageCount: number;
   // The model this chat uses instead of the default, or null for the default.
   model: string | null;
@@ -281,6 +287,8 @@ export interface BrowserApi {
       x: number;
       y: number;
       alignCenter?: number;
+      // Draw the emoji picker instead of a menu.
+      picker?: boolean;
     }) => void,
   ) => () => void;
   onPopupHide: (callback: () => void) => () => void;
