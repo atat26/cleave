@@ -28,6 +28,12 @@ const browserApi: BrowserApi = {
   searchSaveKey: (key) => ipcRenderer.invoke('search:save-key', key),
   searchRemoveKey: () => ipcRenderer.invoke('search:remove-key'),
   searchTest: () => ipcRenderer.invoke('search:test'),
+  namingGet: () => ipcRenderer.invoke('naming:get'),
+  namingSet: (auto) => ipcRenderer.invoke('naming:set', auto),
+  nameWithAi: (kind, id) =>
+    kind === 'chat'
+      ? ipcRenderer.invoke('chat:name-ai', id)
+      : ipcRenderer.invoke('name:ai', kind, id),
   themeGet: () => ipcRenderer.invoke('theme:get'),
   themeSet: (choice) => ipcRenderer.invoke('theme:set', choice),
   toolsList: () => ipcRenderer.invoke('tools:list'),

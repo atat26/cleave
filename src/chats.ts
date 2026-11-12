@@ -105,6 +105,10 @@ export interface Conversation {
   title: string;
   // Its emoji, or null to show the default (see emoji.ts).
   emoji: string | null;
+  // You chose the name / the emoji yourself: the assistant's automatic naming
+  // (at the first message, and when that message is retried) leaves it alone.
+  titleByUser: boolean;
+  emojiByUser: boolean;
   createdAt: number;
   updatedAt: number;
   // The model this chat uses, or null to use the default from Settings.
@@ -179,6 +183,8 @@ function emptyConversation(id: number, now: number): Conversation {
     id,
     title: DEFAULT_CHAT_TITLE,
     emoji: null,
+    titleByUser: false,
+    emojiByUser: false,
     createdAt: now,
     updatedAt: now,
     model: null,
@@ -400,6 +406,8 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
       id: item.id,
       title: cleanTitle(item.title, DEFAULT_CHAT_TITLE),
       emoji: cleanEmoji(item.emoji),
+      titleByUser: item.titleByUser === true,
+      emojiByUser: item.emojiByUser === true,
       createdAt,
       updatedAt: isTime(item.updatedAt) ? item.updatedAt : createdAt,
       model: isValidModelId(item.model) ? item.model : null,
@@ -471,7 +479,9 @@ export function renameConversation(
   return {
     ...state,
     conversations: state.conversations.map((c) =>
-      c.id === id ? { ...c, title: cleanTitle(title, c.title) } : c,
+      c.id === id
+        ? { ...c, title: cleanTitle(title, c.title), titleByUser: true }
+        : c,
     ),
   };
 }
@@ -485,7 +495,60 @@ export function setConversationEmoji(
 ): ChatsState {
   const clean = emoji === null ? null : cleanEmoji(emoji);
   if (emoji !== null && clean === null) return state;
-  return update(state, id, (c) => ({ ...c, emoji: clean }));
+  return update(state, id, (c) => ({
+    ...c,
+    emoji: clean,
+    emojiByUser: clean !== null,
+  }));
+}
+
+// The name and emoji the assistant chose. Automatic naming (`force` false) leaves
+// alone whatever you chose yourself; the "name it with AI" button (`force`)
+// replaces them, and they count as the assistant's again. Parts that are null are
+// left as they were.
+export function applyAiName(
+  state: ChatsState,
+  id: number,
+  named: { name: string | null; emoji: string | null },
+  force: boolean,
+): ChatsState {
+  const emoji = cleanEmoji(named.emoji);
+  return update(state, id, (c) => {
+    const title =
+      named.name !== null && (force || !c.titleByUser)
+        ? cleanTitle(named.name, c.title)
+        : c.title;
+    const keepEmoji = emoji === null || (!force && c.emojiByUser);
+    return {
+      ...c,
+      title,
+      titleByUser:
+        named.name !== null && (force || !c.titleByUser)
+          ? false
+          : c.titleByUser,
+      emoji: keepEmoji ? c.emoji : emoji,
+      emojiByUser: keepEmoji ? c.emojiByUser : false,
+    };
+  });
+}
+
+// Is this the first exchange of the chat (exactly one message of yours)? That is
+// when the assistant names it, and again if that message is retried.
+export function isFirstExchange(chat: Conversation): boolean {
+  return chat.messages.filter((m) => m.role === 'user').length === 1;
+}
+
+// What the model is shown to name a chat: your first messages and the start of
+// the first reply.
+export function chatNamingMaterial(chat: Conversation): string {
+  const users = chat.messages.filter((m) => m.role === 'user').slice(0, 2);
+  const reply = chat.messages.find(
+    (m) => m.role === 'assistant' && m.content.trim() !== '',
+  );
+  return [
+    ...users.map((m) => `User: ${m.content.slice(0, 600)}`),
+    ...(reply ? [`Assistant: ${reply.content.slice(0, 400)}`] : []),
+  ].join('\n');
 }
 
 // Choose the model a chat uses (null = use the default from Settings). A bad

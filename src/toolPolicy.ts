@@ -196,6 +196,16 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
       'The assistant will be able to add documents to a Space on its own. It still asks first if it has read a web page in the same reply.',
   },
   {
+    name: 'create_space',
+    group: 'artifacts',
+    title: 'Make a Space',
+    summary: 'Make a new, empty Space, with a name and emoji it chooses.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to make Spaces on its own. It still asks first if it has read a web page in the same reply.',
+  },
+  {
     name: 'edit_artifact',
     group: 'artifacts',
     title: 'Edit an artifact',

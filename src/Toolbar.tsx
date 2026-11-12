@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { PAGE_INSET, TOOLBAR_HEIGHT, WINDOW_CONTROLS_WIDTH } from './layout';
 import type { ViewMode } from './model';
+import { NameButton } from './NameButton';
 import { describeSite } from './site';
 import type { ChatsInfo } from './types';
 import { IconButton, ItemEmoji, Segmented } from './ui/controls';
@@ -74,6 +75,7 @@ function ChatTitle({ chats }: { chats: ChatsInfo }) {
       >
         {active?.title ?? 'Chat'}
       </h1>
+      {active && <NameButton kind="chat" id={active.id} />}
     </>
   );
 }

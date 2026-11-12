@@ -37,6 +37,8 @@ import { createChatRunner } from './chatRunner';
 import type { RunContext } from './chatRunner';
 import * as chats from './chats';
 import type { ChatsState } from './chats';
+import type { Namer } from './aiNamer';
+import type { NameResult } from './naming';
 import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
 import type { SearchContext } from './search';
@@ -102,6 +104,7 @@ export function createChatService(options: {
         title: string;
         kind: ArtifactKind;
         content: string;
+        emoji: string | null;
         spaceId: number | null;
       },
     ):
@@ -109,13 +112,25 @@ export function createChatService(options: {
       | { ok: false; reason: 'too-many' | 'too-long' | 'bad-kind' };
     update(
       id: number,
-      changes: { title?: string; content?: string },
+      changes: { title?: string; content?: string; emoji?: string },
     ): { ok: true } | { ok: false; reason: 'not-found' | 'too-long' };
+  };
+  // Making a Space for the assistant's create_space tool; the app links it to the
+  // chat too.
+  spaceStore: {
+    create(
+      chatId: number,
+      input: { name: string; emoji: string | null; color: string | null },
+    ): { ok: true; id: number } | { ok: false; reason: 'too-many' };
   };
   // How much a tool may do without asking (your choice in the Tools panel).
   toolLevel(tool: string): ApprovalLevel;
   // Web search (set up in Settings).
   search: Promise<SearchContext | null>;
+
+  // Names things with the model, and whether new chats are named on their own.
+  namer: Namer;
+  autoName(): boolean;
 
   // Save the chats, without refreshing the whole UI (this runs for every piece
   // of a streaming reply).
@@ -311,6 +326,7 @@ export function createChatService(options: {
             createArtifact: (input) =>
               options.artifactStore.create(chatId, input),
             updateArtifact: options.artifactStore.update,
+            createSpace: (input) => options.spaceStore.create(chatId, input),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
             linkAddress: options.linkAddress,
@@ -397,6 +413,62 @@ export function createChatService(options: {
     return chats.findConversation(options.getChats(), chatId)?.messages ?? [];
   });
 
+  // ---- Naming a chat with the model ---------------------------------------------
+
+  // Chats being named right now (one request each at a time).
+  const naming = new Set<number>();
+
+  // Ask the model for a name and an emoji for a chat and apply them. `force` is the
+  // "name it with AI" button: it replaces a name or emoji you chose yourself;
+  // otherwise (automatic naming) what you chose is left alone.
+  const nameChat = async (
+    chatId: number,
+    force: boolean,
+  ): Promise<NameResult> => {
+    const chat = chats.findConversation(options.getChats(), chatId);
+    if (!chat) return { ok: false, error: 'That chat no longer exists.' };
+    if (naming.has(chatId)) {
+      return { ok: false, error: 'Already naming this chat.' };
+    }
+    naming.add(chatId);
+    try {
+      const result = await options.namer(
+        'chat',
+        chats.chatNamingMaterial(chat),
+        chat.model,
+      );
+      if (result.ok) {
+        // The chat may have been deleted while the model was thinking.
+        const next = chats.applyAiName(
+          options.getChats(),
+          chatId,
+          result,
+          force,
+        );
+        options.setChats(next);
+        options.onMeta();
+      }
+      return result;
+    } finally {
+      naming.delete(chatId);
+    }
+  };
+
+  // A chat's first message (sent, or retried) names the chat, if you want that.
+  const autoNameFirst = (chatId: number) => {
+    const chat = chats.findConversation(options.getChats(), chatId);
+    if (!options.autoName() || !chat || !chats.isFirstExchange(chat)) return;
+    if (chat.titleByUser && chat.emojiByUser) return;
+    void nameChat(chatId, false);
+  };
+
+  ipcMain.handle('chat:name-ai', (event, chatId: unknown) => {
+    if (!fromUi(event)) throw new Error('Not allowed.');
+    if (!isId(chatId))
+      return { ok: false, error: 'That chat no longer exists.' };
+    return nameChat(chatId, true);
+  });
+
   ipcMain.handle(
     'chat:send',
     (
@@ -417,6 +489,7 @@ export function createChatService(options: {
       );
       if (started.ok) {
         options.onMeta(); // The first message may have named the chat.
+        autoNameFirst(chatId);
         // The reply is written in the background; failures end up in the chat.
         void started.done;
       }
@@ -459,6 +532,8 @@ export function createChatService(options: {
       const started = runner.retry(chatId, prepared.context, messageId);
       if (started.ok) {
         resetChat(chatId);
+        // Retrying the first message tries for a better name too.
+        autoNameFirst(chatId);
         void started.done;
       }
       return answer(started);
@@ -633,6 +708,7 @@ export function createChatService(options: {
       ipcMain.removeHandler('chat:send');
       ipcMain.removeHandler('chat:retry');
       ipcMain.removeHandler('chat:branch');
+      ipcMain.removeHandler('chat:name-ai');
       ipcMain.removeListener('chat:stop', onStop);
       ipcMain.removeListener('chat:decide', onDecide);
       ipcMain.removeListener('chat:copy', onCopy);

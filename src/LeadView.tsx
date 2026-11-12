@@ -4,6 +4,7 @@ import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
+import { NameButton } from './NameButton';
 import { Button, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
 import type { ArtifactInfo, SpaceInfo, TabInfo } from './types';
@@ -183,6 +184,7 @@ export function LeadView({
             {space.name}
           </h1>
         )}
+        <NameButton kind="space" id={space.id} />
         <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
           {tabs.length} {tabs.length === 1 ? 'page' : 'pages'} ({openCount}{' '}
           open) · {artifacts.length}{' '}

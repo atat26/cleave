@@ -63,6 +63,7 @@ import {
 import type { Cdp, DoneResult } from './pageActions';
 import { buildOutline } from './pageOutline';
 import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
+import { createNamer } from './aiNamer';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
@@ -78,6 +79,7 @@ import {
   loadJson,
   loadState,
 } from './storage';
+import { defaultNamingSettings, parseNamingSettings } from './namingSettings';
 import {
   defaultThemeSettings,
   isThemeChoice,
@@ -210,6 +212,16 @@ export async function createTabs(
   // talks to the model. Both are set up a little later than the window.
   let llmContext: LlmContext | null = null;
   let chatService: ChatService | null = null;
+  // Names things with the model (chats, Spaces, artifacts).
+  const namer = createNamer(() => llmContext);
+  // Whether new chats are named on their own (Settings > Naming).
+  const namingFile = path.join(app.getPath('userData'), 'naming.json');
+  let namingSettings = await loadJson(
+    namingFile,
+    parseNamingSettings,
+    defaultNamingSettings,
+  );
+  const namingSaver = createSaver(namingFile, () => namingSettings);
 
   // The Spaces and tabs as the chat sees them (titles and addresses).
   const workspace = (): Workspace => ({
@@ -1187,6 +1199,8 @@ export async function createTabs(
   chatService = createChatService({
     win,
     llm: llm.catch(() => null),
+    namer,
+    autoName: () => namingSettings.auto,
     getChats: () => chats,
     getWorkspace: workspace,
     readPage: readTab,
@@ -1257,6 +1271,31 @@ export async function createTabs(
           win.webContents.send('artifact:changed', id);
         }
         return { ok: true };
+      },
+    },
+    spaceStore: {
+      create: (chatId, input) => {
+        if (state.spaces.length >= model.MAX_SPACES) {
+          return { ok: false, reason: 'too-many' };
+        }
+        const created = model.addSpace(state, input.name);
+        let next = created.state;
+        if (input.emoji !== null) {
+          next = model.setSpaceEmoji(next, created.id, input.emoji);
+        }
+        const color = model.SPACE_COLORS.find((c) => c === input.color);
+        if (color) next = model.setSpaceColor(next, created.id, color);
+        commit(next);
+        // Link it to the chat, so the assistant can put artifacts in it.
+        commitChats(
+          chatsModel.addRef(chats, chatId, {
+            kind: 'space',
+            id: created.id,
+            title: input.name,
+            url: null,
+          }),
+        );
+        return { ok: true, id: created.id };
       },
     },
     toolLevel: (tool) => levelFor(toolSettings, tool),
@@ -2405,6 +2444,79 @@ export async function createTabs(
   // change applies from the assistant's next reply.
   const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
     event.sender === win.webContents;
+  ipcMain.handle('naming:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return namingSettings.auto;
+  });
+  ipcMain.handle('naming:set', (event, auto: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (typeof auto === 'boolean') {
+      namingSettings = { ...namingSettings, auto };
+      namingSaver.schedule();
+    }
+    return namingSettings.auto;
+  });
+  // The "name it with AI" button on a Space or an artifact (a chat's is handled by
+  // the chat service). It replaces the name and emoji; the result says how it went.
+  ipcMain.handle('name:ai', async (event, kind: unknown, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!isId(id)) return { ok: false, error: 'That no longer exists.' };
+    if (kind === 'space') {
+      const space = model.findSpace(state, id);
+      if (!space) return { ok: false, error: 'That Space no longer exists.' };
+      const tabTitles = state.tabs
+        .filter((t) => t.spaceId === id && !t.closed)
+        .slice(0, 20)
+        .map((t) => t.title);
+      const docTitles = artifacts.artifacts
+        .filter((a) => a.spaceId === id)
+        .slice(0, 10)
+        .map((a) => a.title);
+      const material = [
+        tabTitles.length > 0 ? `Pages: ${tabTitles.join('; ')}` : '',
+        docTitles.length > 0 ? `Documents: ${docTitles.join('; ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+      const result = await namer('space', material, null);
+      if (result.ok && model.findSpace(state, id)) {
+        let next = state;
+        if (result.name !== null) {
+          next = model.renameSpace(next, id, result.name);
+        }
+        if (result.emoji !== null) {
+          next = model.setSpaceEmoji(next, id, result.emoji);
+        }
+        commit(next);
+      }
+      return result;
+    }
+    if (kind === 'artifact') {
+      const artifact = artifactsModel.findArtifact(artifacts, id);
+      if (!artifact) {
+        return { ok: false, error: 'That artifact no longer exists.' };
+      }
+      const material = `Title: ${artifact.title}
+Kind: ${artifact.kind}
+
+${artifact.content.slice(0, 1500)}`;
+      const result = await namer('artifact', material, null);
+      if (result.ok) {
+        const updated = artifactsModel.updateArtifact(
+          artifacts,
+          id,
+          {
+            ...(result.name !== null ? { title: result.name } : {}),
+            ...(result.emoji !== null ? { emoji: result.emoji } : {}),
+          },
+          Date.now(),
+        );
+        if (updated.ok) commitArtifacts(updated.state);
+      }
+      return result;
+    }
+    return { ok: false, error: 'That cannot be named.' };
+  });
   ipcMain.handle('theme:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return themeSettings.theme;
@@ -2586,6 +2698,9 @@ export async function createTabs(
     ipcMain.removeListener('popup:ready', onPopupReady);
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);
+    ipcMain.removeHandler('naming:get');
+    ipcMain.removeHandler('naming:set');
+    ipcMain.removeHandler('name:ai');
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');

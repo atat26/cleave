@@ -3,6 +3,7 @@ import { MAX_ARTIFACT_CHARS } from './artifacts';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import type { ArtifactDocument, ArtifactTabInfo } from './types';
 import { HTML_SANDBOX, htmlDocument } from './artifactRender';
+import { NameButton } from './NameButton';
 import { Markdown } from './MarkdownView';
 import { Badge, Banner, Button, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
@@ -254,7 +255,6 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
               margin: 0,
               fontSize: 'var(--fs-xl)',
               fontWeight: 600,
-              flex: 1,
               minWidth: 0,
               cursor: 'text',
             }}
@@ -262,6 +262,8 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             {tab.title}
           </h1>
         )}
+        <NameButton kind="artifact" id={tab.id} />
+        <div style={{ flex: 1 }} />
         {canRender && (
           <Segmented
             label="View"
