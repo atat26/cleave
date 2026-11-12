@@ -19,9 +19,12 @@ import type { OutlineElement } from './pageOutline';
 import {
   buildLinkedContext,
   closedLinkedTabs,
+  linkedArtifacts,
+  linkedSpaces,
   linkedTabs,
   snapshotLookup,
 } from './chatLinks';
+import type { ArtifactKind } from './artifacts';
 import type { Workspace } from './chatLinks';
 import { createChatRunner } from './chatRunner';
 import type { RunContext } from './chatRunner';
@@ -80,6 +83,28 @@ export function createChatService(options: {
   actions: ActionEnv;
   // Link a tab to a chat (used for tabs the assistant opens).
   linkTab(chatId: number, tabId: number): void;
+  // The artifact store, for the assistant's artifact tools. Making one also links
+  // it to the chat; changing one lets an open editor know.
+  artifactStore: {
+    read(
+      id: number,
+    ): { title: string; kind: ArtifactKind; content: string } | null;
+    create(
+      chatId: number,
+      input: {
+        title: string;
+        kind: ArtifactKind;
+        content: string;
+        spaceId: number | null;
+      },
+    ):
+      | { ok: true; id: number }
+      | { ok: false; reason: 'too-many' | 'too-long' | 'bad-kind' };
+    update(
+      id: number,
+      changes: { title?: string; content?: string },
+    ): { ok: true } | { ok: false; reason: 'not-found' | 'too-long' };
+  };
   // How much a tool may do without asking (your choice in the Tools panel).
   toolLevel(tool: string): ApprovalLevel;
   // Web search (set up in Settings).
@@ -256,6 +281,21 @@ export function createChatService(options: {
                 chats.findConversation(options.getChats(), chatId)?.refs ?? [],
                 options.getWorkspace(),
               ),
+            // The artifacts and Spaces the chat links to, as they are now.
+            linkedArtifacts: () =>
+              linkedArtifacts(
+                chats.findConversation(options.getChats(), chatId)?.refs ?? [],
+                options.getWorkspace(),
+              ),
+            linkedSpaces: () =>
+              linkedSpaces(
+                chats.findConversation(options.getChats(), chatId)?.refs ?? [],
+                options.getWorkspace(),
+              ),
+            readArtifact: options.artifactStore.read,
+            createArtifact: (input) =>
+              options.artifactStore.create(chatId, input),
+            updateArtifact: options.artifactStore.update,
             readPage: options.readPage,
             outlinePage: options.outlinePage,
             linkAddress: options.linkAddress,

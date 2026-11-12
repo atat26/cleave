@@ -188,3 +188,34 @@ test('whatever is on disk is repaired, never trusted', () => {
   assert.equal(parsed.artifacts[1].content.length, MAX_ARTIFACT_CHARS);
   assert.equal(parsed.nextId, 8);
 });
+
+test('the revision goes up only when the text changes, so a stale save can be told apart', () => {
+  const a = make(
+    defaultArtifacts(),
+    { kind: 'text', title: 'A', content: 'one' },
+    1,
+  );
+  assert.equal(a.artifact.revision, 0);
+  const edited = updateArtifact(a.state, 1, { content: 'two' }, 2);
+  assert.ok(edited.ok);
+  assert.equal(edited.artifact.revision, 1);
+  // The same text, a rename and a move are not new versions of the text.
+  const same = updateArtifact(edited.state, 1, { content: 'two' }, 3);
+  const renamed = updateArtifact(edited.state, 1, { title: 'B' }, 3);
+  const moved = updateArtifact(edited.state, 1, { spaceId: 4 }, 3);
+  assert.ok(same.ok && renamed.ok && moved.ok);
+  assert.equal(same.artifact.revision, 1);
+  assert.equal(renamed.artifact.revision, 1);
+  assert.equal(moved.artifact.revision, 1);
+  // It is saved and loaded; an old file without one starts at 0.
+  assert.equal(
+    parseArtifacts(JSON.parse(JSON.stringify(edited.state))).artifacts[0]
+      .revision,
+    1,
+  );
+  assert.equal(
+    parseArtifacts({ artifacts: [{ id: 1, kind: 'text', content: '' }] })
+      .artifacts[0].revision,
+    0,
+  );
+});

@@ -21,6 +21,10 @@ export interface Artifact {
   spaceId: number | null;
   createdAt: number;
   updatedAt: number;
+  // Goes up each time the text changes (not for a rename or a move). A save that
+  // was based on an older text is refused, so a stale editor can never overwrite
+  // a newer text.
+  revision: number;
 }
 
 export interface ArtifactsState {
@@ -105,6 +109,7 @@ export function parseArtifacts(raw: unknown): ArtifactsState {
       spaceId: isCount(spaceId) ? spaceId : null,
       createdAt: isCount(item.createdAt) ? item.createdAt : 0,
       updatedAt: isCount(item.updatedAt) ? item.updatedAt : 0,
+      revision: isCount(item.revision) ? item.revision : 0,
     });
   }
   const highest = Math.max(0, ...state.artifacts.map((a) => a.id));
@@ -142,6 +147,7 @@ export function createArtifact(
     spaceId: input.spaceId ?? null,
     createdAt: now,
     updatedAt: now,
+    revision: 0,
   };
   return {
     ok: true,
@@ -186,6 +192,10 @@ export function updateArtifact(
     content: changes.content ?? old.content,
     spaceId: changes.spaceId === undefined ? old.spaceId : changes.spaceId,
     updatedAt: now,
+    revision:
+      changes.content !== undefined && changes.content !== old.content
+        ? old.revision + 1
+        : old.revision,
   };
   return {
     ok: true,

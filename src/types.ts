@@ -41,7 +41,15 @@ export interface ArtifactDocument {
   title: string;
   kind: ArtifactKind;
   content: string;
+  // Which version of the text this is (see artifacts.ts).
+  revision: number;
 }
+
+// How saving the editor's text went. A conflict means the text was changed (by
+// the assistant) since the editor loaded it, so nothing was saved.
+export type ArtifactWriteResult =
+  | { ok: true; revision: number }
+  | { ok: false; reason: 'conflict' | 'failed' };
 
 // An artifact that is open as a tab.
 export interface ArtifactTabInfo {
@@ -246,7 +254,15 @@ export interface BrowserApi {
   artifactClose: (id: number) => void;
   // The editor: load an artifact's text, and save changes to it.
   artifactRead: (id: number) => Promise<ArtifactDocument | null>;
-  artifactWrite: (id: number, content: string) => Promise<boolean>;
+  // `revision` is the version the text was based on.
+  artifactWrite: (
+    id: number,
+    content: string,
+    revision: number,
+  ) => Promise<ArtifactWriteResult>;
+  // Called when the assistant changed an artifact's text (so an open editor can
+  // show it). Returns an unsubscribe function.
+  onArtifactChanged: (callback: (id: number) => void) => () => void;
   artifactRename: (id: number, title: string) => void;
   // Make another artifact with the same text, in a Space (or none).
   artifactCopy: (id: number, spaceId: number | null) => Promise<number | null>;

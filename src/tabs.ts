@@ -1002,6 +1002,61 @@ export async function createTabs(
       }
     },
     actions: actionEnv,
+    artifactStore: {
+      read: (id) => {
+        const found = artifactsModel.findArtifact(artifacts, id);
+        return found
+          ? { title: found.title, kind: found.kind, content: found.content }
+          : null;
+      },
+      create: (chatId, input) => {
+        const result = artifactsModel.createArtifact(
+          artifacts,
+          input,
+          Date.now(),
+        );
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason:
+              result.reason === 'too-long' || result.reason === 'bad-kind'
+                ? result.reason
+                : 'too-many',
+          };
+        }
+        commitArtifacts(result.state);
+        // Link it to the chat, so the assistant can read and edit it.
+        commitChats(
+          chatsModel.addRef(chats, chatId, {
+            kind: 'artifact',
+            id: result.artifact.id,
+            title: result.artifact.title,
+            url: null,
+          }),
+        );
+        return { ok: true, id: result.artifact.id };
+      },
+      update: (id, changes) => {
+        const result = artifactsModel.updateArtifact(
+          artifacts,
+          id,
+          changes,
+          Date.now(),
+        );
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason: result.reason === 'too-long' ? 'too-long' : 'not-found',
+          };
+        }
+        commitArtifacts(result.state);
+        // An editor that has it open shows the change.
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send('artifact:changed', id);
+        }
+        return { ok: true };
+      },
+    },
     toolLevel: (tool) => levelFor(toolSettings, tool),
     search: search.catch(() => null),
     linkTab: (chatId, tabId) => {
@@ -1504,22 +1559,35 @@ export async function createTabs(
           title: found.title,
           kind: found.kind,
           content: found.content,
+          revision: found.revision,
         }
       : null;
   });
-  ipcMain.handle('artifact:write', (event, id: unknown, content: unknown) => {
-    if (!fromWindow(event)) throw new Error('Not allowed.');
-    if (!isId(id) || typeof content !== 'string') return false;
-    const result = artifactsModel.updateArtifact(
-      artifacts,
-      id,
-      { content },
-      Date.now(),
-    );
-    if (!result.ok) return false;
-    commitArtifacts(result.state);
-    return true;
-  });
+  ipcMain.handle(
+    'artifact:write',
+    (event, id: unknown, content: unknown, revision: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!isId(id) || typeof content !== 'string' || !isNumber(revision)) {
+        return { ok: false, reason: 'failed' };
+      }
+      const current = artifactsModel.findArtifact(artifacts, id);
+      if (!current) return { ok: false, reason: 'failed' };
+      // The text changed since the editor loaded it (the assistant edited it):
+      // saving now would overwrite that, so refuse and let the editor ask.
+      if (current.revision !== revision) {
+        return { ok: false, reason: 'conflict' };
+      }
+      const result = artifactsModel.updateArtifact(
+        artifacts,
+        id,
+        { content },
+        Date.now(),
+      );
+      if (!result.ok) return { ok: false, reason: 'failed' };
+      commitArtifacts(result.state);
+      return { ok: true, revision: result.artifact.revision };
+    },
+  );
   ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     if (!isId(id)) return null;

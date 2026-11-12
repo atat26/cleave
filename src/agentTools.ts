@@ -37,6 +37,13 @@ import type { SearchFailure, SearchResult } from './webSearch.ts';
 import type { OutlineElement } from './pageOutline.ts';
 import { addKnown, checkReadLink, emptyKnown } from './addressSafety.ts';
 import { applyPolicy, defaultLevel, toolInfo } from './toolPolicy.ts';
+import {
+  ARTIFACT_DEFINITIONS,
+  createArtifactTools,
+  isArtifactTool,
+  WRITING_ARTIFACT_TOOLS,
+} from './artifactTools.ts';
+import type { ArtifactToolEnv } from './artifactTools.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
 
 export const MAX_PAGE_CHARS = 20_000;
@@ -133,7 +140,7 @@ export type LinkReadOutcome =
   | { ok: true; title: string; url: string; text: string }
   | { ok: false; reason: 'blocked' | 'timeout' | 'unavailable' };
 
-export interface AgentEnv extends ActionEnv {
+export interface AgentEnv extends ActionEnv, ArtifactToolEnv {
   // Reading a page by its address in a hidden, private window (see linkReader.ts).
   readLink(url: string, signal: AbortSignal): Promise<LinkReadOutcome>;
   // The full address a numbered link on a linked tab goes to (or null).
@@ -526,7 +533,36 @@ export function createAgentTools(
         };
   };
 
+  const artifactTools = createArtifactTools(env, levelOf);
+
+  // Has the assistant read web content in this reply (a page, a link, a page's
+  // controls or search results)? Pages are written by strangers, so after that
+  // anything that writes into your artifacts always asks, whatever the level.
+  const readWebContent = () => reads > 0 || looks > 0 || searches > 0;
+
   const plan = (call: ToolCall): Plan => {
+    if (isArtifactTool(call.name)) {
+      const own = artifactTools.plan(call);
+      const applied = applyPolicy(
+        own,
+        levelOf(call.name),
+        artifactTools.describe(call),
+      );
+      if (
+        WRITING_ARTIFACT_TOOLS.has(call.name) &&
+        applied.kind !== 'refuse' &&
+        readWebContent()
+      ) {
+        const text =
+          own.kind === 'ask' ? own.text : artifactTools.describe(call);
+        return {
+          kind: 'ask',
+          text: `${text} (I read web content in this reply)`,
+          risky: true,
+        };
+      }
+      return applied;
+    }
     const own: Plan = isActionName(call.name)
       ? planAction(call, actionContext)
       : call.name === 'web_search'
@@ -819,6 +855,7 @@ export function createAgentTools(
   }
 
   const describe = (call: ToolCall): string => {
+    if (isArtifactTool(call.name)) return artifactTools.describe(call);
     if (call.name === 'list_linked_tabs') return 'Checking the linked tabs';
     if (call.name === 'offer_choices') return 'Offering choices';
     if (call.name === 'read_link') {
@@ -876,6 +913,7 @@ export function createAgentTools(
       };
     }
 
+    if (isArtifactTool(call.name)) return artifactTools.run(call);
     if (isActionName(call.name)) return runAction(call, signal);
     if (call.name === 'web_search') return runSearch(call, signal);
     if (call.name === 'read_link') return runReadLink(call, signal);
@@ -1041,9 +1079,11 @@ export function createAgentTools(
 
   return {
     // Tools you turned off are not even offered to the assistant.
-    definitions: [...TOOL_DEFINITIONS, ...ACTION_DEFINITIONS].filter(
-      (definition) => levelOf(definition.name) !== 'never',
-    ),
+    definitions: [
+      ...TOOL_DEFINITIONS,
+      ...ACTION_DEFINITIONS,
+      ...ARTIFACT_DEFINITIONS,
+    ].filter((definition) => levelOf(definition.name) !== 'never'),
     describe,
     plan,
     run,

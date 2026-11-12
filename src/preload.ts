@@ -34,8 +34,8 @@ const browserApi: BrowserApi = {
   artifactSelect: (id) => ipcRenderer.send('artifact:select', id),
   artifactClose: (id) => ipcRenderer.send('artifact:close', id),
   artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
-  artifactWrite: (id, content) =>
-    ipcRenderer.invoke('artifact:write', id, content),
+  artifactWrite: (id, content, revision) =>
+    ipcRenderer.invoke('artifact:write', id, content, revision),
   artifactCopy: (id, spaceId) =>
     ipcRenderer.invoke('artifact:copy', id, spaceId),
   artifactRename: (id, title) => ipcRenderer.send('artifact:rename', id, title),
@@ -62,6 +62,13 @@ const browserApi: BrowserApi = {
     ipcRenderer.invoke('chat:retry', chatId, messageId),
   chatBranch: (chatId, messageId) =>
     ipcRenderer.invoke('chat:branch', chatId, messageId),
+  onArtifactChanged: (callback) => {
+    const listener = (_event: unknown, id: number) => callback(id);
+    ipcRenderer.on('artifact:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('artifact:changed', listener);
+    };
+  },
   onChatReset: (callback) => {
     const listener = (_event: unknown, chatId: number) => callback(chatId);
     ipcRenderer.on('chat:reset', listener);
