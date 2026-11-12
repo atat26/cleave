@@ -106,7 +106,7 @@ function MenuList({
   const activate = (index: number) => {
     const item = items[index];
     if (!item || item.type !== 'item' || item.disabled) return;
-    if (item.submenu) {
+    if (item.submenu && !item.choosable) {
       setActive(index);
       setOpen(index);
     } else {

@@ -24,8 +24,11 @@ export interface MenuEntry {
   danger?: boolean;
   // Drawn grey and cannot be chosen.
   disabled?: boolean;
-  // Items under it, opened to the side. Choosing the item itself does nothing.
+  // Items under it, opened to the side. Choosing the item itself does nothing,
+  // unless `choosable` is set: then a click (or Enter) chooses it, and hovering
+  // (or the right arrow) still opens the items under it.
   submenu?: MenuItem[];
+  choosable?: boolean;
 }
 
 export interface MenuSeparator {
@@ -63,5 +66,9 @@ export function isChoosable(items: MenuItem[], id: unknown): id is string {
     return undefined;
   };
   const entry = find(items);
-  return entry !== undefined && !entry.disabled && !entry.submenu;
+  return (
+    entry !== undefined &&
+    !entry.disabled &&
+    (!entry.submenu || entry.choosable === true)
+  );
 }

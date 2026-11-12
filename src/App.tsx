@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatBar } from './ChatBar';
 import { CHAT_FULL_MIN_HEIGHT, RAIL_WIDTH } from './layout';
 import { ArtifactView } from './ArtifactView';
+import { pushInsert } from './composerBus';
 import { LeadView } from './LeadView';
 import type { RightPanel as RightPanelName } from './model';
 import { Rail } from './Rail';
@@ -61,6 +62,11 @@ export function App() {
     () => window.browserApi.onArtifactRenameRequest(setArtifactRenameRequest),
     [],
   );
+  // Text sent to the message box waits there until the box is on screen.
+  useEffect(() => {
+    if (IS_SIDEBAR) return;
+    return window.browserApi.onComposerInsert(pushInsert);
+  }, []);
   useEffect(
     () => window.browserApi.onChatRenameRequest(setChatRenameRequest),
     [],

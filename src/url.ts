@@ -4,6 +4,11 @@ const SEARCH_URL = 'https://duckduckgo.com/?q=';
 // "sub.site.org/path?x=1".
 const HOST_LIKE = /^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?([/?#].*)?$/i;
 
+// The address of a web search for some text (always a search, never an address).
+export function searchUrl(text: string): string {
+  return SEARCH_URL + encodeURIComponent(text.trim());
+}
+
 // Turn whatever the user typed into a safe URL to load.
 // - Normal http(s) addresses are used as they are.
 // - Things that look like a host get "https://" added.

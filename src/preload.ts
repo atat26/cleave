@@ -151,8 +151,8 @@ const browserApi: BrowserApi = {
     ipcRenderer.send('space:add-menu', spaceId, x, y),
   showLinkMenu: (chatId, kind, id, removable, x, y) =>
     ipcRenderer.send('link:menu', chatId, kind, id, removable, x, y),
-  showEditMenu: (kind, x, y, hasSelection) =>
-    ipcRenderer.send('edit:menu', kind, x, y, hasSelection),
+  showEditMenu: (kind, x, y, hasSelection, selected) =>
+    ipcRenderer.send('edit:menu', kind, x, y, hasSelection, selected),
   showMessageMenu: (chatId, messageId, x, y, selection) =>
     ipcRenderer.send('chat:message-menu', chatId, messageId, x, y, selection),
   onMessageAction: (callback) => {
@@ -163,6 +163,13 @@ const browserApi: BrowserApi = {
     ipcRenderer.on('chat:message-action', listener);
     return () => {
       ipcRenderer.removeListener('chat:message-action', listener);
+    };
+  },
+  onComposerInsert: (callback) => {
+    const listener = (_event: unknown, text: string) => callback(text);
+    ipcRenderer.on('composer:insert', listener);
+    return () => {
+      ipcRenderer.removeListener('composer:insert', listener);
     };
   },
   onArtifactRenameRequest: (callback) => {

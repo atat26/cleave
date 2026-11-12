@@ -74,6 +74,7 @@ import {
 } from './toolSettings';
 import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
+import { resolveInput, searchUrl } from './url';
 import {
   addMenuItems,
   artifactMenuItems,
@@ -81,6 +82,11 @@ import {
   chatSwitchMenuItems,
   editMenuItems,
   linkMenuItems,
+  pageImageMenuItems,
+  pageLinkMenuItems,
+  pageMenuItems,
+  pageSelectionMenuItems,
+  parsePageChoice,
   parseAddChoice,
   parseArtifactChoice,
   parseChatChoice,
@@ -94,7 +100,6 @@ import {
 import type { ChatMenuActions, MenuActions } from './menuData';
 import { isChoosable } from './menuTypes';
 import type { MenuItem } from './menuTypes';
-import { resolveInput } from './url';
 
 // What a new tab shows. Later this could become an AI chat / search page.
 export const NEW_TAB_URL = 'https://duckduckgo.com';
@@ -632,6 +637,10 @@ export async function createTabs(
       return { action: 'deny' };
     });
     contents.on('before-input-event', handleShortcut);
+    // Right-click in the page: a menu for what is under the pointer.
+    contents.on('context-menu', (_event, params) =>
+      showPageMenu(tab.id, view, contents, params),
+    );
     contents.on('page-title-updated', (_event, title) =>
       updateTab(tab.id, { title }),
     );
@@ -1416,7 +1425,11 @@ export async function createTabs(
   };
 
   // What a choice in an editing menu does, in the text box that has the keyboard.
-  const runEditChoice = (target: Electron.WebContents, choiceId: string) => {
+  const runEditChoice = (
+    target: Electron.WebContents,
+    choiceId: string,
+    selected = '',
+  ) => {
     const choice = parseEditChoice(choiceId);
     if (!choice || target.isDestroyed()) return;
     switch (choice.action) {
@@ -1435,6 +1448,9 @@ export async function createTabs(
       case 'select-all':
         target.selectAll();
         break;
+      case 'add-to-chat':
+        if (selected.trim() !== '') insertIntoChat(selected);
+        break;
       case 'paste-and-go': {
         void clipboard.readText().then((copied) => {
           const text = copied.trim();
@@ -1442,6 +1458,140 @@ export async function createTabs(
         });
         break;
       }
+    }
+  };
+
+  // The menu for a right-click inside a web page: a text box gets the editing
+  // menu, then a link, an image, selected text, or the page itself.
+  const showPageMenu = (
+    tabId: number,
+    view: WebContentsView,
+    contents: Electron.WebContents,
+    params: Electron.ContextMenuParams,
+  ) => {
+    const bounds = view.getBounds();
+    const x = bounds.x + params.x;
+    const y = bounds.y + params.y;
+    const selection = params.selectionText;
+
+    if (params.isEditable) {
+      void clipboard.readText().then((copied) =>
+        showMenu(
+          editMenuItems({
+            hasSelection: params.editFlags.canCopy || selection !== '',
+            canPaste: params.editFlags.canPaste && copied.length > 0,
+            pasteAndGo: false,
+          }),
+          x,
+          y,
+          (choice) => runEditChoice(contents, choice),
+          contents,
+        ),
+      );
+      return;
+    }
+
+    let items: MenuItem[];
+    if (params.linkURL !== '')
+      items = pageLinkMenuItems(
+        state,
+        model.findTab(state, tabId)?.spaceId ?? null,
+      );
+    else if (params.mediaType === 'image' && params.srcURL !== '')
+      items = pageImageMenuItems();
+    else if (selection.trim() !== '') items = pageSelectionMenuItems(selection);
+    else
+      items = pageMenuItems({
+        canGoBack: contents.navigationHistory.canGoBack(),
+        canGoForward: contents.navigationHistory.canGoForward(),
+      });
+
+    showMenu(
+      items,
+      x,
+      y,
+      (choice) => runPageChoice(tabId, contents, params, choice),
+      contents,
+    );
+  };
+
+  // What a choice in a web page's menu does.
+  const runPageChoice = (
+    tabId: number,
+    contents: Electron.WebContents,
+    params: Electron.ContextMenuParams,
+    choiceId: string,
+  ) => {
+    const choice = parsePageChoice(choiceId);
+    const tab = model.findTab(state, tabId);
+    if (!choice || !tab) return;
+    const here = tab.spaceId;
+    // Only ordinary web addresses are ever opened in a tab.
+    const openIn = (url: string, spaceId: number | null) => {
+      if (model.isWebUrl(url)) openTab(url, spaceId);
+    };
+    switch (choice.action) {
+      case 'back':
+        contents.navigationHistory.goBack();
+        break;
+      case 'forward':
+        contents.navigationHistory.goForward();
+        break;
+      case 'reload':
+        contents.reload();
+        break;
+      case 'add-page-to-chat':
+        linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
+        break;
+      case 'open-link':
+        openIn(params.linkURL, here);
+        break;
+      case 'open-link-in':
+        if (model.findSpace(state, choice.spaceId)) {
+          openIn(params.linkURL, choice.spaceId);
+        }
+        break;
+      case 'open-link-in-new-space':
+        if (model.isWebUrl(params.linkURL)) {
+          const created = model.addSpace(state);
+          commit(created.state);
+          openTab(params.linkURL, created.id);
+        }
+        break;
+      case 'add-link-to-chat':
+        insertIntoChat(params.linkURL);
+        break;
+      case 'copy-link':
+        clipboard.writeText(params.linkURL);
+        break;
+      case 'open-image':
+        openIn(params.srcURL, here);
+        break;
+      case 'copy-image':
+        contents.copyImageAt(params.x, params.y);
+        break;
+      case 'copy-image-address':
+        clipboard.writeText(params.srcURL);
+        break;
+      case 'copy-selection':
+        clipboard.writeText(params.selectionText);
+        break;
+      case 'search-selection':
+        openTab(searchUrl(params.selectionText), here);
+        break;
+      case 'add-selection-to-chat':
+        insertIntoChat(params.selectionText);
+        break;
+    }
+  };
+
+  // Put text in the message box, bringing the chat back if it was closed.
+  const insertIntoChat = (text: string) => {
+    if (state.settings.viewMode === 'page') {
+      commitAndShow(model.setViewMode(state, 'both'));
+    }
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send('composer:insert', text.slice(0, 4000));
     }
   };
 
@@ -1917,8 +2067,9 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
-    'edit:menu': (kind, x, y, hasSelection) => {
-      if (kind !== 'address' && kind !== 'composer') return;
+    'edit:menu': (kind, x, y, hasSelection, selected) => {
+      if (kind !== 'address' && kind !== 'composer' && kind !== 'editor')
+        return;
       if (!isNumber(x) || !isNumber(y)) return;
       const opener = requestSender ?? win.webContents;
       void clipboard.readText().then((copied) =>
@@ -1927,10 +2078,16 @@ export async function createTabs(
             hasSelection: hasSelection === true,
             canPaste: copied.length > 0,
             pasteAndGo: kind === 'address',
+            addToChat: kind === 'editor',
           }),
           x,
           y,
-          (choice) => runEditChoice(opener, choice),
+          (choice) =>
+            runEditChoice(
+              opener,
+              choice,
+              typeof selected === 'string' ? selected : '',
+            ),
           opener,
         ),
       );

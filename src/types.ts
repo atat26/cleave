@@ -396,10 +396,12 @@ export interface BrowserApi {
   ) => void;
   // Cut, copy, paste and select all for the address bar or the message box.
   showEditMenu: (
-    kind: 'address' | 'composer',
+    kind: 'address' | 'composer' | 'editor',
     x: number,
     y: number,
     hasSelection: boolean,
+    // The selected text, for the artifact editor's "Add selection to chat".
+    selected?: string,
   ) => void;
   // The menu of a chat message (selection: the text selected in it, if any).
   showMessageMenu: (
@@ -417,6 +419,8 @@ export interface BrowserApi {
       action: 'retry' | 'branch';
     }) => void,
   ) => () => void;
+  // Text to put in the message box (for example a selection from a web page).
+  onComposerInsert: (callback: (text: string) => void) => () => void;
   // Rename was chosen from an artifact's menu: show its name as a text box.
   onArtifactRenameRequest: (callback: (id: number) => void) => () => void;
   // Called when "Rename Space" is chosen from a menu: show the rename box.

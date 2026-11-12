@@ -2,6 +2,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
 import type { LinkKind } from './chats';
+import { onInsert } from './composerBus';
 import { AddMenuButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
 import type {
@@ -252,6 +253,27 @@ export function ChatComposer({
     // so the chat opens up to make room for the list.
     if (placeAnchor() < 140 && compact) onNeedRoom();
   };
+
+  // Text from elsewhere (a selection from a web page) goes at the end of the box.
+  useEffect(
+    () =>
+      onInsert((text) => {
+        const root = box.current;
+        if (!root) return;
+        root.focus();
+        root.append(
+          document.createTextNode(root.textContent === '' ? text : ` ${text}`),
+        );
+        const caret = document.createRange();
+        caret.selectNodeContents(root);
+        caret.collapse(false);
+        const selected = window.getSelection();
+        selected?.removeAllRanges();
+        selected?.addRange(caret);
+        setText(readBox(root).text);
+      }),
+    [],
+  );
 
   const openFromButton = (only: 'page' | 'artifact') => {
     box.current?.focus();

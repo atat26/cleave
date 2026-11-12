@@ -755,7 +755,8 @@ export type EditChoice =
   | { action: 'copy' }
   | { action: 'paste' }
   | { action: 'paste-and-go' }
-  | { action: 'select-all' };
+  | { action: 'select-all' }
+  | { action: 'add-to-chat' };
 
 // Cut, copy, paste and select all for a text box. `pasteAndGo` adds the address
 // bar's "Paste and go".
@@ -763,6 +764,8 @@ export function editMenuItems(options: {
   hasSelection: boolean;
   canPaste: boolean;
   pasteAndGo: boolean;
+  // Adds "Add selection to chat" (for the artifact editor).
+  addToChat?: boolean;
 }): MenuItem[] {
   return [
     {
@@ -816,6 +819,18 @@ export function editMenuItems(options: {
       icon: 'select-all',
       shortcut: 'Ctrl+A',
     },
+    ...(options.addToChat
+      ? [
+          { type: 'separator' } as MenuItem,
+          {
+            type: 'item',
+            id: 'edit.add-to-chat',
+            label: 'Add selection to chat',
+            icon: 'chat',
+            disabled: !options.hasSelection,
+          } as MenuItem,
+        ]
+      : []),
   ];
 }
 
@@ -833,6 +848,204 @@ export function parseEditChoice(id: string): EditChoice | null {
       return { action: 'paste-and-go' };
     case 'edit.select-all':
       return { action: 'select-all' };
+    case 'edit.add-to-chat':
+      return { action: 'add-to-chat' };
   }
   return null;
+}
+
+// ---- Menus inside a web page ---------------------------------------------------
+
+export type PageChoice =
+  | { action: 'back' }
+  | { action: 'forward' }
+  | { action: 'reload' }
+  | { action: 'add-page-to-chat' }
+  | { action: 'open-link' }
+  | { action: 'open-link-in'; spaceId: number }
+  | { action: 'open-link-in-new-space' }
+  | { action: 'add-link-to-chat' }
+  | { action: 'copy-link' }
+  | { action: 'open-image' }
+  | { action: 'copy-image' }
+  | { action: 'copy-image-address' }
+  | { action: 'copy-selection' }
+  | { action: 'search-selection' }
+  | { action: 'add-selection-to-chat' };
+
+// Right-click on an empty part of a page.
+export function pageMenuItems(options: {
+  canGoBack: boolean;
+  canGoForward: boolean;
+}): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'page.back',
+      label: 'Back',
+      icon: 'arrow-left',
+      disabled: !options.canGoBack,
+    },
+    {
+      type: 'item',
+      id: 'page.forward',
+      label: 'Forward',
+      icon: 'arrow-right',
+      disabled: !options.canGoForward,
+    },
+    { type: 'item', id: 'page.reload', label: 'Reload', icon: 'reload' },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'page.add-to-chat',
+      label: 'Add page to chat',
+      icon: 'chat',
+    },
+  ];
+}
+
+// Right-click on a link.
+// `here` is the Space of the page the link is on (null if it is in none). When
+// it is in one, "Open in new tab in this Space" can be clicked itself, and hovering
+// it offers the other Spaces.
+export function pageLinkMenuItems(
+  state: SavedState,
+  here: number | null = null,
+): MenuItem[] {
+  const spaces: MenuItem[] = state.spaces
+    .filter((space) => space.id !== here)
+    .map(
+      (space): MenuItem => ({
+        type: 'item',
+        id: `page.open-link-in:${space.id}`,
+        label: space.name,
+      }),
+    );
+  if (spaces.length > 0) spaces.push({ type: 'separator' });
+  spaces.push({
+    type: 'item',
+    id: 'page.open-link-in-new-space',
+    label: 'New Space…',
+    icon: 'plus',
+  });
+  return [
+    {
+      type: 'item',
+      id: 'page.open-link',
+      label: 'Open in new tab',
+      icon: 'ext-link',
+    },
+    {
+      type: 'item',
+      id: 'page.open-link-in',
+      label:
+        here !== null
+          ? 'Open in new tab in this Space'
+          : 'Open in new tab in Space',
+      icon: 'layers',
+      submenu: spaces,
+      choosable: here !== null,
+    },
+    {
+      type: 'item',
+      id: 'page.add-link-to-chat',
+      label: 'Add link to chat',
+      icon: 'chat',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'page.copy-link',
+      label: 'Copy link address',
+      icon: 'link',
+    },
+  ];
+}
+
+// Right-click on an image.
+export function pageImageMenuItems(): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'page.open-image',
+      label: 'Open image in new tab',
+      icon: 'ext-link',
+    },
+    { type: 'item', id: 'page.copy-image', label: 'Copy image', icon: 'image' },
+    {
+      type: 'item',
+      id: 'page.copy-image-address',
+      label: 'Copy image address',
+      icon: 'link',
+    },
+  ];
+}
+
+const shortSelection = (text: string) => {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length > 24 ? `${oneLine.slice(0, 24)}…` : oneLine;
+};
+
+// Right-click on selected text.
+export function pageSelectionMenuItems(selection: string): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'page.copy-selection',
+      label: 'Copy',
+      icon: 'copy',
+      shortcut: 'Ctrl+C',
+    },
+    {
+      type: 'item',
+      id: 'page.search-selection',
+      label: `Search the web for “${shortSelection(selection)}”`,
+      icon: 'search',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'page.add-selection-to-chat',
+      label: 'Add selection to chat',
+      icon: 'chat',
+    },
+  ];
+}
+
+export function parsePageChoice(id: string): PageChoice | null {
+  switch (id) {
+    case 'page.back':
+      return { action: 'back' };
+    case 'page.forward':
+      return { action: 'forward' };
+    case 'page.reload':
+      return { action: 'reload' };
+    case 'page.add-to-chat':
+      return { action: 'add-page-to-chat' };
+    case 'page.open-link':
+    case 'page.open-link-in':
+      return { action: 'open-link' };
+    case 'page.open-link-in-new-space':
+      return { action: 'open-link-in-new-space' };
+    case 'page.add-link-to-chat':
+      return { action: 'add-link-to-chat' };
+    case 'page.copy-link':
+      return { action: 'copy-link' };
+    case 'page.open-image':
+      return { action: 'open-image' };
+    case 'page.copy-image':
+      return { action: 'copy-image' };
+    case 'page.copy-image-address':
+      return { action: 'copy-image-address' };
+    case 'page.copy-selection':
+      return { action: 'copy-selection' };
+    case 'page.search-selection':
+      return { action: 'search-selection' };
+    case 'page.add-selection-to-chat':
+      return { action: 'add-selection-to-chat' };
+  }
+  const inSpace = /^page\.open-link-in:(\d+)$/.exec(id);
+  return inSpace
+    ? { action: 'open-link-in', spaceId: Number(inSpace[1]) }
+    : null;
 }

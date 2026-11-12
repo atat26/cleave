@@ -9,7 +9,12 @@ import {
   linkMenuItems,
   messageMenuItems,
   modelMenuItems,
+  pageImageMenuItems,
+  pageLinkMenuItems,
+  pageMenuItems,
+  pageSelectionMenuItems,
   parseAddChoice,
+  parsePageChoice,
   parseArtifactChoice,
   parseChatChoice,
   parseEditChoice,
@@ -598,4 +603,139 @@ test('the editing menu: cut and copy need a selection, paste needs something to 
   assert.notEqual(entry(all, 'edit.paste-and-go').disabled, true);
   for (const id of menuIds(all)) assert.ok(parseEditChoice(id), id);
   assert.equal(parseEditChoice('edit.nope'), null);
+});
+
+// ---- Menus inside a web page ---------------------------------------------------
+
+test('the page menu: Back and Forward grey out when there is nowhere to go', () => {
+  const none = pageMenuItems({ canGoBack: false, canGoForward: false });
+  assert.equal(entry(none, 'page.back').disabled, true);
+  assert.equal(entry(none, 'page.forward').disabled, true);
+  assert.notEqual(entry(none, 'page.reload').disabled, true);
+  const both = pageMenuItems({ canGoBack: true, canGoForward: true });
+  assert.notEqual(entry(both, 'page.back').disabled, true);
+  assert.deepEqual(menuIds(both), [
+    'page.back',
+    'page.forward',
+    'page.reload',
+    'page.add-to-chat',
+  ]);
+});
+
+test('the link menu lists your Spaces to open it in, and there is no save-as anywhere', () => {
+  const { state, workId, homeId } = build();
+  const items = pageLinkMenuItems(state);
+  const spaces = entry(items, 'page.open-link-in').submenu!;
+  assert.deepEqual(
+    spaces.filter((i) => i.type === 'item').map((i) => (i as MenuEntry).id),
+    [
+      `page.open-link-in:${workId}`,
+      `page.open-link-in:${homeId}`,
+      'page.open-link-in-new-space',
+    ],
+  );
+  // With no Spaces, only "New Space…" is there.
+  const lone = pageLinkMenuItems(defaultState());
+  assert.deepEqual(
+    entry(lone, 'page.open-link-in')
+      .submenu!.filter((i) => i.type === 'item')
+      .map((i) => (i as MenuEntry).id),
+    ['page.open-link-in-new-space'],
+  );
+  // Nothing in any page menu makes a page save a file.
+  const all = [
+    ...menuIds(items),
+    ...menuIds(pageImageMenuItems()),
+    ...menuIds(pageSelectionMenuItems('x')),
+    ...menuIds(pageMenuItems({ canGoBack: true, canGoForward: true })),
+  ];
+  assert.ok(all.every((id) => !/save|print|download/.test(id)));
+});
+
+test('the selection menu names what will be searched, on one short line', () => {
+  const items = pageSelectionMenuItems(
+    '  a very long\nselected sentence that goes on and on  ',
+  );
+  const label = entry(items, 'page.search-selection').label;
+  assert.ok(label.startsWith('Search the web for “a very long selected'));
+  assert.ok(label.endsWith('…”'));
+  assert.ok(!label.includes('\n'));
+  assert.equal(
+    entry(pageSelectionMenuItems('short'), 'page.search-selection').label,
+    'Search the web for “short”',
+  );
+});
+
+test('page menu choices are read back; unknown ones are not understood', () => {
+  const { state } = build();
+  for (const id of [
+    ...menuIds(pageMenuItems({ canGoBack: true, canGoForward: true })),
+    ...menuIds(pageLinkMenuItems(state)),
+    ...menuIds(pageImageMenuItems()),
+    ...menuIds(pageSelectionMenuItems('x')),
+  ]) {
+    assert.ok(parsePageChoice(id), id);
+  }
+  assert.deepEqual(parsePageChoice('page.open-link-in:9'), {
+    action: 'open-link-in',
+    spaceId: 9,
+  });
+  for (const bad of ['', 'page.open-link-in:x', 'page.save-as', 'tab.close']) {
+    assert.equal(parsePageChoice(bad), null, bad);
+  }
+});
+
+test('"Open in new tab in this Space" can be clicked, and offers the other Spaces', () => {
+  const { state, workId, homeId } = build();
+  const items = pageLinkMenuItems(state, workId);
+  const parent = entry(items, 'page.open-link-in');
+  assert.equal(parent.label, 'Open in new tab in this Space');
+  assert.equal(parent.choosable, true);
+  // The submenu has the other Spaces, not this one.
+  const others = parent
+    .submenu!.filter((i) => i.type === 'item')
+    .map((i) => (i as MenuEntry).id);
+  assert.deepEqual(others, [
+    `page.open-link-in:${homeId}`,
+    'page.open-link-in-new-space',
+  ]);
+  // Choosing the item itself is allowed, and means "open it in this Space".
+  assert.equal(isChoosable(items, 'page.open-link-in'), true);
+  assert.deepEqual(parsePageChoice('page.open-link-in'), {
+    action: 'open-link',
+  });
+  // A page in no Space: the item only opens its list of Spaces.
+  const none = entry(pageLinkMenuItems(state, null), 'page.open-link-in');
+  assert.equal(none.label, 'Open in new tab in Space');
+  assert.notEqual(none.choosable, true);
+  assert.equal(
+    isChoosable(pageLinkMenuItems(state, null), 'page.open-link-in'),
+    false,
+  );
+});
+
+test('the artifact editor menu can send the selection to the chat, only when something is selected', () => {
+  const none = editMenuItems({
+    hasSelection: false,
+    canPaste: true,
+    pasteAndGo: false,
+    addToChat: true,
+  });
+  assert.equal(entry(none, 'edit.add-to-chat').disabled, true);
+  const some = editMenuItems({
+    hasSelection: true,
+    canPaste: true,
+    pasteAndGo: false,
+    addToChat: true,
+  });
+  assert.notEqual(entry(some, 'edit.add-to-chat').disabled, true);
+  assert.deepEqual(parseEditChoice('edit.add-to-chat'), {
+    action: 'add-to-chat',
+  });
+  // The other text boxes do not have it.
+  assert.ok(
+    !menuIds(
+      editMenuItems({ hasSelection: true, canPaste: true, pasteAndGo: false }),
+    ).includes('edit.add-to-chat'),
+  );
 });
