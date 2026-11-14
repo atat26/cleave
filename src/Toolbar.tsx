@@ -4,6 +4,7 @@ import { PAGE_INSET, TOOLBAR_HEIGHT, WINDOW_CONTROLS_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { NameButton } from './NameButton';
 import { describeSite } from './site';
+import { zoomLabel } from './zoom';
 import type { ChatsInfo } from './types';
 import { IconButton, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
@@ -16,6 +17,8 @@ interface ToolbarProps {
   disabled: boolean;
   // The selected page is still loading (the reload button becomes Stop).
   loading: boolean;
+  // How far the page is zoomed (1 = 100%); a chip shows when it is not.
+  zoom: number;
   // What the middle of the window shows right now.
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
@@ -127,6 +130,7 @@ export function Toolbar({
   canGoForward,
   disabled,
   loading,
+  zoom,
   viewMode,
   chats,
 }: ToolbarProps) {
@@ -241,6 +245,22 @@ export function Toolbar({
                 }
                 spellCheck={false}
               />
+              {zoom !== 1 && !disabled && (
+                <button
+                  type="button"
+                  className="zoom-chip"
+                  title="Zoom options for this site"
+                  aria-haspopup="menu"
+                  aria-label={`Zoom ${zoomLabel(zoom)}. Open zoom options`}
+                  onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect();
+                    window.browserApi.showZoomMenu(box.left, box.bottom + 4);
+                  }}
+                >
+                  <Icon name="zoom" />
+                  {zoomLabel(zoom)}
+                </button>
+              )}
             </div>
           </>
         )}

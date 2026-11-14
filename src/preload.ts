@@ -12,6 +12,7 @@ const browserApi: BrowserApi = {
   reloadPage: () => ipcRenderer.send('tab:reload'),
   toggleSidebarPin: () => ipcRenderer.send('sidebar:toggle-pin'),
   showToolsMenu: (x, y) => ipcRenderer.send('toolbar:menu', x, y),
+  showZoomMenu: (x, y) => ipcRenderer.send('zoom:menu', x, y),
   findReady: () => ipcRenderer.send('find:ready'),
   findQuery: (text, forward, again) =>
     ipcRenderer.send('find:query', text, forward, again),

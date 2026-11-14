@@ -468,9 +468,7 @@ function FullSidebar({
             + Space
           </button>
         </div>
-        <span className="sb-title" style={{ flex: 1, paddingLeft: 4 }}>
-          Tabs
-        </span>
+        <span style={{ flex: 1 }} />
         <PinButton pinned={state.sidebarPinned} />
       </div>
 

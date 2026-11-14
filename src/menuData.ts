@@ -955,6 +955,11 @@ export type PageChoice =
   | { action: 'forward' }
   | { action: 'reload' }
   | { action: 'find' }
+  | { action: 'zoom-in' }
+  | { action: 'zoom-out' }
+  | { action: 'zoom-reset' }
+  | { action: 'print' }
+  | { action: 'inspect' }
   | { action: 'add-page-to-chat' }
   | { action: 'open-link' }
   | { action: 'open-link-in'; spaceId: number }
@@ -996,6 +1001,13 @@ export function pageMenuItems(options: {
       icon: 'search',
       shortcut: 'Ctrl+F',
     },
+    {
+      type: 'item',
+      id: 'page.zoom',
+      label: 'Zoom',
+      icon: 'zoom',
+      submenu: zoomItems('page'),
+    },
     { type: 'separator' },
     {
       type: 'item',
@@ -1003,6 +1015,15 @@ export function pageMenuItems(options: {
       label: 'Add page to chat',
       icon: 'chat',
     },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'page.print',
+      label: 'Print…',
+      icon: 'print',
+      shortcut: 'Ctrl+P',
+    },
+    { type: 'item', id: 'page.inspect', label: 'Inspect', icon: 'code' },
   ];
 }
 
@@ -1125,6 +1146,16 @@ export function parsePageChoice(id: string): PageChoice | null {
       return { action: 'reload' };
     case 'page.find':
       return { action: 'find' };
+    case 'page.zoom-in':
+      return { action: 'zoom-in' };
+    case 'page.zoom-out':
+      return { action: 'zoom-out' };
+    case 'page.zoom-reset':
+      return { action: 'zoom-reset' };
+    case 'page.print':
+      return { action: 'print' };
+    case 'page.inspect':
+      return { action: 'inspect' };
     case 'page.add-to-chat':
       return { action: 'add-page-to-chat' };
     case 'page.open-link':
@@ -1187,11 +1218,49 @@ export function parseEmojiChoice(id: string): EmojiChoice | null {
 
 // ---- The toolbar "…" menu (browser tools) -------------------------------------
 // One menu button for the browser's tools. More go in here as they are built
-// (zoom, print, downloads, history...).
+// (downloads, history...).
 
-export type ToolsChoice = { action: 'find' };
+export type ToolsChoice =
+  | { action: 'find' }
+  | { action: 'zoom-in' }
+  | { action: 'zoom-out' }
+  | { action: 'zoom-reset' }
+  | { action: 'print' }
+  | { action: 'devtools' };
 
-export function toolsMenuItems(options: { hasPage: boolean }): MenuItem[] {
+// The three zoom choices (in the "…" menu's Zoom submenu, the page's right-click
+// menu, and the zoom chip's menu).
+export function zoomItems(idPrefix: 'tools' | 'page'): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: `${idPrefix}.zoom-in`,
+      label: 'Zoom in',
+      icon: 'plus',
+      shortcut: 'Ctrl++',
+    },
+    {
+      type: 'item',
+      id: `${idPrefix}.zoom-out`,
+      label: 'Zoom out',
+      icon: 'minus',
+      shortcut: 'Ctrl+-',
+    },
+    {
+      type: 'item',
+      id: `${idPrefix}.zoom-reset`,
+      label: 'Reset (100%)',
+      shortcut: 'Ctrl+0',
+    },
+  ];
+}
+
+export function toolsMenuItems(options: {
+  hasPage: boolean;
+  // The current page's zoom, as text like "125%" (shown in the Zoom entry).
+  zoomText?: string;
+}): MenuItem[] {
+  const off = !options.hasPage;
   return [
     {
       type: 'item',
@@ -1199,11 +1268,56 @@ export function toolsMenuItems(options: { hasPage: boolean }): MenuItem[] {
       label: 'Find in page',
       icon: 'search',
       shortcut: 'Ctrl+F',
-      disabled: !options.hasPage,
+      disabled: off,
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'tools.zoom',
+      label: options.zoomText ? `Zoom (${options.zoomText})` : 'Zoom',
+      icon: 'zoom',
+      disabled: off,
+      submenu: zoomItems('tools'),
+    },
+    {
+      type: 'item',
+      id: 'tools.print',
+      label: 'Print…',
+      icon: 'print',
+      shortcut: 'Ctrl+P',
+      disabled: off,
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'tools.devtools',
+      label: 'Developer tools',
+      icon: 'code',
+      shortcut: 'F12',
+      disabled: off,
     },
   ];
 }
 
+// The little menu behind the zoom chip in the address bar.
+export function zoomChipMenuItems(): MenuItem[] {
+  return zoomItems('tools');
+}
+
 export function parseToolsChoice(id: string): ToolsChoice | null {
-  return id === 'tools.find' ? { action: 'find' } : null;
+  switch (id) {
+    case 'tools.find':
+      return { action: 'find' };
+    case 'tools.zoom-in':
+      return { action: 'zoom-in' };
+    case 'tools.zoom-out':
+      return { action: 'zoom-out' };
+    case 'tools.zoom-reset':
+      return { action: 'zoom-reset' };
+    case 'tools.print':
+      return { action: 'print' };
+    case 'tools.devtools':
+      return { action: 'devtools' };
+  }
+  return null;
 }

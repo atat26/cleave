@@ -41,7 +41,7 @@ export function ChatSwitcher({
 
   return (
     <div
-      className="reveal-host"
+      className={compact ? 'reveal-host compact-switch' : 'reveal-host'}
       style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}
       // Right-click the name for the same menu as a chat's row in the chat list.
       onContextMenu={(event) => {
