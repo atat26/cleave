@@ -1425,34 +1425,18 @@ button {
   pointer-events: auto;
 }
 
-/* The sidebar header: "+" is always there; "+ Space" fades in over the title when
-   the pointer is on the "+", and the pin when it is on the header. */
+/* The sidebar header: "+" is always there; "+ Space" fades in beside it when the
+   pointer is on the "+", and the pin when it is on the header. */
 .sb-head {
   position: relative;
 }
 .sb-add {
   display: flex;
   align-items: center;
-  /* Reaches over the gap to "+ Space" (without moving anything), so moving the
-     pointer from the "+" to it does not lose the hover on the way. */
-  padding-right: 12px;
-  margin-right: -12px;
+  gap: 4px;
 }
 .sb-space {
-  position: absolute;
-  /* Above the title it covers (a title that has faded is still there to be hit). */
-  z-index: 2;
-  left: 40px;
-  top: 50%;
-  transform: translateY(-50%);
   white-space: nowrap;
-}
-.sb-head:has(.sb-add:hover) .sb-title,
-.sb-head:has(.sb-add:has(:focus-visible)) .sb-title {
-  opacity: 0;
-}
-.sb-title {
-  transition: opacity var(--dur-fast);
 }
 
 /* A card on a Space's overview: one "…" in its corner while the pointer is on it. */
@@ -1488,4 +1472,50 @@ button {
   flex: none;
   font-size: var(--fs-xs);
   white-space: nowrap;
+}
+
+/* The zoom chip in the address bar: only there while a page is not at 100%. */
+.zoom-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 22px;
+  padding: 0 var(--s-2);
+  margin-right: var(--s-1);
+  border: none;
+  border-radius: var(--r-pill, 999px);
+  background: var(--c-surface-3);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.zoom-chip:hover {
+  background: var(--c-active);
+}
+
+/* The one-line chat bar's close button: no room (and nothing to see) until the
+   pointer or the keyboard is on the bar, then it slides in. */
+.chat-close-slot {
+  display: inline-flex;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width var(--dur-fast),
+    opacity var(--dur-fast);
+}
+.composer:hover .chat-close-slot,
+.composer:has(:focus-visible) .chat-close-slot {
+  width: 28px;
+  opacity: 1;
+}
+
+/* In the one-line chat bar the name's hover buttons take no room (the box for your
+   message gets it) until the pointer is on the name. */
+.compact-switch > .reveal:not(.is-on) {
+  display: none;
+}
+.compact-switch:hover > .reveal,
+.compact-switch:has(:focus-visible) > .reveal {
+  display: inline-flex;
 }

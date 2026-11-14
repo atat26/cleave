@@ -187,6 +187,8 @@ export interface UiState {
   tabs: TabInfo[];
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
+  // How far the selected page is zoomed (1 = 100%).
+  zoom: number;
   // The ACTIVE web tab is still loading (its reload button becomes Stop).
   loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
@@ -235,6 +237,8 @@ export interface BrowserApi {
   toggleSidebarPin: () => void;
   // The toolbar "…" menu (the browser's tools), opened at a place in the window.
   showToolsMenu: (x: number, y: number) => void;
+  // The small menu behind the zoom chip in the address bar.
+  showZoomMenu: (x: number, y: number) => void;
   // Find in page. Only the find bar's own page uses these.
   findReady: () => void;
   findQuery: (text: string, forward: boolean, again: boolean) => void;

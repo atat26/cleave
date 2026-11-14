@@ -65,6 +65,15 @@ import { buildOutline } from './pageOutline';
 import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
+import {
+  defaultZoomSettings,
+  parseZoomSettings,
+  stepZoom,
+  withSiteZoom,
+  zoomFor,
+  zoomHost,
+  zoomLabel,
+} from './zoom';
 import type { NameResult } from './naming';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
@@ -114,6 +123,7 @@ import {
   parsePageChoice,
   parseToolsChoice,
   toolsMenuItems,
+  zoomChipMenuItems,
   parseAddChoice,
   parseArtifactChoice,
   parseChatChoice,
@@ -124,7 +134,12 @@ import {
   spaceMenuItems,
   tabMenuItems,
 } from './menuData';
-import type { ChatMenuActions, EmojiChoice, MenuActions } from './menuData';
+import type {
+  ChatMenuActions,
+  EmojiChoice,
+  MenuActions,
+  ToolsChoice,
+} from './menuData';
 import { isChoosable } from './menuTypes';
 
 import type { MenuItem } from './menuTypes';
@@ -226,6 +241,14 @@ export async function createTabs(
     defaultNamingSettings,
   );
   const namingSaver = createSaver(namingFile, () => namingSettings);
+  // The zoom of each site (see zoom.ts).
+  const zoomFile = path.join(app.getPath('userData'), 'zoom.json');
+  let zoomSettings = await loadJson(
+    zoomFile,
+    parseZoomSettings,
+    defaultZoomSettings,
+  );
+  const zoomSaver = createSaver(zoomFile, () => zoomSettings);
 
   // The Spaces and tabs as the chat sees them (titles and addresses).
   const workspace = (): Workspace => ({
@@ -282,6 +305,12 @@ export async function createTabs(
 
   const activeTabId = () =>
     state.active?.kind === 'tab' ? state.active.id : null;
+  // The active tab's live page, if it has one.
+  const activePage = () => {
+    const id = state.active?.kind === 'tab' ? state.active.id : null;
+    const contents = id === null ? undefined : views.get(id)?.webContents;
+    return contents && !contents.isDestroyed() ? contents : undefined;
+  };
 
   // ---- The sidebar: our own UI page in a view on top of the web pages -------
 
@@ -529,6 +558,7 @@ export async function createTabs(
         closed: tab.closed,
       })),
       active: state.active,
+      zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
       loading:
         id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
@@ -804,6 +834,11 @@ export async function createTabs(
     contents.on('page-favicon-updated', (_event, favicons) =>
       updateTab(tab.id, { favicon: favicons.find(model.isWebUrl) ?? null }),
     );
+    // A page starts at the zoom its site was given. (Ctrl+scroll asks for a step.)
+    contents.on('dom-ready', () => applySiteZoom(tab.id));
+    contents.on('zoom-changed', (_event, direction) => {
+      if (tab.id === activeTabId()) changeZoom(direction === 'in' ? 1 : -1);
+    });
     contents.on('found-in-page', (_event, result) => {
       if (tab.id !== findTabId || find.isDestroyed()) return;
       find.send('find:result', {
@@ -866,6 +901,68 @@ export async function createTabs(
     if (findTabId === null) return;
     if (activeTabId() !== findTabId || !pageIsShown()) closeFind(false);
     else placeFind();
+  };
+
+  // ---- Zoom, print, developer tools ------------------------------------------
+
+  // Give a page the zoom its site was given (100% when none).
+  const applySiteZoom = (tabId: number) => {
+    const contents = views.get(tabId)?.webContents;
+    if (!contents || contents.isDestroyed()) return;
+    const wanted = zoomFor(zoomSettings, zoomHost(contents.getURL()));
+    if (Math.abs(contents.getZoomFactor() - wanted) > 1e-6) {
+      contents.setZoomFactor(wanted);
+    }
+    if (tabId === activeTabId()) sendState();
+  };
+
+  // Zoom the active page one step in (1) or out (-1), or back to 100% (0). The
+  // site remembers it, and every open page of that site follows.
+  const changeZoom = (direction: 1 | -1 | 0) => {
+    const contents = activePage();
+    if (!contents) return;
+    const host = zoomHost(contents.getURL());
+    if (host === null) return;
+    const next =
+      direction === 0 ? 1 : stepZoom(contents.getZoomFactor(), direction);
+    zoomSettings = withSiteZoom(zoomSettings, host, next);
+    zoomSaver.schedule();
+    for (const [tabId, view] of views) {
+      if (zoomHost(view.webContents.getURL()) === host) applySiteZoom(tabId);
+    }
+    sendState();
+  };
+
+  // The system's own print window, for the active page.
+  const printPage = () => {
+    const contents = activePage();
+    if (contents) contents.print({ printBackground: true });
+  };
+
+  const toggleDevTools = () => activePage()?.toggleDevTools();
+
+  // What a choice in the "…" menu (or the zoom chip's) does.
+  const runToolsChoice = (choice: ToolsChoice) => {
+    switch (choice.action) {
+      case 'find':
+        openFind();
+        break;
+      case 'zoom-in':
+        changeZoom(1);
+        break;
+      case 'zoom-out':
+        changeZoom(-1);
+        break;
+      case 'zoom-reset':
+        changeZoom(0);
+        break;
+      case 'print':
+        printPage();
+        break;
+      case 'devtools':
+        toggleDevTools();
+        break;
+    }
   };
 
   // Show whatever is selected: wake the active tab if needed, hide the other
@@ -1794,6 +1891,21 @@ export async function createTabs(
       case 'find':
         openFind();
         break;
+      case 'zoom-in':
+        changeZoom(1);
+        break;
+      case 'zoom-out':
+        changeZoom(-1);
+        break;
+      case 'zoom-reset':
+        changeZoom(0);
+        break;
+      case 'print':
+        printPage();
+        break;
+      case 'inspect':
+        contents.inspectElement(params.x, params.y);
+        break;
       case 'add-page-to-chat':
         linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
         break;
@@ -2054,6 +2166,18 @@ export async function createTabs(
     event: { preventDefault: () => void },
     input: Electron.Input,
   ) => {
+    // F12: developer tools for the page.
+    if (
+      input.type === 'keyDown' &&
+      input.key === 'F12' &&
+      !input.control &&
+      !input.alt &&
+      !input.meta
+    ) {
+      event.preventDefault();
+      toggleDevTools();
+      return;
+    }
     // F6 / Shift+F6: move the keyboard to the next part of the app.
     if (
       input.type === 'keyDown' &&
@@ -2087,6 +2211,21 @@ export async function createTabs(
     if (key === 'f') {
       event.preventDefault();
       openFind();
+    } else if (key === '=' || key === '+') {
+      event.preventDefault();
+      changeZoom(1);
+    } else if (key === '-' || key === '_') {
+      event.preventDefault();
+      changeZoom(-1);
+    } else if (key === '0') {
+      event.preventDefault();
+      changeZoom(0);
+    } else if (key === 'p') {
+      event.preventDefault();
+      printPage();
+    } else if (key === 'i' && input.shift) {
+      event.preventDefault();
+      toggleDevTools();
     } else if (key === 't') {
       event.preventDefault();
       openTab(NEW_TAB_URL, currentSpaceId());
@@ -2338,11 +2477,29 @@ export async function createTabs(
       if (!isNumber(x) || !isNumber(y)) return;
       const id = activeTabId();
       showMenu(
-        toolsMenuItems({ hasPage: id !== null && pageIsShown() }),
+        toolsMenuItems({
+          hasPage: id !== null && pageIsShown(),
+          zoomText: zoomLabel(activePage()?.getZoomFactor() ?? 1),
+        }),
         x,
         y,
         (choice) => {
-          if (parseToolsChoice(choice)?.action === 'find') openFind();
+          const parsed = parseToolsChoice(choice);
+          if (parsed) runToolsChoice(parsed);
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    // The zoom chip in the address bar.
+    'zoom:menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        zoomChipMenuItems(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseToolsChoice(choice);
+          if (parsed) runToolsChoice(parsed);
         },
         requestSender ?? win.webContents,
       );

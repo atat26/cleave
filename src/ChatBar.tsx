@@ -185,14 +185,22 @@ export function ChatBar({
             after={
               !full ? (
                 <>
+                  {/* Expand stays in view (it is the bar's one way to open up). Close
+                      takes no room until the pointer is on the bar. */}
                   <IconButton
                     icon="chev-u"
                     size="sm"
-                    className="reveal"
                     label="Expand chat (Ctrl+J)"
                     onClick={() => window.browserApi.toggleChat()}
                   />
-                  {closeChat}
+                  <span className="chat-close-slot">
+                    <IconButton
+                      icon="x"
+                      size="sm"
+                      label="Close chat (show only the page)"
+                      onClick={() => window.browserApi.setViewMode('page')}
+                    />
+                  </span>
                 </>
               ) : undefined
             }

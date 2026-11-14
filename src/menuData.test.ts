@@ -22,6 +22,7 @@ import {
   parseEmojiChoice,
   parseToolsChoice,
   toolsMenuItems,
+  zoomChipMenuItems,
   parseLinkChoice,
   parseMessageChoice,
   parseModelChoice,
@@ -646,7 +647,13 @@ test('the page menu: Back and Forward grey out when there is nowhere to go', () 
     'page.forward',
     'page.reload',
     'page.find',
+    'page.zoom',
+    'page.zoom-in',
+    'page.zoom-out',
+    'page.zoom-reset',
     'page.add-to-chat',
+    'page.print',
+    'page.inspect',
   ]);
 });
 
@@ -670,14 +677,15 @@ test('the link menu lists your Spaces to open it in, and there is no save-as any
       .map((i) => (i as MenuEntry).id),
     ['page.open-link-in-new-space'],
   );
-  // Nothing in any page menu makes a page save a file.
+  // Nothing in any page menu makes a page save a file (Print opens the system's
+  // own print window, where saving a PDF is the user's own choice).
   const all = [
     ...menuIds(items),
     ...menuIds(pageImageMenuItems()),
     ...menuIds(pageSelectionMenuItems('x')),
     ...menuIds(pageMenuItems({ canGoBack: true, canGoForward: true })),
   ];
-  assert.ok(all.every((id) => !/save|print|download/.test(id)));
+  assert.ok(all.every((id) => !/save|download/.test(id)));
 });
 
 test('the selection menu names what will be searched, on one short line', () => {
@@ -702,7 +710,8 @@ test('page menu choices are read back; unknown ones are not understood', () => {
     ...menuIds(pageImageMenuItems()),
     ...menuIds(pageSelectionMenuItems('x')),
   ]) {
-    assert.ok(parsePageChoice(id), id);
+    // ("Zoom" only opens its submenu: its choices are the three below it.)
+    if (id !== 'page.zoom') assert.ok(parsePageChoice(id), id);
   }
   assert.deepEqual(parsePageChoice('page.open-link-in:9'), {
     action: 'open-link-in',
@@ -844,17 +853,59 @@ test('"Name with AI" is in the Space and artifact menus, and a closed page can b
   assert.ok(!menuIds(tabMenuItems(moved, tab.id)!).includes('tab.open'));
 });
 
-test('the toolbar "…" menu offers Find in page (greyed with no page) and reads it back', () => {
-  const items = toolsMenuItems({ hasPage: true });
-  assert.deepEqual(menuIds(items), ['tools.find']);
+test('the toolbar "…" menu has Find, Zoom, Print and Developer tools, all greyed with no page', () => {
+  const items = toolsMenuItems({ hasPage: true, zoomText: '125%' });
+  assert.deepEqual(menuIds(items), [
+    'tools.find',
+    'tools.zoom',
+    'tools.zoom-in',
+    'tools.zoom-out',
+    'tools.zoom-reset',
+    'tools.print',
+    'tools.devtools',
+  ]);
   assert.equal(entry(items, 'tools.find').shortcut, 'Ctrl+F');
-  assert.notEqual(entry(items, 'tools.find').disabled, true);
-  assert.equal(
-    entry(toolsMenuItems({ hasPage: false }), 'tools.find').disabled,
-    true,
-  );
+  assert.equal(entry(items, 'tools.zoom').label, 'Zoom (125%)');
+  assert.equal(entry(items, 'tools.print').shortcut, 'Ctrl+P');
+  assert.equal(entry(items, 'tools.devtools').shortcut, 'F12');
+  for (const id of [
+    'tools.find',
+    'tools.zoom',
+    'tools.print',
+    'tools.devtools',
+  ]) {
+    assert.notEqual(entry(items, id).disabled, true, id);
+    assert.equal(
+      entry(toolsMenuItems({ hasPage: false }), id).disabled,
+      true,
+      id,
+    );
+  }
   assert.deepEqual(parseToolsChoice('tools.find'), { action: 'find' });
+  assert.deepEqual(parseToolsChoice('tools.zoom-in'), { action: 'zoom-in' });
+  assert.deepEqual(parseToolsChoice('tools.zoom-out'), { action: 'zoom-out' });
+  assert.deepEqual(parseToolsChoice('tools.zoom-reset'), {
+    action: 'zoom-reset',
+  });
+  assert.deepEqual(parseToolsChoice('tools.print'), { action: 'print' });
+  assert.deepEqual(parseToolsChoice('tools.devtools'), { action: 'devtools' });
+  // "Zoom" itself only opens its submenu.
   assert.equal(parseToolsChoice('tools.zoom'), null);
-  // The page's right-click menu has it too.
+  // The zoom chip's menu is the three zoom choices.
+  assert.deepEqual(menuIds(zoomChipMenuItems()), [
+    'tools.zoom-in',
+    'tools.zoom-out',
+    'tools.zoom-reset',
+  ]);
+});
+
+test("the page's right-click menu reads its zoom, print and inspect choices back", () => {
   assert.deepEqual(parsePageChoice('page.find'), { action: 'find' });
+  assert.deepEqual(parsePageChoice('page.zoom-in'), { action: 'zoom-in' });
+  assert.deepEqual(parsePageChoice('page.zoom-out'), { action: 'zoom-out' });
+  assert.deepEqual(parsePageChoice('page.zoom-reset'), {
+    action: 'zoom-reset',
+  });
+  assert.deepEqual(parsePageChoice('page.print'), { action: 'print' });
+  assert.deepEqual(parsePageChoice('page.inspect'), { action: 'inspect' });
 });
