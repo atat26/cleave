@@ -66,11 +66,17 @@ import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import {
+  defaultLibrarySettings,
+  parseLibrarySettings,
+  withLibrarySettings,
+} from './librarySettings';
+import {
   addVisit,
   clearHistory,
   defaultHistory,
   historyUrl,
   parseHistory,
+  pruneHistory,
   removeVisit,
   searchHistory,
   setVisitTitle,
@@ -274,10 +280,17 @@ export async function createTabs(
   const zoomSaver = createSaver(zoomFile, () => zoomSettings);
   // Browsing history and the tabs you closed recently (see history.ts and
   // recentlyClosed.ts).
+  const libraryFile = path.join(app.getPath('userData'), 'library.json');
+  let librarySettings = await loadJson(
+    libraryFile,
+    parseLibrarySettings,
+    defaultLibrarySettings,
+  );
+  const librarySaver = createSaver(libraryFile, () => librarySettings);
   const historyFile = path.join(app.getPath('userData'), 'history.json');
   let history = await loadJson(
     historyFile,
-    (raw) => parseHistory(raw, Date.now()),
+    (raw) => parseHistory(raw, Date.now(), librarySettings.historyDays),
     defaultHistory,
   );
   // The Library panel asks again when history or the closed list changes (at most a
@@ -903,8 +916,17 @@ export async function createTabs(
     });
     contents.on('did-navigate', (_event, url) => {
       // A new page is a visit (but not the load of a tab restored from last time).
-      if (restoredLoads.delete(tab.id) === false) {
-        history = addVisit(history, url, contents.getTitle(), Date.now());
+      if (
+        restoredLoads.delete(tab.id) === false &&
+        librarySettings.saveHistory
+      ) {
+        history = addVisit(
+          history,
+          url,
+          contents.getTitle(),
+          Date.now(),
+          librarySettings.historyDays,
+        );
         historySaver.schedule();
         libraryChanged();
       }
@@ -1180,21 +1202,13 @@ export async function createTabs(
     commitAndShow(revealPage(model.openArtifactTab(state, id, found.spaceId)));
   };
 
-  const deleteArtifact = async (id: number) => {
+  const deleteArtifact = (id: number) => {
     const found = artifactsModel.findArtifact(artifacts, id);
     if (!found) return;
-    if (
-      !(await confirm({
-        title: 'Delete artifact',
-        message: `Delete “${found.title}”?`,
-        detail: 'It cannot be undone.',
-        button: 'Delete artifact',
-      }))
-    ) {
-      return;
-    }
+    // No "are you sure?": it waits in Recently deleted, and can be brought back.
     syncLinkSnapshots(); // Chats' links to it remember its name.
     commitArtifacts(artifactsModel.deleteArtifact(artifacts, id));
+    libraryChanged();
   };
 
   const deleteSpace = async (id: number) => {
@@ -1607,25 +1621,30 @@ export async function createTabs(
     })
     .catch(() => undefined);
 
-  const deleteChat = async (id: number) => {
+  // Remove what has waited in Recently deleted longer than you chose. Runs when the
+  // app starts, every few hours, and when you change the time.
+  const purgeTrash = () => {
+    const now = Date.now();
+    commitChats(
+      chatsModel.purgeOldChats(chats, now, librarySettings.trashDays),
+    );
+    commitArtifacts(
+      artifactsModel.purgeOldArtifacts(
+        artifacts,
+        now,
+        librarySettings.trashDays,
+      ),
+    );
+  };
+
+  const deleteChat = (id: number) => {
     const chat = chatsModel.findConversation(chats, id);
     if (!chat) return;
-    // Nothing to lose in an empty chat; otherwise ask first.
-    if (
-      chat.messages.length > 0 &&
-      !(await confirm({
-        title: 'Delete chat',
-        message: `Delete “${chat.title}”?`,
-        detail: `Its ${chat.messages.length} message${chat.messages.length === 1 ? '' : 's'} will be deleted. It cannot be undone.`,
-        button: 'Delete chat',
-      }))
-    ) {
-      return;
-    }
+    // No "are you sure?": it waits in Recently deleted, and can be brought back.
     // A reply still being written must stop before its chat goes.
     chatService?.stop(id);
-    // The chat may have changed while the dialog was open.
     commitChats(chatsModel.deleteConversation(chats, id));
+    libraryChanged();
   };
 
   const chatMenuActions: ChatMenuActions = {
@@ -2570,7 +2589,46 @@ export async function createTabs(
       sendState();
     },
     // The Library panel: open a page from history, forget a visit, reopen a closed
-    // tab, and the "…" menu that clears a list.
+    // tab, bring back or delete for good something from Recently deleted, and the
+    // "…" menu that clears a list.
+    'library:restore': (kind, id) => {
+      if (!isId(id)) return;
+      if (kind === 'chat') {
+        commitChats(chatsModel.restoreConversation(chats, id));
+      } else if (kind === 'artifact') {
+        commitArtifacts(
+          artifactsModel.restoreArtifact(
+            artifacts,
+            id,
+            (spaceId) => model.findSpace(state, spaceId) !== undefined,
+          ),
+        );
+      }
+      libraryChanged();
+    },
+    'library:delete-forever': (kind, id) => {
+      if (!isId(id) || (kind !== 'chat' && kind !== 'artifact')) return;
+      const title =
+        kind === 'chat'
+          ? chats.trash.find((c) => c.id === id)?.title
+          : artifacts.trash.find((a) => a.id === id)?.title;
+      if (title === undefined) return;
+      void confirm({
+        title: 'Delete for good',
+        message: `Delete “${title}” for good?`,
+        detail:
+          'It will be removed from Recently deleted and cannot be brought back.',
+        button: 'Delete for good',
+      }).then((yes) => {
+        if (!yes) return;
+        if (kind === 'chat') {
+          commitChats(chatsModel.purgeConversation(chats, id));
+        } else {
+          commitArtifacts(artifactsModel.purgeArtifact(artifacts, id));
+        }
+        libraryChanged();
+      });
+    },
     'library:open': (url) => {
       const kept = historyUrl(url);
       if (kept !== null) openTab(kept, currentSpaceId());
@@ -2594,7 +2652,7 @@ export async function createTabs(
     },
     'library:menu': (list, x, y) => {
       if (
-        (list !== 'history' && list !== 'closed') ||
+        (list !== 'history' && list !== 'closed' && list !== 'deleted') ||
         !isNumber(x) ||
         !isNumber(y)
       )
@@ -2610,6 +2668,18 @@ export async function createTabs(
             closedTabs = clearClosed(closedTabs);
             closedSaver.schedule();
             libraryChanged();
+          } else if (parsed.action === 'empty-deleted') {
+            void confirm({
+              title: 'Empty Recently deleted',
+              message: 'Delete everything in Recently deleted for good?',
+              detail: 'These chats and artifacts cannot be brought back.',
+              button: 'Empty',
+            }).then((yes) => {
+              if (!yes) return;
+              commitChats(chatsModel.emptyChatTrash(chats));
+              commitArtifacts(artifactsModel.emptyArtifactTrash(artifacts));
+              libraryChanged();
+            });
           } else if (parsed.range !== 'all') {
             history = clearHistory(history, parsed.range, Date.now());
             historySaver.schedule();
@@ -2965,6 +3035,54 @@ export async function createTabs(
     const text = typeof query === 'string' ? query.slice(0, 200) : '';
     return searchHistory(history, text, 300);
   });
+  ipcMain.handle('library:deleted', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60_000;
+    const daysLeft = (deletedAt: number) =>
+      Math.max(
+        0,
+        Math.ceil(
+          (deletedAt + librarySettings.trashDays * dayMs - now) / dayMs,
+        ),
+      );
+    const items = [
+      ...chats.trash.map((c) => ({
+        kind: 'chat' as const,
+        id: c.id,
+        title: c.title,
+        emoji: emojiOr(c.emoji, DEFAULT_CHAT_EMOJI),
+        detail: `Chat · ${c.messages.length} message${c.messages.length === 1 ? '' : 's'}`,
+        deletedAt: c.deletedAt,
+        daysLeft: daysLeft(c.deletedAt),
+      })),
+      ...artifacts.trash.map((a) => ({
+        kind: 'artifact' as const,
+        id: a.id,
+        title: a.title,
+        emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
+        detail: `Artifact · ${a.kind}`,
+        deletedAt: a.deletedAt,
+        daysLeft: daysLeft(a.deletedAt),
+      })),
+    ];
+    return items.sort((a, b) => b.deletedAt - a.deletedAt);
+  });
+  ipcMain.handle('library-settings:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return librarySettings;
+  });
+  ipcMain.handle('library-settings:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    librarySettings = withLibrarySettings(librarySettings, changes);
+    librarySaver.schedule();
+    // A shorter time takes effect at once.
+    history = pruneHistory(history, Date.now(), librarySettings.historyDays);
+    historySaver.schedule();
+    purgeTrash();
+    libraryChanged();
+    return librarySettings;
+  });
   ipcMain.handle('library:closed', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return [...closedTabs.tabs].reverse().map((t) => {
@@ -3220,6 +3338,9 @@ ${artifact.content.slice(0, 1500)}`;
   // as the app starts, and a page that loads in that moment fails to start (it
   // never asks for its state). If a page has not checked in after a few seconds,
   // load it again (a few tries at most).
+  // Clear out Recently deleted (see purgeTrash) now and every few hours.
+  purgeTrash();
+  const trashTimer = setInterval(purgeTrash, 6 * 60 * 60_000);
   let reloadsLeft = 6;
   const watchdog = setInterval(() => {
     if (win.isDestroyed()) {
@@ -3255,6 +3376,7 @@ ${artifact.content.slice(0, 1500)}`;
     toolsSaver.flushSync();
     artifactsSaver.flushSync();
     namingSaver.flushSync();
+    librarySaver.flushSync();
     zoomSaver.flushSync();
     historySaver.flushSync();
     closedSaver.flushSync();
@@ -3271,6 +3393,9 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);
     ipcMain.removeHandler('library:history');
+    ipcMain.removeHandler('library:deleted');
+    ipcMain.removeHandler('library-settings:get');
+    ipcMain.removeHandler('library-settings:set');
     ipcMain.removeHandler('library:closed');
     ipcMain.removeHandler('naming:get');
     ipcMain.removeHandler('naming:set');
@@ -3283,6 +3408,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('artifact:read');
     ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
+    clearInterval(trashTimer);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);
   });

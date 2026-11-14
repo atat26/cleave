@@ -1,6 +1,7 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { HistoryEntry } from './history';
+import type { LibrarySettings } from './librarySettings';
 import type { ThemeChoice } from './themeSettings';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
@@ -156,6 +157,18 @@ export type LlmModelsResult =
   | { ok: false; error: string };
 
 // A conversation as the UI sees it (the messages themselves come later).
+// A deleted chat or artifact, as the Library lists it.
+export interface DeletedItemInfo {
+  kind: 'chat' | 'artifact';
+  id: number;
+  title: string;
+  emoji: string;
+  detail: string;
+  deletedAt: number;
+  // How many days until it is removed for good.
+  daysLeft: number;
+}
+
 // A recently closed tab, as the Library lists it.
 export interface ClosedTabInfo {
   id: number;
@@ -252,10 +265,23 @@ export interface BrowserApi {
   // The Library panel: browsing history and recently closed tabs.
   libraryHistory: (query: string) => Promise<HistoryEntry[]>;
   libraryClosed: () => Promise<ClosedTabInfo[]>;
+  // Chats and artifacts deleted lately, newest first, and what to do with them.
+  libraryDeleted: () => Promise<DeletedItemInfo[]>;
+  libraryRestore: (kind: 'chat' | 'artifact', id: number) => void;
+  libraryDeleteForever: (kind: 'chat' | 'artifact', id: number) => void;
+  // Settings > Library (history and Recently deleted).
+  librarySettingsGet: () => Promise<LibrarySettings>;
+  librarySettingsSet: (
+    changes: Partial<Omit<LibrarySettings, 'version'>>,
+  ) => Promise<LibrarySettings>;
   libraryOpen: (url: string) => void;
   libraryRemoveVisit: (id: number) => void;
   libraryReopenClosed: (id: number) => void;
-  showLibraryMenu: (list: 'history' | 'closed', x: number, y: number) => void;
+  showLibraryMenu: (
+    list: 'history' | 'closed' | 'deleted',
+    x: number,
+    y: number,
+  ) => void;
   onLibraryChanged: (callback: () => void) => () => void;
   // The small menu behind the zoom chip in the address bar.
   showZoomMenu: (x: number, y: number) => void;

@@ -14,6 +14,13 @@ const browserApi: BrowserApi = {
   showToolsMenu: (x, y) => ipcRenderer.send('toolbar:menu', x, y),
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
   libraryClosed: () => ipcRenderer.invoke('library:closed'),
+  libraryDeleted: () => ipcRenderer.invoke('library:deleted'),
+  libraryRestore: (kind, id) => ipcRenderer.send('library:restore', kind, id),
+  libraryDeleteForever: (kind, id) =>
+    ipcRenderer.send('library:delete-forever', kind, id),
+  librarySettingsGet: () => ipcRenderer.invoke('library-settings:get'),
+  librarySettingsSet: (changes) =>
+    ipcRenderer.invoke('library-settings:set', changes),
   libraryOpen: (url) => ipcRenderer.send('library:open', url),
   libraryRemoveVisit: (id) => ipcRenderer.send('library:remove-visit', id),
   libraryReopenClosed: (id) => ipcRenderer.send('library:reopen-closed', id),

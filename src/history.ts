@@ -57,8 +57,12 @@ const cleanTitle = (title: unknown): string =>
     : '';
 
 // Drop what is too old, and the oldest beyond the limit.
-export function pruneHistory(state: HistoryState, now: number): HistoryState {
-  const oldest = now - MAX_HISTORY_DAYS * DAY_MS;
+export function pruneHistory(
+  state: HistoryState,
+  now: number,
+  maxDays: number = MAX_HISTORY_DAYS,
+): HistoryState {
+  const oldest = now - maxDays * DAY_MS;
   let entries = state.entries.filter((e) => e.visitedAt >= oldest);
   if (entries.length > MAX_HISTORY_ENTRIES) {
     entries = entries.slice(entries.length - MAX_HISTORY_ENTRIES);
@@ -69,7 +73,11 @@ export function pruneHistory(state: HistoryState, now: number): HistoryState {
 }
 
 // Turn whatever is on disk into a valid history. Never throws.
-export function parseHistory(raw: unknown, now: number): HistoryState {
+export function parseHistory(
+  raw: unknown,
+  now: number,
+  maxDays: number = MAX_HISTORY_DAYS,
+): HistoryState {
   const state = defaultHistory();
   if (typeof raw !== 'object' || raw === null) return state;
   const list = (raw as { entries?: unknown }).entries;
@@ -102,7 +110,7 @@ export function parseHistory(raw: unknown, now: number): HistoryState {
     typeof rawNext === 'number' && Number.isInteger(rawNext) ? rawNext : 1,
     highest + 1,
   );
-  return pruneHistory(state, now);
+  return pruneHistory(state, now, maxDays);
 }
 
 // Note a visit to a page.
@@ -111,6 +119,7 @@ export function addVisit(
   url: unknown,
   title: unknown,
   now: number,
+  maxDays: number = MAX_HISTORY_DAYS,
 ): HistoryState {
   const kept = historyUrl(url);
   if (kept === null) return state;
@@ -137,6 +146,7 @@ export function addVisit(
       ],
     },
     now,
+    maxDays,
   );
 }
 
