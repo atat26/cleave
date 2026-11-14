@@ -1,5 +1,6 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
+import type { HistoryEntry } from './history';
 import type { ThemeChoice } from './themeSettings';
 import type { ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
@@ -155,6 +156,17 @@ export type LlmModelsResult =
   | { ok: false; error: string };
 
 // A conversation as the UI sees it (the messages themselves come later).
+// A recently closed tab, as the Library lists it.
+export interface ClosedTabInfo {
+  id: number;
+  url: string;
+  title: string;
+  closedAt: number;
+  // The Space it was in (if it still exists).
+  spaceName: string | null;
+  spaceEmoji: string | null;
+}
+
 export interface ChatInfo {
   id: number;
   title: string;
@@ -237,6 +249,14 @@ export interface BrowserApi {
   toggleSidebarPin: () => void;
   // The toolbar "…" menu (the browser's tools), opened at a place in the window.
   showToolsMenu: (x: number, y: number) => void;
+  // The Library panel: browsing history and recently closed tabs.
+  libraryHistory: (query: string) => Promise<HistoryEntry[]>;
+  libraryClosed: () => Promise<ClosedTabInfo[]>;
+  libraryOpen: (url: string) => void;
+  libraryRemoveVisit: (id: number) => void;
+  libraryReopenClosed: (id: number) => void;
+  showLibraryMenu: (list: 'history' | 'closed', x: number, y: number) => void;
+  onLibraryChanged: (callback: () => void) => () => void;
   // The small menu behind the zoom chip in the address bar.
   showZoomMenu: (x: number, y: number) => void;
   // Find in page. Only the find bar's own page uses these.

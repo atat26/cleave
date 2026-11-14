@@ -67,17 +67,23 @@ import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import {
   addVisit,
+  clearHistory,
   defaultHistory,
   historyUrl,
   parseHistory,
+  removeVisit,
+  searchHistory,
   setVisitTitle,
 } from './history';
 import {
+  clearClosed,
   defaultClosed,
   parseClosed,
   recordClosed,
+  takeClosedById,
   takeLastClosed,
 } from './recentlyClosed';
+import type { ClosedTab } from './recentlyClosed';
 import {
   defaultZoomSettings,
   parseZoomSettings,
@@ -137,6 +143,8 @@ import {
   parseToolsChoice,
   toolsMenuItems,
   zoomChipMenuItems,
+  libraryMenuItems,
+  parseLibraryChoice,
   parseAddChoice,
   parseArtifactChoice,
   parseChatChoice,
@@ -272,6 +280,18 @@ export async function createTabs(
     (raw) => parseHistory(raw, Date.now()),
     defaultHistory,
   );
+  // The Library panel asks again when history or the closed list changes (at most a
+  // few times a second).
+  let libraryTimer: ReturnType<typeof setTimeout> | null = null;
+  const libraryChanged = () => {
+    if (libraryTimer !== null) return;
+    libraryTimer = setTimeout(() => {
+      libraryTimer = null;
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('library:changed');
+      }
+    }, 300);
+  };
   const historySaver = createSaver(historyFile, () => history);
   const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
   let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
@@ -878,6 +898,7 @@ export async function createTabs(
       if (next !== history) {
         history = next;
         historySaver.schedule();
+        libraryChanged();
       }
     });
     contents.on('did-navigate', (_event, url) => {
@@ -885,6 +906,7 @@ export async function createTabs(
       if (restoredLoads.delete(tab.id) === false) {
         history = addVisit(history, url, contents.getTitle(), Date.now());
         historySaver.schedule();
+        libraryChanged();
       }
       // A new page: the search is over.
       if (tab.id === findTabId) closeFind(false);
@@ -945,12 +967,8 @@ export async function createTabs(
   // Ctrl+Shift+T: bring back the tab you closed last, in its Space (or outside
   // every Space if that Space is gone). A page still kept as a closed link in that
   // Space comes back as that same link, not as a second copy.
-  const reopenLastClosed = () => {
-    const taken = takeLastClosed(closedTabs);
-    if (!taken) return;
-    closedTabs = taken.state;
-    closedSaver.schedule();
-    const { url, spaceId } = taken.tab;
+  const reopenClosedTab = (closed: ClosedTab) => {
+    const { url, spaceId } = closed;
     const space =
       spaceId !== null && model.findSpace(state, spaceId) ? spaceId : null;
     const kept =
@@ -961,6 +979,15 @@ export async function createTabs(
           );
     if (kept) reopenTab(kept.id);
     else openTab(url, space);
+  };
+
+  const reopenLastClosed = () => {
+    const taken = takeLastClosed(closedTabs);
+    if (!taken) return;
+    closedTabs = taken.state;
+    closedSaver.schedule();
+    libraryChanged();
+    reopenClosedTab(taken.tab);
   };
 
   // ---- Zoom, print, developer tools ------------------------------------------
@@ -1089,6 +1116,7 @@ export async function createTabs(
       Date.now(),
     );
     closedSaver.schedule();
+    libraryChanged();
     destroyView(id);
     commitAndShow(withSomethingActive(model.closeTab(state, id)));
   };
@@ -2541,6 +2569,69 @@ export async function createTabs(
       applyLayout(true);
       sendState();
     },
+    // The Library panel: open a page from history, forget a visit, reopen a closed
+    // tab, and the "…" menu that clears a list.
+    'library:open': (url) => {
+      const kept = historyUrl(url);
+      if (kept !== null) openTab(kept, currentSpaceId());
+    },
+    'library:remove-visit': (id) => {
+      if (!isId(id)) return;
+      const next = removeVisit(history, id);
+      if (next === history) return;
+      history = next;
+      historySaver.schedule();
+      libraryChanged();
+    },
+    'library:reopen-closed': (id) => {
+      if (!isId(id)) return;
+      const taken = takeClosedById(closedTabs, id);
+      if (!taken) return;
+      closedTabs = taken.state;
+      closedSaver.schedule();
+      libraryChanged();
+      reopenClosedTab(taken.tab);
+    },
+    'library:menu': (list, x, y) => {
+      if (
+        (list !== 'history' && list !== 'closed') ||
+        !isNumber(x) ||
+        !isNumber(y)
+      )
+        return;
+      showMenu(
+        libraryMenuItems(list),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseLibraryChoice(choice);
+          if (!parsed) return;
+          if (parsed.action === 'clear-closed') {
+            closedTabs = clearClosed(closedTabs);
+            closedSaver.schedule();
+            libraryChanged();
+          } else if (parsed.range !== 'all') {
+            history = clearHistory(history, parsed.range, Date.now());
+            historySaver.schedule();
+            libraryChanged();
+          } else {
+            void confirm({
+              title: 'Clear history',
+              message: 'Clear all browsing history?',
+              detail:
+                'Every page in your history will be removed. This cannot be undone.',
+              button: 'Clear history',
+            }).then((yes) => {
+              if (!yes) return;
+              history = clearHistory(history, 'all', Date.now());
+              historySaver.schedule();
+              libraryChanged();
+            });
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     // The toolbar "…" menu: the browser's tools.
     'toolbar:menu': (x, y) => {
       if (!isNumber(x) || !isNumber(y)) return;
@@ -2868,6 +2959,27 @@ export async function createTabs(
   // change applies from the assistant's next reply.
   const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
     event.sender === win.webContents;
+  // The Library panel reads the lists (it asks again when told they changed).
+  ipcMain.handle('library:history', (event, query: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const text = typeof query === 'string' ? query.slice(0, 200) : '';
+    return searchHistory(history, text, 300);
+  });
+  ipcMain.handle('library:closed', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return [...closedTabs.tabs].reverse().map((t) => {
+      const space =
+        t.spaceId === null ? undefined : model.findSpace(state, t.spaceId);
+      return {
+        id: t.id,
+        url: t.url,
+        title: t.title,
+        closedAt: t.closedAt,
+        spaceName: space?.name ?? null,
+        spaceEmoji: space ? emojiOr(space.emoji, DEFAULT_SPACE_EMOJI) : null,
+      };
+    });
+  });
   ipcMain.handle('naming:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return namingSettings.auto;
@@ -3158,6 +3270,8 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('popup:ready', onPopupReady);
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);
+    ipcMain.removeHandler('library:history');
+    ipcMain.removeHandler('library:closed');
     ipcMain.removeHandler('naming:get');
     ipcMain.removeHandler('naming:set');
     ipcMain.removeHandler('name:ai');

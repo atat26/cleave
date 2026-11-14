@@ -1321,3 +1321,59 @@ export function parseToolsChoice(id: string): ToolsChoice | null {
   }
   return null;
 }
+
+// ---- The Library's "…" menu --------------------------------------------------------
+
+export type LibraryChoice =
+  | { action: 'clear-history'; range: 'hour' | 'day' | 'all' }
+  | { action: 'clear-closed' };
+
+// What the "…" next to the Library's search box offers, for the list shown.
+export function libraryMenuItems(list: 'history' | 'closed'): MenuItem[] {
+  if (list === 'closed') {
+    return [
+      {
+        type: 'item',
+        id: 'library.clear-closed',
+        label: 'Clear this list',
+        icon: 'trash',
+      },
+    ];
+  }
+  return [
+    {
+      type: 'item',
+      id: 'library.clear-hour',
+      label: 'Clear the last hour',
+      icon: 'clock',
+    },
+    {
+      type: 'item',
+      id: 'library.clear-day',
+      label: 'Clear the last 24 hours',
+      icon: 'clock',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'library.clear-all',
+      label: 'Clear all history…',
+      icon: 'trash',
+      danger: true,
+    },
+  ];
+}
+
+export function parseLibraryChoice(id: string): LibraryChoice | null {
+  switch (id) {
+    case 'library.clear-hour':
+      return { action: 'clear-history', range: 'hour' };
+    case 'library.clear-day':
+      return { action: 'clear-history', range: 'day' };
+    case 'library.clear-all':
+      return { action: 'clear-history', range: 'all' };
+    case 'library.clear-closed':
+      return { action: 'clear-closed' };
+  }
+  return null;
+}

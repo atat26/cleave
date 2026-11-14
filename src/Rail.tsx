@@ -16,6 +16,7 @@ const RAIL_ITEMS: {
   bottom?: boolean;
 }[] = [
   { panel: 'extensions', label: 'Extensions', icon: 'puzzle' },
+  { panel: 'library', label: 'Library', icon: 'history' },
   { panel: 'artifacts', label: 'Artifacts', icon: 'doc' },
   { panel: 'skills', label: 'Skills', icon: 'sparkle' },
   { panel: 'tools', label: 'Tools', icon: 'tools' },
