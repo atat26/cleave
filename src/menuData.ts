@@ -954,6 +954,7 @@ export type PageChoice =
   | { action: 'back' }
   | { action: 'forward' }
   | { action: 'reload' }
+  | { action: 'find' }
   | { action: 'add-page-to-chat' }
   | { action: 'open-link' }
   | { action: 'open-link-in'; spaceId: number }
@@ -988,6 +989,13 @@ export function pageMenuItems(options: {
       disabled: !options.canGoForward,
     },
     { type: 'item', id: 'page.reload', label: 'Reload', icon: 'reload' },
+    {
+      type: 'item',
+      id: 'page.find',
+      label: 'Find in page',
+      icon: 'search',
+      shortcut: 'Ctrl+F',
+    },
     { type: 'separator' },
     {
       type: 'item',
@@ -1115,6 +1123,8 @@ export function parsePageChoice(id: string): PageChoice | null {
       return { action: 'forward' };
     case 'page.reload':
       return { action: 'reload' };
+    case 'page.find':
+      return { action: 'find' };
     case 'page.add-to-chat':
       return { action: 'add-page-to-chat' };
     case 'page.open-link':
@@ -1173,4 +1183,27 @@ export function parseEmojiChoice(id: string): EmojiChoice | null {
   if (!id.startsWith('emoji:')) return null;
   const emoji = cleanEmoji(id.slice('emoji:'.length));
   return emoji === null ? null : { emoji };
+}
+
+// ---- The toolbar "…" menu (browser tools) -------------------------------------
+// One menu button for the browser's tools. More go in here as they are built
+// (zoom, print, downloads, history...).
+
+export type ToolsChoice = { action: 'find' };
+
+export function toolsMenuItems(options: { hasPage: boolean }): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'tools.find',
+      label: 'Find in page',
+      icon: 'search',
+      shortcut: 'Ctrl+F',
+      disabled: !options.hasPage,
+    },
+  ];
+}
+
+export function parseToolsChoice(id: string): ToolsChoice | null {
+  return id === 'tools.find' ? { action: 'find' } : null;
 }

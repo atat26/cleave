@@ -246,6 +246,15 @@ export function Toolbar({
         )}
         <div className="tb-actions">
           <ViewSwitch viewMode={viewMode} />
+          <IconButton
+            icon="more"
+            label="More: find in page and other tools"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              window.browserApi.showToolsMenu(box.right, box.bottom + 4);
+            }}
+          />
         </div>
         <div className="loadbar" aria-hidden="true" />
       </form>

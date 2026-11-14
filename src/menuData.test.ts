@@ -20,6 +20,8 @@ import {
   parseChatChoice,
   parseEditChoice,
   parseEmojiChoice,
+  parseToolsChoice,
+  toolsMenuItems,
   parseLinkChoice,
   parseMessageChoice,
   parseModelChoice,
@@ -643,6 +645,7 @@ test('the page menu: Back and Forward grey out when there is nowhere to go', () 
     'page.back',
     'page.forward',
     'page.reload',
+    'page.find',
     'page.add-to-chat',
   ]);
 });
@@ -839,4 +842,19 @@ test('"Name with AI" is in the Space and artifact menus, and a closed page can b
   assert.equal(menuIds(tabMenuItems(kept, tab.id)!)[0], 'tab.open');
   // An open page does not.
   assert.ok(!menuIds(tabMenuItems(moved, tab.id)!).includes('tab.open'));
+});
+
+test('the toolbar "…" menu offers Find in page (greyed with no page) and reads it back', () => {
+  const items = toolsMenuItems({ hasPage: true });
+  assert.deepEqual(menuIds(items), ['tools.find']);
+  assert.equal(entry(items, 'tools.find').shortcut, 'Ctrl+F');
+  assert.notEqual(entry(items, 'tools.find').disabled, true);
+  assert.equal(
+    entry(toolsMenuItems({ hasPage: false }), 'tools.find').disabled,
+    true,
+  );
+  assert.deepEqual(parseToolsChoice('tools.find'), { action: 'find' });
+  assert.equal(parseToolsChoice('tools.zoom'), null);
+  // The page's right-click menu has it too.
+  assert.deepEqual(parsePageChoice('page.find'), { action: 'find' });
 });
