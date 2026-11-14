@@ -42,6 +42,7 @@ import {
   addSpace,
   addTab,
   closeTab,
+  moveTab,
   defaultState,
   openArtifactTab,
   setSpaceEmoji,
@@ -268,13 +269,14 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(labels.slice(0, 4), [
+  assert.deepEqual(labels.slice(0, 5), [
     'New chat',
     'Rename',
     'Change icon…',
+    'Name with AI',
     'Delete chat',
   ]);
-  assert.deepEqual(labels.slice(4), ['Second', 'First']);
+  assert.deepEqual(labels.slice(5), ['Second', 'First']);
   const activeId = chats.activeId;
   assert.equal(entry(items, `chat.select:${activeId}`).checked, true);
   assert.equal(entry(items, `chat.select:${firstId}`).checked, false);
@@ -294,6 +296,7 @@ test('the chat row menu and chat ids', () => {
     `chat.select:${id}`,
     `chat.rename:${id}`,
     `chat.icon:${id}`,
+    `chat.name-ai:${id}`,
     `chat.delete:${id}`,
   ]);
   assert.equal(chatRowMenuItems(chats, 99999), null);
@@ -304,6 +307,10 @@ test('the chat row menu and chat ids', () => {
   });
   assert.deepEqual(parseChatChoice('chat.icon:7'), {
     action: 'icon',
+    chatId: 7,
+  });
+  assert.deepEqual(parseChatChoice('chat.name-ai:7'), {
+    action: 'name-ai',
     chatId: 7,
   });
   assert.deepEqual(parseChatChoice('chat.delete:7'), {
@@ -812,4 +819,24 @@ test('Spaces and artifacts show their emoji in the menus that list them', () => 
     (i) => i.type === 'item' && i.id === 'tab.move',
   ) as MenuEntry;
   assert.equal(entry(tabMove.submenu!, `tab.move:${plain.id}`).emoji, '📁');
+});
+
+test('"Name with AI" is in the Space and artifact menus, and a closed page can be opened from its menu', () => {
+  assert.deepEqual(parseSpaceChoice('space.name-ai'), { action: 'name-ai' });
+  assert.deepEqual(parseArtifactChoice('artifact.name-ai'), {
+    action: 'name-ai',
+  });
+  assert.deepEqual(parseTabChoice('tab.open'), { action: 'open' });
+  const spaces = addSpace(defaultState(), 'Trip');
+  assert.ok(
+    menuIds(spaceMenuItems(spaces.state, spaces.id)!).includes('space.name-ai'),
+  );
+  // A page kept in a Space with no tab open offers "Open" first.
+  const tab = addTab(spaces.state, { url: 'https://a.example' });
+  const moved = moveTab(tab.state, tab.id, spaces.id);
+  const kept = closeTab(moved, tab.id);
+  assert.equal(kept.tabs.find((t) => t.id === tab.id)!.closed, true);
+  assert.equal(menuIds(tabMenuItems(kept, tab.id)!)[0], 'tab.open');
+  // An open page does not.
+  assert.ok(!menuIds(tabMenuItems(moved, tab.id)!).includes('tab.open'));
 });

@@ -407,12 +407,8 @@ export function ChatComposer({
       )}
       {/* The Add button and the linked things share ONE row (it scrolls sideways
           if there are many), so they never push the conversation out of view. */}
-      {!compact && (
+      {!compact && refs.length > 0 && (
         <div className="chips chips-row">
-          <AddMenuButton
-            onAddPage={() => openFromButton('page')}
-            onAddArtifact={() => openFromButton('artifact')}
-          />
           <LinkChips
             chatId={chat.id}
             refs={refs}
@@ -422,8 +418,14 @@ export function ChatComposer({
           />
         </div>
       )}
-      <div className="composer">
+      <div className="composer reveal-host">
         {before}
+        {!compact && (
+          <AddMenuButton
+            onAddPage={() => openFromButton('page')}
+            onAddArtifact={() => openFromButton('artifact')}
+          />
+        )}
         {compact && refs.length > 0 && (
           <button
             type="button"

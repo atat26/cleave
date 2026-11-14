@@ -33,6 +33,23 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   const [missing, setMissing] = useState(false);
   const [text, setText] = useState('');
   const [status, setStatus] = useState<'saved' | 'saving' | 'failed'>('saved');
+  // "Saved" shows for a moment after a save, then goes quiet (it is back whenever
+  // the pointer is on the header). Saving and failures always show.
+  const [savedFlash, setSavedFlash] = useState(false);
+  const wasSaving = useRef(false);
+  useEffect(() => {
+    if (status === 'saving') {
+      wasSaving.current = true;
+      setSavedFlash(false);
+      return;
+    }
+    if (status === 'saved' && wasSaving.current) {
+      wasSaving.current = false;
+      setSavedFlash(true);
+      const timer = setTimeout(() => setSavedFlash(false), 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [status]);
   // The text not yet sent to the app (null when everything is saved).
   const pending = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -207,6 +224,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       }}
     >
       <header
+        className="reveal-host"
         // Right-click the header for the same menu as the artifact's sidebar row.
         onContextMenu={(event) => {
           if (event.target instanceof HTMLInputElement) return;
@@ -278,7 +296,11 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
         <Badge>{KIND_WORDS[tab.kind]}</Badge>
         <span
           role="status"
-          className="row-flex"
+          className={
+            status !== 'saved' || savedFlash
+              ? 'row-flex reveal is-on'
+              : 'row-flex reveal'
+          }
           style={{
             gap: 'var(--s-1)',
             fontSize: 'var(--fs-xs)',

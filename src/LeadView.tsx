@@ -5,7 +5,7 @@ import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { Favicon, labelFor } from './Sidebar';
 import { NameButton } from './NameButton';
-import { Button, ItemEmoji, SpaceIcon } from './ui/controls';
+import { Button, IconButton, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
 import type { ArtifactInfo, SpaceInfo, TabInfo } from './types';
 
@@ -24,8 +24,10 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
   code: 'Code',
 };
 
-// One item on the overview: a card you click to open, with its own buttons. A
-// closed one is lighter and dashed. The Space's colour runs along its top edge.
+// One item on the overview: a card you click to open. Its other actions (close,
+// take out, delete...) are in one "…" menu that shows while the pointer is on the
+// card (the same menu as right-click). A closed one is lighter and dashed. The
+// Space's colour runs along its top edge.
 function OverviewCard({
   color,
   icon,
@@ -33,8 +35,7 @@ function OverviewCard({
   subtitle,
   open,
   onOpen,
-  onContextMenu,
-  children,
+  onMenu,
 }: {
   color: string;
   icon: ReactNode;
@@ -43,12 +44,14 @@ function OverviewCard({
   // Open as a tab right now.
   open: boolean;
   onOpen: () => void;
-  onContextMenu?: (event: React.MouseEvent) => void;
-  children: ReactNode;
+  // Show the item's menu at a place in the window.
+  onMenu: (x: number, y: number) => void;
 }) {
   return (
     <div
-      className={open ? 'card ov-card' : 'card ov-card is-closed'}
+      className={
+        open ? 'card ov-card reveal-host' : 'card ov-card is-closed reveal-host'
+      }
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -59,7 +62,10 @@ function OverviewCard({
           onOpen();
         }
       }}
-      onContextMenu={onContextMenu}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onMenu(event.clientX, event.clientY);
+      }}
       style={{ borderTop: `3px solid ${color}` }}
     >
       <div className="row-flex" style={{ gap: 10 }}>
@@ -72,13 +78,18 @@ function OverviewCard({
             {subtitle}
           </div>
         </div>
-      </div>
-      <div
-        className="ov-actions"
-        // Buttons here must not also open the card.
-        onClick={(event) => event.stopPropagation()}
-      >
-        {children}
+        <IconButton
+          icon="more"
+          size="sm"
+          className="reveal ov-more"
+          label={`More actions for ${title}`}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            event.stopPropagation(); // Don't also open the card.
+            const box = event.currentTarget.getBoundingClientRect();
+            onMenu(box.left, box.bottom + 2);
+          }}
+        />
       </div>
     </div>
   );
@@ -133,6 +144,7 @@ export function LeadView({
       }}
     >
       <div
+        className="reveal-host"
         onContextMenu={(event) => {
           event.preventDefault();
           window.browserApi.showSpaceMenu(
@@ -233,41 +245,8 @@ export function LeadView({
               }`}
               open={!tab.closed}
               onOpen={() => window.browserApi.selectTab(tab.id)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                window.browserApi.showTabMenu(
-                  tab.id,
-                  event.clientX,
-                  event.clientY,
-                );
-              }}
-            >
-              {tab.closed ? (
-                <Button
-                  size="sm"
-                  onClick={() => window.browserApi.reopenTab(tab.id)}
-                >
-                  Open
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  title="Close the tab but keep the page here"
-                  onClick={() => window.browserApi.closeTab(tab.id)}
-                >
-                  Close
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="danger"
-                title="Delete this page from the Space for good"
-                aria-label={`Delete ${labelFor(tab)}`}
-                onClick={() => window.browserApi.removeTab(tab.id)}
-              >
-                Delete
-              </Button>
-            </OverviewCard>
+              onMenu={(x, y) => window.browserApi.showTabMenu(tab.id, x, y)}
+            />
           ))}
         </div>
       )}
@@ -291,41 +270,10 @@ export function LeadView({
                 subtitle={`${KIND_WORDS[a.kind]} · ${open ? 'open' : 'closed'}`}
                 open={open}
                 onOpen={() => window.browserApi.artifactOpen(a.id)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  window.browserApi.showArtifactMenu(
-                    a.id,
-                    event.clientX,
-                    event.clientY,
-                  );
-                }}
-              >
-                {open && (
-                  <Button
-                    size="sm"
-                    title="Close the tab but keep the artifact here"
-                    onClick={() => window.browserApi.artifactClose(a.id)}
-                  >
-                    Close
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  title="Keep the artifact, but take it out of this Space"
-                  onClick={() => window.browserApi.artifactMove(a.id, null)}
-                >
-                  Take out
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  title="Delete the artifact for good"
-                  aria-label={`Delete ${a.title}`}
-                  onClick={() => window.browserApi.artifactDelete(a.id)}
-                >
-                  Delete
-                </Button>
-              </OverviewCard>
+                onMenu={(x, y) =>
+                  window.browserApi.showArtifactMenu(a.id, x, y)
+                }
+              />
             );
           })}
         </div>

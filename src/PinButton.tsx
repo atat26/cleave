@@ -8,6 +8,7 @@ export function PinButton({ pinned }: { pinned: boolean }) {
     <IconButton
       icon="pin"
       size="sm"
+      className="reveal"
       pressed={pinned}
       label={pinned ? 'Unpin the sidebar' : 'Pin the sidebar open'}
       onClick={() => window.browserApi.toggleSidebarPin()}

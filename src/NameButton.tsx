@@ -43,6 +43,7 @@ export function NameButton({
     <>
       <IconButton
         icon={busy ? 'spinner' : 'sparkle'}
+        className={busy || problem ? 'reveal is-on' : 'reveal'}
         size="sm"
         label={busy ? 'Naming…' : 'Name it with AI'}
         aria-busy={busy}

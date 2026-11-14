@@ -31,6 +31,7 @@ const artifactEmoji = (artifact: { emoji: string | null; kind: string }) =>
 // ---- The tab menu --------------------------------------------------------------
 
 export type TabChoice =
+  | { action: 'open' }
   | { action: 'new-below' }
   | { action: 'reload' }
   | { action: 'duplicate' }
@@ -85,6 +86,18 @@ export function tabMenuItems(
   ).length;
 
   const items: MenuItem[] = [
+    // A page kept in a Space with no tab open: the first thing to do is open it.
+    ...(tab.closed
+      ? [
+          {
+            type: 'item',
+            id: 'tab.open',
+            label: 'Open',
+            icon: 'page',
+          } as MenuItem,
+          { type: 'separator' } as MenuItem,
+        ]
+      : []),
     { type: 'item', id: 'tab.new-below', label: 'New tab below', icon: 'plus' },
     {
       type: 'item',
@@ -150,6 +163,8 @@ export function tabMenuItems(
 // What a chosen id from the tab menu means, or null if it is not one of its ids.
 export function parseTabChoice(id: string): TabChoice | null {
   switch (id) {
+    case 'tab.open':
+      return { action: 'open' };
     case 'tab.new-below':
       return { action: 'new-below' };
     case 'tab.reload':
@@ -184,6 +199,7 @@ export type SpaceChoice =
   | { action: 'add-to-chat' }
   | { action: 'rename' }
   | { action: 'icon' }
+  | { action: 'name-ai' }
   | { action: 'color'; color: model.SpaceColor }
   | { action: 'toggle-collapse' }
   | { action: 'ungroup' }
@@ -219,6 +235,12 @@ export function spaceMenuItems(
     { type: 'separator' },
     { type: 'item', id: 'space.rename', label: 'Rename', icon: 'pencil' },
     { type: 'item', id: 'space.icon', label: 'Change icon…', icon: 'sparkle' },
+    {
+      type: 'item',
+      id: 'space.name-ai',
+      label: 'Name with AI',
+      icon: 'sparkle',
+    },
     {
       type: 'item',
       id: 'space.color',
@@ -280,6 +302,8 @@ export function parseSpaceChoice(id: string): SpaceChoice | null {
       return { action: 'rename' };
     case 'space.icon':
       return { action: 'icon' };
+    case 'space.name-ai':
+      return { action: 'name-ai' };
     case 'space.toggle-collapse':
       return { action: 'toggle-collapse' };
     case 'space.ungroup':
@@ -301,6 +325,7 @@ export type ChatChoice =
   | { action: 'new' }
   | { action: 'rename'; chatId: number }
   | { action: 'icon'; chatId: number }
+  | { action: 'name-ai'; chatId: number }
   | { action: 'delete'; chatId: number };
 
 const shortTitle = (title: string) =>
@@ -324,6 +349,12 @@ export function chatRowMenuItems(
       type: 'item',
       id: `chat.icon:${chatId}`,
       label: 'Change icon…',
+      icon: 'sparkle',
+    },
+    {
+      type: 'item',
+      id: `chat.name-ai:${chatId}`,
+      label: 'Name with AI',
       icon: 'sparkle',
     },
     { type: 'separator' },
@@ -358,6 +389,12 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     {
       type: 'item',
+      id: `chat.name-ai:${active}`,
+      label: 'Name with AI',
+      icon: 'sparkle',
+    },
+    {
+      type: 'item',
       id: `chat.delete:${active}`,
       label: 'Delete chat',
       icon: 'trash',
@@ -380,10 +417,10 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
 
 export function parseChatChoice(id: string): ChatChoice | null {
   if (id === 'chat.new') return { action: 'new' };
-  const m = /^chat\.(select|rename|icon|delete):(\d+)$/.exec(id);
+  const m = /^chat\.(select|rename|icon|name-ai|delete):(\d+)$/.exec(id);
   if (!m) return null;
   return {
-    action: m[1] as 'select' | 'rename' | 'icon' | 'delete',
+    action: m[1] as 'select' | 'rename' | 'icon' | 'name-ai' | 'delete',
     chatId: Number(m[2]),
   };
 }
@@ -455,6 +492,7 @@ export type ArtifactChoice =
   | { action: 'close' }
   | { action: 'rename' }
   | { action: 'icon' }
+  | { action: 'name-ai' }
   | { action: 'add-to-chat' }
   | { action: 'move'; spaceId: number }
   | { action: 'move-new-space' }
@@ -505,6 +543,12 @@ export function artifactMenuItems(
     },
     {
       type: 'item',
+      id: 'artifact.name-ai',
+      label: 'Name with AI',
+      icon: 'sparkle',
+    },
+    {
+      type: 'item',
       id: 'artifact.add-to-chat',
       label: 'Add to chat',
       icon: 'chat',
@@ -548,6 +592,8 @@ export function parseArtifactChoice(id: string): ArtifactChoice | null {
       return { action: 'rename' };
     case 'artifact.icon':
       return { action: 'icon' };
+    case 'artifact.name-ai':
+      return { action: 'name-ai' };
     case 'artifact.add-to-chat':
       return { action: 'add-to-chat' };
     case 'artifact.move-new-space':
