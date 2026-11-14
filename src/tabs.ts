@@ -66,6 +66,19 @@ import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import {
+  addVisit,
+  defaultHistory,
+  historyUrl,
+  parseHistory,
+  setVisitTitle,
+} from './history';
+import {
+  defaultClosed,
+  parseClosed,
+  recordClosed,
+  takeLastClosed,
+} from './recentlyClosed';
+import {
   defaultZoomSettings,
   parseZoomSettings,
   stepZoom,
@@ -223,6 +236,8 @@ export async function createTabs(
   }
 
   const views = new Map<number, WebContentsView>();
+  // Tabs saved from last time: the page loaded when one wakes up is not a visit.
+  const restoredLoads = new Set(state.tabs.map((t) => t.id));
   const saver = createSaver(file, () => state);
   const chatsSaver = createSaver(chatsFile, () => chats);
   const artifactsSaver = createSaver(artifactsFile, () => artifacts);
@@ -249,6 +264,18 @@ export async function createTabs(
     defaultZoomSettings,
   );
   const zoomSaver = createSaver(zoomFile, () => zoomSettings);
+  // Browsing history and the tabs you closed recently (see history.ts and
+  // recentlyClosed.ts).
+  const historyFile = path.join(app.getPath('userData'), 'history.json');
+  let history = await loadJson(
+    historyFile,
+    (raw) => parseHistory(raw, Date.now()),
+    defaultHistory,
+  );
+  const historySaver = createSaver(historyFile, () => history);
+  const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
+  let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
+  const closedSaver = createSaver(closedFile, () => closedTabs);
 
   // The Spaces and tabs as the chat sees them (titles and addresses).
   const workspace = (): Workspace => ({
@@ -846,7 +873,19 @@ export async function createTabs(
         total: result.matches,
       });
     });
-    contents.on('did-navigate', () => {
+    contents.on('page-title-updated', (_event, title) => {
+      const next = setVisitTitle(history, contents.getURL(), title);
+      if (next !== history) {
+        history = next;
+        historySaver.schedule();
+      }
+    });
+    contents.on('did-navigate', (_event, url) => {
+      // A new page is a visit (but not the load of a tab restored from last time).
+      if (restoredLoads.delete(tab.id) === false) {
+        history = addVisit(history, url, contents.getTitle(), Date.now());
+        historySaver.schedule();
+      }
       // A new page: the search is over.
       if (tab.id === findTabId) closeFind(false);
       // The new page will report its own icon.
@@ -901,6 +940,27 @@ export async function createTabs(
     if (findTabId === null) return;
     if (activeTabId() !== findTabId || !pageIsShown()) closeFind(false);
     else placeFind();
+  };
+
+  // Ctrl+Shift+T: bring back the tab you closed last, in its Space (or outside
+  // every Space if that Space is gone). A page still kept as a closed link in that
+  // Space comes back as that same link, not as a second copy.
+  const reopenLastClosed = () => {
+    const taken = takeLastClosed(closedTabs);
+    if (!taken) return;
+    closedTabs = taken.state;
+    closedSaver.schedule();
+    const { url, spaceId } = taken.tab;
+    const space =
+      spaceId !== null && model.findSpace(state, spaceId) ? spaceId : null;
+    const kept =
+      space === null
+        ? undefined
+        : state.tabs.find(
+            (t) => t.closed && t.spaceId === space && historyUrl(t.url) === url,
+          );
+    if (kept) reopenTab(kept.id);
+    else openTab(url, space);
   };
 
   // ---- Zoom, print, developer tools ------------------------------------------
@@ -1023,6 +1083,12 @@ export async function createTabs(
     const tab = model.findTab(state, id);
     if (!tab || tab.closed) return;
     syncLinkSnapshots(); // So a chat's link to this tab remembers its latest name.
+    closedTabs = recordClosed(
+      closedTabs,
+      { url: tab.url, title: tab.title, spaceId: tab.spaceId },
+      Date.now(),
+    );
+    closedSaver.schedule();
     destroyView(id);
     commitAndShow(withSomethingActive(model.closeTab(state, id)));
   };
@@ -2226,6 +2292,9 @@ export async function createTabs(
     } else if (key === 'i' && input.shift) {
       event.preventDefault();
       toggleDevTools();
+    } else if (key === 't' && input.shift) {
+      event.preventDefault();
+      reopenLastClosed();
     } else if (key === 't') {
       event.preventDefault();
       openTab(NEW_TAB_URL, currentSpaceId());
@@ -3073,6 +3142,10 @@ ${artifact.content.slice(0, 1500)}`;
     chatsSaver.flushSync();
     toolsSaver.flushSync();
     artifactsSaver.flushSync();
+    namingSaver.flushSync();
+    zoomSaver.flushSync();
+    historySaver.flushSync();
+    closedSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();
