@@ -9,6 +9,7 @@ import {
   MAX_HISTORY_DAYS,
   MAX_HISTORY_ENTRIES,
   parseHistory,
+  pruneHistory,
   removeVisit,
   SAME_VISIT_MS,
   searchHistory,
@@ -230,4 +231,24 @@ test('junk on disk is dropped; good entries survive in order', () => {
   for (const junk of [null, 5, 'x', [], {}, { entries: 'no' }]) {
     assert.equal(parseHistory(junk, NOW).entries.length, 0);
   }
+});
+
+test('the number of days kept can be chosen', () => {
+  let state = addVisit(
+    defaultHistory(),
+    'https://old.example/',
+    'Old',
+    NOW - 10 * DAY,
+    7,
+  );
+  state = addVisit(state, 'https://new.example/', 'New', NOW - 2 * DAY, 7);
+  state = addVisit(state, 'https://newest.example/', 'Newest', NOW, 7);
+  // The first visit was 10 days before the last one: past the 7 days chosen.
+  assert.deepEqual(
+    state.entries.map((e) => e.title),
+    ['New', 'Newest'],
+  );
+  assert.equal(pruneHistory(state, NOW + 6 * DAY, 7).entries.length, 1);
+  assert.equal(parseHistory(state, NOW + 30 * DAY, 90).entries.length, 2);
+  assert.equal(parseHistory(state, NOW + 30 * DAY, 7).entries.length, 0);
 });

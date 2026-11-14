@@ -117,10 +117,17 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+// A deleted chat, kept for a while so it can be brought back.
+export interface TrashedConversation extends Conversation {
+  deletedAt: number;
+}
+
 export interface ChatsState {
   version: 1;
   // In the order they were created.
   conversations: Conversation[];
+  // Deleted chats (see restoreConversation). Nothing else in the app looks here.
+  trash: TrashedConversation[];
   // There is always at least one conversation, and one of them is active.
   activeId: number;
   nextId: number;
@@ -130,6 +137,8 @@ export const DEFAULT_CHAT_TITLE = 'New chat';
 // The longest message you can send, in characters.
 export const MAX_USER_CHARS = 20_000;
 const MAX_CONVERSATIONS = 500;
+// How many deleted chats are kept at most.
+export const MAX_TRASH = 200;
 const MAX_TITLE = 80;
 const AUTO_TITLE_CHARS = 40;
 const MAX_MESSAGES = 2000;
@@ -198,6 +207,7 @@ export function defaultChats(now = Date.now()): ChatsState {
   return {
     version: 1,
     conversations: [emptyConversation(1, now)],
+    trash: [],
     activeId: 1,
     nextId: 2,
   };
@@ -317,6 +327,99 @@ function partsFromOldReply(m: Record<string, unknown>): MessagePart[] {
 const joinParts = (parts: MessagePart[], type: 'text' | 'thinking') =>
   parts.flatMap((p) => (p.type === type ? [p.text] : [])).join('');
 
+// One saved conversation, checked (item.id has already been checked). `maxId` is
+// the highest id found in it (its own and its messages'), so new ids never repeat.
+function parseConversation(
+  item: Record<string, unknown> & { id: number },
+  now: number,
+): { conversation: Conversation; maxId: number } {
+  let maxId = item.id;
+
+  const messages: ChatMessage[] = [];
+  const messageIds = new Set<number>();
+  if (Array.isArray(item.messages)) {
+    for (const m of item.messages) {
+      if (messages.length >= MAX_MESSAGES) break;
+      if (!isRecord(m) || !isId(m.id) || messageIds.has(m.id)) continue;
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      if (typeof m.content !== 'string') continue;
+      messageIds.add(m.id);
+      maxId = Math.max(maxId, m.id);
+
+      // A reply keeps its parts in order; one saved before that is converted.
+      // Content and thinking are always rebuilt from the parts, so the two can
+      // never disagree.
+      let parts: MessagePart[] = [];
+      let content = m.content.slice(0, MAX_CONTENT);
+      let reasoning = str(m.reasoning, MAX_REASONING);
+      if (m.role === 'assistant') {
+        parts = Array.isArray(m.parts)
+          ? parseParts(m.parts)
+          : partsFromOldReply(m);
+        content = joinParts(parts, 'text').slice(0, MAX_CONTENT);
+        reasoning = joinParts(parts, 'thinking').slice(0, MAX_REASONING);
+      }
+      const parsed = { parts, content, reasoning };
+
+      // A reply that was still being written when the app closed was cut off:
+      // keep what it had, and mark it stopped.
+      let status = STATUSES.find((s) => s === m.status) ?? 'done';
+      if (status === 'streaming') status = 'stopped';
+      const usage = isRecord(m.usage)
+        ? {
+            totalTokens: numOrNull(m.usage.totalTokens),
+            cost: numOrNull(m.usage.cost),
+          }
+        : null;
+      messages.push({
+        id: m.id,
+        role: m.role,
+        content: parsed.content,
+        reasoning: parsed.reasoning,
+        createdAt: isTime(m.createdAt) ? m.createdAt : now,
+        status,
+        model: isValidModelId(m.model) ? m.model : null,
+        usage,
+        errorKind: ERROR_KINDS.find((k) => k === m.errorKind) ?? null,
+        mentions: parseMentions(m.mentions),
+        parts: parsed.parts,
+      });
+    }
+  }
+
+  const refs: ChatRef[] = [];
+  if (Array.isArray(item.refs)) {
+    for (const r of item.refs) {
+      if (refs.length >= MAX_REFS) break;
+      if (!isRecord(r) || !isId(r.id)) continue;
+      if (!isLinkKind(r.kind)) continue;
+      if (refs.some((x) => x.kind === r.kind && x.id === r.id)) continue;
+      refs.push({
+        kind: r.kind,
+        id: r.id,
+        title:
+          typeof r.title === 'string' ? r.title.slice(0, MAX_REF_TITLE) : '',
+        url: r.kind === 'tab' && isWebUrl(r.url) ? r.url : null,
+      });
+    }
+  }
+
+  const createdAt = isTime(item.createdAt) ? item.createdAt : now;
+  const conversation: Conversation = {
+    id: item.id,
+    title: cleanTitle(item.title, DEFAULT_CHAT_TITLE),
+    emoji: cleanEmoji(item.emoji),
+    titleByUser: item.titleByUser === true,
+    emojiByUser: item.emojiByUser === true,
+    createdAt,
+    updatedAt: isTime(item.updatedAt) ? item.updatedAt : createdAt,
+    model: isValidModelId(item.model) ? item.model : null,
+    refs,
+    messages,
+  };
+  return { conversation, maxId };
+}
+
 export function parseChats(raw: unknown, now = Date.now()): ChatsState {
   if (!isRecord(raw) || !Array.isArray(raw.conversations)) {
     return defaultChats(now);
@@ -330,90 +433,31 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
     if (conversations.length >= MAX_CONVERSATIONS) break;
     if (!isRecord(item) || !isId(item.id) || seen.has(item.id)) continue;
     seen.add(item.id);
-    maxId = Math.max(maxId, item.id);
+    const parsed = parseConversation(
+      item as Record<string, unknown> & { id: number },
+      now,
+    );
+    maxId = Math.max(maxId, parsed.maxId);
+    conversations.push(parsed.conversation);
+  }
 
-    const messages: ChatMessage[] = [];
-    const messageIds = new Set<number>();
-    if (Array.isArray(item.messages)) {
-      for (const m of item.messages) {
-        if (messages.length >= MAX_MESSAGES) break;
-        if (!isRecord(m) || !isId(m.id) || messageIds.has(m.id)) continue;
-        if (m.role !== 'user' && m.role !== 'assistant') continue;
-        if (typeof m.content !== 'string') continue;
-        messageIds.add(m.id);
-        maxId = Math.max(maxId, m.id);
-
-        // A reply keeps its parts in order; one saved before that is converted.
-        // Content and thinking are always rebuilt from the parts, so the two can
-        // never disagree.
-        let parts: MessagePart[] = [];
-        let content = m.content.slice(0, MAX_CONTENT);
-        let reasoning = str(m.reasoning, MAX_REASONING);
-        if (m.role === 'assistant') {
-          parts = Array.isArray(m.parts)
-            ? parseParts(m.parts)
-            : partsFromOldReply(m);
-          content = joinParts(parts, 'text').slice(0, MAX_CONTENT);
-          reasoning = joinParts(parts, 'thinking').slice(0, MAX_REASONING);
-        }
-        const parsed = { parts, content, reasoning };
-
-        // A reply that was still being written when the app closed was cut off:
-        // keep what it had, and mark it stopped.
-        let status = STATUSES.find((s) => s === m.status) ?? 'done';
-        if (status === 'streaming') status = 'stopped';
-        const usage = isRecord(m.usage)
-          ? {
-              totalTokens: numOrNull(m.usage.totalTokens),
-              cost: numOrNull(m.usage.cost),
-            }
-          : null;
-        messages.push({
-          id: m.id,
-          role: m.role,
-          content: parsed.content,
-          reasoning: parsed.reasoning,
-          createdAt: isTime(m.createdAt) ? m.createdAt : now,
-          status,
-          model: isValidModelId(m.model) ? m.model : null,
-          usage,
-          errorKind: ERROR_KINDS.find((k) => k === m.errorKind) ?? null,
-          mentions: parseMentions(m.mentions),
-          parts: parsed.parts,
-        });
-      }
+  // Deleted chats waiting in the trash (their ids never overlap the live ones).
+  const trash: TrashedConversation[] = [];
+  if (Array.isArray(raw.trash)) {
+    for (const item of raw.trash) {
+      if (trash.length >= MAX_TRASH) break;
+      if (!isRecord(item) || !isId(item.id) || seen.has(item.id)) continue;
+      seen.add(item.id);
+      const parsed = parseConversation(
+        item as Record<string, unknown> & { id: number },
+        now,
+      );
+      maxId = Math.max(maxId, parsed.maxId);
+      trash.push({
+        ...parsed.conversation,
+        deletedAt: isTime(item.deletedAt) ? item.deletedAt : now,
+      });
     }
-
-    const refs: ChatRef[] = [];
-    if (Array.isArray(item.refs)) {
-      for (const r of item.refs) {
-        if (refs.length >= MAX_REFS) break;
-        if (!isRecord(r) || !isId(r.id)) continue;
-        if (!isLinkKind(r.kind)) continue;
-        if (refs.some((x) => x.kind === r.kind && x.id === r.id)) continue;
-        refs.push({
-          kind: r.kind,
-          id: r.id,
-          title:
-            typeof r.title === 'string' ? r.title.slice(0, MAX_REF_TITLE) : '',
-          url: r.kind === 'tab' && isWebUrl(r.url) ? r.url : null,
-        });
-      }
-    }
-
-    const createdAt = isTime(item.createdAt) ? item.createdAt : now;
-    conversations.push({
-      id: item.id,
-      title: cleanTitle(item.title, DEFAULT_CHAT_TITLE),
-      emoji: cleanEmoji(item.emoji),
-      titleByUser: item.titleByUser === true,
-      emojiByUser: item.emojiByUser === true,
-      createdAt,
-      updatedAt: isTime(item.updatedAt) ? item.updatedAt : createdAt,
-      model: isValidModelId(item.model) ? item.model : null,
-      refs,
-      messages,
-    });
   }
 
   // There is always at least one conversation.
@@ -424,7 +468,7 @@ export function parseChats(raw: unknown, now = Date.now()): ChatsState {
     ? (raw.activeId as number)
     : conversations[0].id;
 
-  return { version: 1, conversations, activeId, nextId };
+  return { version: 1, conversations, trash, activeId, nextId };
 }
 
 // ---------------------------------------------------------------------------
@@ -581,11 +625,17 @@ export function deleteConversation(
   const index = state.conversations.findIndex((c) => c.id === id);
   if (index < 0) return state;
   const remaining = state.conversations.filter((c) => c.id !== id);
+  // Not gone for good: it waits in the trash (the oldest go if it is full).
+  const trash = [
+    ...state.trash,
+    { ...state.conversations[index], deletedAt: now },
+  ].slice(-MAX_TRASH);
   if (remaining.length === 0) {
     const fresh = emptyConversation(state.nextId, now);
     return {
       ...state,
       conversations: [fresh],
+      trash,
       activeId: fresh.id,
       nextId: state.nextId + 1,
     };
@@ -594,7 +644,43 @@ export function deleteConversation(
     state.activeId === id
       ? remaining[Math.max(0, index - 1)].id
       : state.activeId;
-  return { ...state, conversations: remaining, activeId };
+  return { ...state, conversations: remaining, trash, activeId };
+}
+
+// Bring a deleted chat back (it keeps its messages, links and place by recent use).
+// Nothing happens if it is not in the trash or there is no room.
+export function restoreConversation(state: ChatsState, id: number): ChatsState {
+  const found = state.trash.find((c) => c.id === id);
+  if (!found || state.conversations.length >= MAX_CONVERSATIONS) return state;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { deletedAt, ...chat } = found;
+  return {
+    ...state,
+    conversations: [...state.conversations, chat],
+    trash: state.trash.filter((c) => c.id !== id),
+  };
+}
+
+// Delete a chat in the trash for good.
+export function purgeConversation(state: ChatsState, id: number): ChatsState {
+  return state.trash.some((c) => c.id === id)
+    ? { ...state, trash: state.trash.filter((c) => c.id !== id) }
+    : state;
+}
+
+export function emptyChatTrash(state: ChatsState): ChatsState {
+  return state.trash.length === 0 ? state : { ...state, trash: [] };
+}
+
+// Remove the chats that have been in the trash longer than `days`.
+export function purgeOldChats(
+  state: ChatsState,
+  now: number,
+  days: number,
+): ChatsState {
+  const oldest = now - days * 24 * 60 * 60_000;
+  const trash = state.trash.filter((c) => c.deletedAt >= oldest);
+  return trash.length === state.trash.length ? state : { ...state, trash };
 }
 
 // ---------------------------------------------------------------------------

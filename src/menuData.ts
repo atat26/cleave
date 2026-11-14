@@ -1326,10 +1326,24 @@ export function parseToolsChoice(id: string): ToolsChoice | null {
 
 export type LibraryChoice =
   | { action: 'clear-history'; range: 'hour' | 'day' | 'all' }
-  | { action: 'clear-closed' };
+  | { action: 'clear-closed' }
+  | { action: 'empty-deleted' };
 
 // What the "…" next to the Library's search box offers, for the list shown.
-export function libraryMenuItems(list: 'history' | 'closed'): MenuItem[] {
+export function libraryMenuItems(
+  list: 'history' | 'closed' | 'deleted',
+): MenuItem[] {
+  if (list === 'deleted') {
+    return [
+      {
+        type: 'item',
+        id: 'library.empty-deleted',
+        label: 'Empty Recently deleted…',
+        icon: 'trash',
+        danger: true,
+      },
+    ];
+  }
   if (list === 'closed') {
     return [
       {
@@ -1374,6 +1388,8 @@ export function parseLibraryChoice(id: string): LibraryChoice | null {
       return { action: 'clear-history', range: 'all' };
     case 'library.clear-closed':
       return { action: 'clear-closed' };
+    case 'library.empty-deleted':
+      return { action: 'empty-deleted' };
   }
   return null;
 }

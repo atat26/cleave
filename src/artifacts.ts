@@ -30,16 +30,27 @@ export interface Artifact {
   revision: number;
 }
 
+// A deleted artifact, kept for a while so it can be brought back.
+export interface TrashedArtifact extends Artifact {
+  deletedAt: number;
+}
+
 export interface ArtifactsState {
   version: 1;
   nextId: number;
   artifacts: Artifact[];
+  // Deleted artifacts (see restoreArtifact). Nothing else in the app looks here.
+  trash: TrashedArtifact[];
 }
+
+// How many deleted artifacts are kept at most.
+export const MAX_ARTIFACT_TRASH = 200;
 
 export const defaultArtifacts = (): ArtifactsState => ({
   version: 1,
   nextId: 1,
   artifacts: [],
+  trash: [],
 });
 
 export const isArtifactKind = (value: unknown): value is ArtifactKind =>
@@ -93,30 +104,51 @@ const isCount = (value: unknown): value is number =>
 
 // Turn whatever is on disk into valid state: bad entries are dropped, duplicate
 // ids are dropped, too-long content is cut. Never throws.
+// One saved artifact, checked (null if it is not usable).
+function parseArtifact(item: unknown): Artifact | null {
+  if (!isRecord(item)) return null;
+  const { id, kind, content, spaceId } = item;
+  if (!isCount(id) || id < 1) return null;
+  if (!isArtifactKind(kind) || typeof content !== 'string') return null;
+  return {
+    id,
+    title: cleanTitle(item.title),
+    kind,
+    content: content.slice(0, MAX_ARTIFACT_CHARS),
+    emoji: cleanEmoji(item.emoji),
+    spaceId: isCount(spaceId) ? spaceId : null,
+    createdAt: isCount(item.createdAt) ? item.createdAt : 0,
+    updatedAt: isCount(item.updatedAt) ? item.updatedAt : 0,
+    revision: isCount(item.revision) ? item.revision : 0,
+  };
+}
+
 export function parseArtifacts(raw: unknown): ArtifactsState {
   const state = defaultArtifacts();
   if (!isRecord(raw) || !Array.isArray(raw.artifacts)) return state;
   const seen = new Set<number>();
   for (const item of raw.artifacts) {
-    if (!isRecord(item)) continue;
-    const { id, kind, content, spaceId } = item;
-    if (!isCount(id) || id < 1 || seen.has(id)) continue;
-    if (!isArtifactKind(kind) || typeof content !== 'string') continue;
     if (state.artifacts.length >= MAX_ARTIFACTS) break;
-    seen.add(id);
-    state.artifacts.push({
-      id,
-      title: cleanTitle(item.title),
-      kind,
-      content: content.slice(0, MAX_ARTIFACT_CHARS),
-      emoji: cleanEmoji(item.emoji),
-      spaceId: isCount(spaceId) ? spaceId : null,
-      createdAt: isCount(item.createdAt) ? item.createdAt : 0,
-      updatedAt: isCount(item.updatedAt) ? item.updatedAt : 0,
-      revision: isCount(item.revision) ? item.revision : 0,
-    });
+    const artifact = parseArtifact(item);
+    if (!artifact || seen.has(artifact.id)) continue;
+    seen.add(artifact.id);
+    state.artifacts.push(artifact);
   }
-  const highest = Math.max(0, ...state.artifacts.map((a) => a.id));
+  // Deleted artifacts waiting in the trash (their ids never overlap the live ones).
+  if (Array.isArray(raw.trash)) {
+    for (const item of raw.trash) {
+      if (state.trash.length >= MAX_ARTIFACT_TRASH) break;
+      const artifact = parseArtifact(item);
+      if (!artifact || seen.has(artifact.id)) continue;
+      seen.add(artifact.id);
+      const deletedAt = (item as { deletedAt?: unknown }).deletedAt;
+      state.trash.push({
+        ...artifact,
+        deletedAt: isCount(deletedAt) ? deletedAt : 0,
+      });
+    }
+  }
+  const highest = Math.max(0, ...seen);
   state.nextId = Math.max(isCount(raw.nextId) ? raw.nextId : 1, highest + 1);
   return state;
 }
@@ -221,12 +253,74 @@ export function updateArtifact(
   };
 }
 
+// Delete an artifact. It is not gone for good: it waits in the trash (the oldest
+// go if the trash is full) and can be brought back.
 export function deleteArtifact(
   state: ArtifactsState,
   id: number,
+  now = Date.now(),
 ): ArtifactsState {
-  if (!findArtifact(state, id)) return state;
-  return { ...state, artifacts: state.artifacts.filter((a) => a.id !== id) };
+  const found = findArtifact(state, id);
+  if (!found) return state;
+  return {
+    ...state,
+    artifacts: state.artifacts.filter((a) => a.id !== id),
+    trash: [...state.trash, { ...found, deletedAt: now }].slice(
+      -MAX_ARTIFACT_TRASH,
+    ),
+  };
+}
+
+// Bring a deleted artifact back, with its text, name and emoji. It returns to its
+// Space if that Space still exists (`spaceExists`), otherwise to no Space. Nothing
+// happens if it is not in the trash or there is no room.
+export function restoreArtifact(
+  state: ArtifactsState,
+  id: number,
+  spaceExists: (spaceId: number) => boolean,
+): ArtifactsState {
+  const found = state.trash.find((a) => a.id === id);
+  if (!found || state.artifacts.length >= MAX_ARTIFACTS) return state;
+  const { deletedAt: _deletedAt, ...artifact } = found;
+  return {
+    ...state,
+    artifacts: [
+      ...state.artifacts,
+      {
+        ...artifact,
+        spaceId:
+          artifact.spaceId !== null && spaceExists(artifact.spaceId)
+            ? artifact.spaceId
+            : null,
+      },
+    ],
+    trash: state.trash.filter((a) => a.id !== id),
+  };
+}
+
+// Delete an artifact in the trash for good.
+export function purgeArtifact(
+  state: ArtifactsState,
+  id: number,
+): ArtifactsState {
+  return state.trash.some((a) => a.id === id)
+    ? { ...state, trash: state.trash.filter((a) => a.id !== id) }
+    : state;
+}
+
+export function emptyArtifactTrash(state: ArtifactsState): ArtifactsState {
+  return state.trash.length === 0 ? state : { ...state, trash: [] };
+}
+
+// Remove the artifacts that have been in the trash longer than `days`.
+export function purgeOldArtifacts(
+  state: ArtifactsState,
+  now: number,
+  days: number,
+): ArtifactsState {
+  const oldest = now - days * 24 * 60 * 60_000;
+  const trash = state.trash.filter((a) => a.deletedAt >= oldest);
+  return trash.length === state.trash.length ? state : { ...state, trash };
 }
 
 // When a Space is deleted, its artifacts are kept, just no longer in a Space.

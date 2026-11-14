@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { dayGroups } from './history';
 import type { HistoryEntry } from './history';
-import type { ClosedTabInfo } from './types';
-import { IconButton, Input, Segmented } from './ui/controls';
+import type { ClosedTabInfo, DeletedItemInfo } from './types';
+import { IconButton, Input, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
 
-type Section = 'history' | 'closed';
+type Section = 'history' | 'closed' | 'deleted';
 
 const hostOf = (url: string): string => {
   try {
@@ -93,6 +93,7 @@ export function LibraryPanel() {
   const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [closed, setClosed] = useState<ClosedTabInfo[] | null>(null);
+  const [deleted, setDeleted] = useState<DeletedItemInfo[] | null>(null);
   // Bumped when the app says the lists changed.
   const [tick, setTick] = useState(0);
 
@@ -129,6 +130,17 @@ export function LibraryPanel() {
     };
   }, [section, tick]);
 
+  useEffect(() => {
+    if (section !== 'deleted') return;
+    let cancelled = false;
+    void window.browserApi.libraryDeleted().then((found) => {
+      if (!cancelled) setDeleted(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [section, tick]);
+
   return (
     <div>
       <Segmented<Section>
@@ -137,7 +149,8 @@ export function LibraryPanel() {
         onChange={setSection}
         options={[
           { value: 'history', label: 'History' },
-          { value: 'closed', label: 'Recently closed' },
+          { value: 'closed', label: 'Closed' },
+          { value: 'deleted', label: 'Deleted' },
         ]}
       />
       <div
@@ -152,9 +165,13 @@ export function LibraryPanel() {
             onChange={(event) => setQuery(event.target.value)}
             style={{ flex: 1, minWidth: 0 }}
           />
+        ) : section === 'closed' ? (
+          <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
+            Recently closed tabs. Ctrl+Shift+T reopens the newest.
+          </span>
         ) : (
           <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
-            The last tabs you closed. Ctrl+Shift+T reopens the newest.
+            Recently deleted chats and artifacts. Click one to bring it back.
           </span>
         )}
         <IconButton
@@ -196,6 +213,67 @@ export function LibraryPanel() {
                 />
               ))}
             </section>
+          ))
+        ))}
+
+      {section === 'deleted' &&
+        (deleted === null ? null : deleted.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Nothing deleted lately.
+          </p>
+        ) : (
+          deleted.map((item) => (
+            <div
+              key={`${item.kind}:${item.id}`}
+              className="lrow reveal-host lib-row"
+              role="button"
+              tabIndex={0}
+              title="Bring it back"
+              onClick={() =>
+                window.browserApi.libraryRestore(item.kind, item.id)
+              }
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  window.browserApi.libraryRestore(item.kind, item.id);
+                }
+              }}
+            >
+              <ItemEmoji emoji={item.emoji} />
+              <span className="grow" style={{ minWidth: 0 }}>
+                <span className="truncate" style={{ display: 'block' }}>
+                  {item.title}
+                </span>
+                <span
+                  className="truncate muted"
+                  style={{ display: 'block', fontSize: 'var(--fs-xs)' }}
+                >
+                  {item.detail} · {item.daysLeft} day
+                  {item.daysLeft === 1 ? '' : 's'} left
+                </span>
+              </span>
+              <IconButton
+                icon="undo"
+                size="sm"
+                className="reveal"
+                label={`Bring back ${item.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  window.browserApi.libraryRestore(item.kind, item.id);
+                }}
+              />
+              <IconButton
+                icon="trash"
+                size="sm"
+                className="reveal"
+                label={`Delete ${item.title} for good`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  window.browserApi.libraryDeleteForever(item.kind, item.id);
+                }}
+              />
+            </div>
           ))
         ))}
 
