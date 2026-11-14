@@ -2,6 +2,7 @@
 // return a NEW state instead of changing the old one. No Electron in here, so
 // it is easy to test. This is also exactly what gets saved to spaces.json.
 import { cleanEmoji } from './emoji.ts';
+import { historyUrl } from './history.ts';
 
 export const SPACE_COLORS = [
   'grey',
@@ -984,5 +985,52 @@ export function nudge(
     direction === -1
       ? group[to].artifactId
       : (group[to + 1]?.artifactId ?? null),
+  );
+}
+
+// ---- Saving a page into a Space ---------------------------------------------------
+
+// Save a web page into a Space as a kept page: no tab is opened, it shows on the
+// Space's overview (with an "Open" button) like any page whose tab was closed.
+// Nothing changes if the address is not a web page, the Space does not exist, or
+// the Space already has that page (open or closed).
+export function savePageToSpace(
+  state: SavedState,
+  page: { url: string; title: string },
+  spaceId: number,
+): { state: SavedState; added: boolean } {
+  const kept = historyUrl(page.url);
+  if (kept === null || !findSpace(state, spaceId)) {
+    return { state, added: false };
+  }
+  if (
+    state.tabs.some((t) => t.spaceId === spaceId && historyUrl(t.url) === kept)
+  ) {
+    return { state, added: false };
+  }
+  const tab: SavedTab = {
+    id: state.nextId,
+    url: kept,
+    title: page.title.replace(/\s+/g, ' ').trim().slice(0, 200),
+    favicon: null,
+    spaceId,
+    closed: true,
+  };
+  return {
+    state: { ...state, tabs: [...state.tabs, tab], nextId: state.nextId + 1 },
+    added: true,
+  };
+}
+
+// Is this page already in a Space (open or kept)?
+export function isPageInSpace(
+  state: SavedState,
+  url: string,
+  spaceId: number,
+): boolean {
+  const kept = historyUrl(url);
+  return (
+    kept !== null &&
+    state.tabs.some((t) => t.spaceId === spaceId && historyUrl(t.url) === kept)
   );
 }

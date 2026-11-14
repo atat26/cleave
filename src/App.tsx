@@ -132,6 +132,7 @@ export function App() {
         canGoForward={state.canGoForward}
         loading={state.loading}
         zoom={state.zoom}
+        bookmarked={state.bookmarked}
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}

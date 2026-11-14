@@ -10,6 +10,8 @@ import {
   placeArtifactTab,
   placeSpace,
   placeTab,
+  isPageInSpace,
+  savePageToSpace,
 } from './model.ts';
 import type { SavedState } from './model.ts';
 
@@ -153,4 +155,52 @@ test('Alt+Up and Alt+Down move an item one place, and stop at the edge', () => {
     [2, 1],
   );
   assert.equal(nudge(art, { kind: 'artifact', id: 1 }, -1), art);
+});
+
+test('a web page can be saved into a Space as a kept page, once', () => {
+  const { state, s1, s2 } = setup();
+  const saved = savePageToSpace(
+    state,
+    { url: 'https://docs.example/a#top', title: ' Docs  page ' },
+    s1,
+  );
+  assert.equal(saved.added, true);
+  const tab = saved.state.tabs.at(-1)!;
+  assert.equal(tab.spaceId, s1);
+  assert.equal(tab.closed, true);
+  assert.equal(tab.url, 'https://docs.example/a');
+  assert.equal(tab.title, 'Docs page');
+  // No tab is opened or selected.
+  assert.deepEqual(saved.state.active, state.active);
+  // Saving it again (even with a different # part) adds nothing.
+  const again = savePageToSpace(
+    saved.state,
+    { url: 'https://docs.example/a#other', title: 'x' },
+    s1,
+  );
+  assert.equal(again.added, false);
+  assert.equal(again.state, saved.state);
+  // Another Space can have it too.
+  assert.equal(
+    savePageToSpace(
+      saved.state,
+      { url: 'https://docs.example/a', title: 'x' },
+      s2,
+    ).added,
+    true,
+  );
+  assert.equal(isPageInSpace(saved.state, 'https://docs.example/a', s1), true);
+  assert.equal(isPageInSpace(saved.state, 'https://docs.example/a', s2), false);
+});
+
+test('only web pages go into a Space, and only a Space that exists', () => {
+  const { state, s1 } = setup();
+  for (const url of ['about:blank', 'file:///c:/a', 'junk']) {
+    assert.equal(savePageToSpace(state, { url, title: 'x' }, s1).added, false);
+  }
+  assert.equal(
+    savePageToSpace(state, { url: 'https://a.example/', title: 'x' }, 9999)
+      .added,
+    false,
+  );
 });

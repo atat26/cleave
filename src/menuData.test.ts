@@ -23,6 +23,8 @@ import {
   parseToolsChoice,
   toolsMenuItems,
   libraryMenuItems,
+  parseStarChoice,
+  starMenuItems,
   parseLibraryChoice,
   zoomChipMenuItems,
   parseLinkChoice,
@@ -654,6 +656,9 @@ test('the page menu: Back and Forward grey out when there is nowhere to go', () 
     'page.zoom-out',
     'page.zoom-reset',
     'page.add-to-chat',
+    'page.bookmark',
+    'page.save-to-space',
+    'page.save-new-space',
     'page.print',
     'page.inspect',
   ]);
@@ -687,7 +692,11 @@ test('the link menu lists your Spaces to open it in, and there is no save-as any
     ...menuIds(pageSelectionMenuItems('x')),
     ...menuIds(pageMenuItems({ canGoBack: true, canGoForward: true })),
   ];
-  assert.ok(all.every((id) => !/save|download/.test(id)));
+  assert.ok(
+    all.every(
+      (id) => !/save|download/.test(id.replace(/save-(?:to-|new-)?space/g, '')),
+    ),
+  );
 });
 
 test('the selection menu names what will be searched, on one short line', () => {
@@ -713,7 +722,9 @@ test('page menu choices are read back; unknown ones are not understood', () => {
     ...menuIds(pageSelectionMenuItems('x')),
   ]) {
     // ("Zoom" only opens its submenu: its choices are the three below it.)
-    if (id !== 'page.zoom') assert.ok(parsePageChoice(id), id);
+    if (id !== 'page.zoom' && id !== 'page.save-to-space') {
+      assert.ok(parsePageChoice(id), id);
+    }
   }
   assert.deepEqual(parsePageChoice('page.open-link-in:9'), {
     action: 'open-link-in',
@@ -941,4 +952,58 @@ test('the Library "…" menu clears the history by range or the closed list, and
     action: 'clear-closed',
   });
   assert.equal(parseLibraryChoice('library.clear-week'), null);
+});
+
+test('the star menu bookmarks the page and lists the Spaces to save it into', () => {
+  const spaces = [
+    { id: 4, name: 'Work', emoji: '💼', saved: false },
+    { id: 9, name: 'Trip', emoji: '🗺️', saved: true },
+  ];
+  const items = starMenuItems({ bookmarked: false, spaces });
+  assert.equal(entry(items, 'star.bookmark').label, 'Bookmark this page');
+  assert.equal(entry(items, 'star.bookmark').shortcut, 'Ctrl+D');
+  assert.equal(
+    entry(starMenuItems({ bookmarked: true, spaces }), 'star.bookmark').label,
+    'Remove bookmark',
+  );
+  assert.equal(entry(items, 'star.space:4').emoji, '💼');
+  assert.notEqual(entry(items, 'star.space:4').disabled, true);
+  // A Space that already has the page is ticked and greyed.
+  assert.equal(entry(items, 'star.space:9').checked, true);
+  assert.equal(entry(items, 'star.space:9').disabled, true);
+  assert.ok(menuIds(items).includes('star.new-space'));
+  // With no Spaces only "New Space…" is offered.
+  assert.deepEqual(menuIds(starMenuItems({ bookmarked: false, spaces: [] })), [
+    'star.bookmark',
+    'star.new-space',
+  ]);
+});
+
+test('star and page-menu choices to bookmark or save are read back', () => {
+  assert.deepEqual(parseStarChoice('star.bookmark'), { action: 'bookmark' });
+  assert.deepEqual(parseStarChoice('star.space:4'), {
+    action: 'space',
+    spaceId: 4,
+  });
+  assert.deepEqual(parseStarChoice('star.new-space'), { action: 'new-space' });
+  for (const bad of ['', 'star.space', 'star.space:x', 'tools.find']) {
+    assert.equal(parseStarChoice(bad), null, bad);
+  }
+  assert.deepEqual(parsePageChoice('page.bookmark'), { action: 'bookmark' });
+  assert.deepEqual(parsePageChoice('page.save-space:7'), {
+    action: 'save-to-space',
+    spaceId: 7,
+  });
+  assert.deepEqual(parsePageChoice('page.save-new-space'), {
+    action: 'save-to-new-space',
+  });
+  // The page menu offers the same Spaces.
+  const page = pageMenuItems({
+    canGoBack: false,
+    canGoForward: false,
+    bookmarked: true,
+    spaces: [{ id: 4, name: 'Work', emoji: '💼', saved: false }],
+  });
+  assert.equal(entry(page, 'page.bookmark').label, 'Remove bookmark');
+  assert.ok(menuIds(page).includes('page.save-space:4'));
 });

@@ -19,6 +19,8 @@ interface ToolbarProps {
   loading: boolean;
   // How far the page is zoomed (1 = 100%); a chip shows when it is not.
   zoom: number;
+  // The page is bookmarked (the star is filled).
+  bookmarked: boolean;
   // What the middle of the window shows right now.
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
@@ -131,6 +133,7 @@ export function Toolbar({
   disabled,
   loading,
   zoom,
+  bookmarked,
   viewMode,
   chats,
 }: ToolbarProps) {
@@ -260,6 +263,27 @@ export function Toolbar({
                   <Icon name="zoom" />
                   {zoomLabel(zoom)}
                 </button>
+              )}
+              {!disabled && /^https?:/i.test(url) && (
+                <IconButton
+                  icon="star"
+                  size="sm"
+                  className={bookmarked ? 'star-btn is-on' : 'star-btn'}
+                  aria-haspopup="menu"
+                  aria-pressed={bookmarked}
+                  label={
+                    bookmarked
+                      ? 'Bookmarked. Bookmark and Space options'
+                      : 'Bookmark this page or save it to a Space'
+                  }
+                  onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect();
+                    window.browserApi.showStarMenu(
+                      box.left - 180,
+                      box.bottom + 4,
+                    );
+                  }}
+                />
               )}
             </div>
           </>

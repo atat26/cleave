@@ -1,5 +1,6 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
+import type { Bookmark } from './bookmarks';
 import type { HistoryEntry } from './history';
 import type { LibrarySettings } from './librarySettings';
 import type { ThemeChoice } from './themeSettings';
@@ -214,6 +215,8 @@ export interface UiState {
   active: ActiveRef | null;
   // How far the selected page is zoomed (1 = 100%).
   zoom: number;
+  // The selected page is bookmarked (the star is filled).
+  bookmarked: boolean;
   // The ACTIVE web tab is still loading (its reload button becomes Stop).
   loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
@@ -264,6 +267,10 @@ export interface BrowserApi {
   showToolsMenu: (x: number, y: number) => void;
   // The Library panel: browsing history and recently closed tabs.
   libraryHistory: (query: string) => Promise<HistoryEntry[]>;
+  // The star in the address bar (bookmark, or save into a Space).
+  showStarMenu: (x: number, y: number) => void;
+  libraryBookmarks: (query: string) => Promise<Bookmark[]>;
+  libraryRemoveBookmark: (id: number) => void;
   libraryClosed: () => Promise<ClosedTabInfo[]>;
   // Chats and artifacts deleted lately, newest first, and what to do with them.
   libraryDeleted: () => Promise<DeletedItemInfo[]>;

@@ -955,6 +955,9 @@ export type PageChoice =
   | { action: 'forward' }
   | { action: 'reload' }
   | { action: 'find' }
+  | { action: 'bookmark' }
+  | { action: 'save-to-space'; spaceId: number }
+  | { action: 'save-to-new-space' }
   | { action: 'zoom-in' }
   | { action: 'zoom-out' }
   | { action: 'zoom-reset' }
@@ -977,6 +980,10 @@ export type PageChoice =
 export function pageMenuItems(options: {
   canGoBack: boolean;
   canGoForward: boolean;
+  // The page is bookmarked (the entry then says "Remove bookmark").
+  bookmarked?: boolean;
+  // The Spaces the page can be saved into.
+  spaces?: StarSpace[];
 }): MenuItem[] {
   return [
     {
@@ -1014,6 +1021,24 @@ export function pageMenuItems(options: {
       id: 'page.add-to-chat',
       label: 'Add page to chat',
       icon: 'chat',
+    },
+    {
+      type: 'item',
+      id: 'page.bookmark',
+      label: options.bookmarked ? 'Remove bookmark' : 'Bookmark this page',
+      icon: 'star',
+      shortcut: 'Ctrl+D',
+    },
+    {
+      type: 'item',
+      id: 'page.save-to-space',
+      label: 'Save to Space',
+      icon: 'folder',
+      submenu: saveToSpaceItems(
+        options.spaces ?? [],
+        (id) => `page.save-space:${id}`,
+        'page.save-new-space',
+      ),
     },
     { type: 'separator' },
     {
@@ -1146,6 +1171,10 @@ export function parsePageChoice(id: string): PageChoice | null {
       return { action: 'reload' };
     case 'page.find':
       return { action: 'find' };
+    case 'page.bookmark':
+      return { action: 'bookmark' };
+    case 'page.save-new-space':
+      return { action: 'save-to-new-space' };
     case 'page.zoom-in':
       return { action: 'zoom-in' };
     case 'page.zoom-out':
@@ -1181,8 +1210,10 @@ export function parsePageChoice(id: string): PageChoice | null {
       return { action: 'add-selection-to-chat' };
   }
   const inSpace = /^page\.open-link-in:(\d+)$/.exec(id);
-  return inSpace
-    ? { action: 'open-link-in', spaceId: Number(inSpace[1]) }
+  if (inSpace) return { action: 'open-link-in', spaceId: Number(inSpace[1]) };
+  const saveTo = /^page\.save-space:(\d+)$/.exec(id);
+  return saveTo
+    ? { action: 'save-to-space', spaceId: Number(saveTo[1]) }
     : null;
 }
 
@@ -1392,4 +1423,73 @@ export function parseLibraryChoice(id: string): LibraryChoice | null {
       return { action: 'empty-deleted' };
   }
   return null;
+}
+
+// ---- The star: bookmark a page, or save it into a Space ---------------------------
+
+// A Space as the star's menu lists it.
+export interface StarSpace {
+  id: number;
+  name: string;
+  emoji: string;
+  // The page is already in this Space.
+  saved: boolean;
+}
+
+export type StarChoice =
+  | { action: 'bookmark' }
+  | { action: 'space'; spaceId: number }
+  | { action: 'new-space' };
+
+// The Spaces to save a page into (ticked and greyed where it already is), and
+// "New Space…". Used by the star's menu and the page's right-click menu.
+function saveToSpaceItems(
+  spaces: StarSpace[],
+  idFor: (spaceId: number) => string,
+  newSpaceId: string,
+): MenuItem[] {
+  return [
+    ...spaces.map(
+      (space): MenuItem => ({
+        type: 'item',
+        id: idFor(space.id),
+        label: space.name,
+        emoji: space.emoji,
+        checked: space.saved,
+        disabled: space.saved,
+      }),
+    ),
+    ...(spaces.length > 0 ? [{ type: 'separator' } as MenuItem] : []),
+    { type: 'item', id: newSpaceId, label: 'New Space…', icon: 'plus' },
+  ];
+}
+
+// The menu under the star in the address bar.
+export function starMenuItems(options: {
+  bookmarked: boolean;
+  spaces: StarSpace[];
+}): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'star.bookmark',
+      label: options.bookmarked ? 'Remove bookmark' : 'Bookmark this page',
+      icon: 'star',
+      shortcut: 'Ctrl+D',
+    },
+    { type: 'separator' },
+    { type: 'header', label: 'Save to a Space' },
+    ...saveToSpaceItems(
+      options.spaces,
+      (id) => `star.space:${id}`,
+      'star.new-space',
+    ),
+  ];
+}
+
+export function parseStarChoice(id: string): StarChoice | null {
+  if (id === 'star.bookmark') return { action: 'bookmark' };
+  if (id === 'star.new-space') return { action: 'new-space' };
+  const m = /^star\.space:(\d+)$/.exec(id);
+  return m ? { action: 'space', spaceId: Number(m[1]) } : null;
 }
