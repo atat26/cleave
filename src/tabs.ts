@@ -65,6 +65,8 @@ import { buildOutline } from './pageOutline';
 import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
+import { MAX_SUGGESTIONS, suggest, suggestRect } from './suggest';
+import type { Suggestion, SuggestionKind } from './suggest';
 import {
   addBookmark,
   defaultBookmarks,
@@ -444,6 +446,28 @@ export async function createTabs(
   const find = findView.webContents;
   find.setWindowOpenHandler(() => ({ action: 'deny' }));
   find.on('will-navigate', (event) => event.preventDefault());
+  // The address-bar suggestions: another small view of our own, under the address
+  // bar. It never takes the keyboard: you keep typing in the address bar, which
+  // sends it the rows and which one is highlighted. Clicking a row picks it.
+  const suggestView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  suggestView.setBackgroundColor('#00000000');
+  suggestView.setVisible(false);
+  const suggestPage = suggestView.webContents;
+  suggestPage.setWindowOpenHandler(() => ({ action: 'deny' }));
+  suggestPage.on('will-navigate', (event) => event.preventDefault());
+  // The rows on show now (what a pick means is decided from these, not from what
+  // the page says).
+  let suggestRows: Suggestion[] = [];
+  let suggestShown = false;
+  let suggestReady = false;
+  let suggestWhenReady: (() => void) | null = null;
   // The tab being searched (null: the bar is closed).
   let findTabId: number | null = null;
   let findReady = false;
@@ -451,6 +475,7 @@ export async function createTabs(
   // Keep the find bar above the pages and below the sidebar and the popup layer.
   const restack = () => {
     if (findTabId !== null) win.contentView.addChildView(findView);
+    if (suggestShown) win.contentView.addChildView(suggestView);
     win.contentView.addChildView(sidebarView);
     win.contentView.addChildView(popupView);
   };
@@ -709,6 +734,7 @@ export async function createTabs(
       view.setVisible(shown);
     }
     syncFind();
+    hideSuggest();
     sendLayout();
   };
 
@@ -963,6 +989,68 @@ export async function createTabs(
     return view;
   };
 
+  // ---- Address-bar suggestions -----------------------------------------------
+
+  const hideSuggest = () => {
+    if (!suggestShown) return;
+    suggestShown = false;
+    suggestRows = [];
+    suggestView.setVisible(false);
+    // Clear it, so the next time it shows it never flashes the old rows.
+    if (suggestReady && !suggestPage.isDestroyed()) {
+      suggestPage.send('suggest:rows', { rows: [], selected: -1 });
+    }
+  };
+
+  // The rows for what is typed, from your tabs, bookmarks and history.
+  const suggestionsFor = (text: string): Suggestion[] =>
+    suggest(
+      text,
+      {
+        bookmarks: bookmarks.items,
+        history: history.entries,
+        tabs: state.tabs.map((t) => ({
+          id: t.id,
+          url: t.url,
+          title: t.title,
+          closed: t.closed,
+        })),
+      },
+      Date.now(),
+    );
+
+  // Go to an address in the selected tab (or in a new one when no page is selected,
+  // for example on a Space's overview).
+  const goTo = (url: string) => {
+    const id = activeTabId();
+    const view = id === null ? undefined : views.get(id);
+    if (view) {
+      void view.webContents.loadURL(url);
+      commitAndShow(revealPage(state));
+    } else {
+      openTab(url, currentSpaceId());
+    }
+  };
+
+  // Do what a row says: switch to its tab, reopen a kept page, or go to its address.
+  const pickSuggestion = (index: number) => {
+    const row = suggestRows[index];
+    hideSuggest();
+    if (!row) return;
+    if (row.kind === 'tab' && row.tabId !== undefined) {
+      const tab = model.findTab(state, row.tabId);
+      if (tab?.closed) {
+        reopenTab(tab.id);
+        return;
+      }
+      if (tab) {
+        select({ kind: 'tab', id: tab.id });
+        return;
+      }
+    }
+    if (model.isWebUrl(row.url)) goTo(row.url);
+  };
+
   // ---- Find in page --------------------------------------------------------
 
   const placeFind = () => {
@@ -1150,6 +1238,7 @@ export async function createTabs(
       view.setVisible(tabId === id && pageIsShown());
     }
     syncFind();
+    hideSuggest();
     // Keyboard focus goes to the page, unless it is hidden (chat-only mode).
     if (id !== null && pageIsShown()) views.get(id)?.webContents.focus();
     else win.webContents.focus();
@@ -3083,6 +3172,105 @@ export async function createTabs(
   };
   ipcMain.on('ui:ready', onUiReady);
 
+  // Address-bar suggestions. The toolbar asks for rows (answered here), then says
+  // what to show and where; the dropdown's own page reports a click.
+  ipcMain.handle('suggest:query', (event, text: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return typeof text === 'string' ? suggestionsFor(text.slice(0, 500)) : [];
+  });
+  const KINDS: SuggestionKind[] = [
+    'search',
+    'go',
+    'bookmark',
+    'history',
+    'tab',
+  ];
+  const onSuggestShow = (
+    event: Electron.IpcMainEvent,
+    rows: unknown,
+    selected: unknown,
+    bar: unknown,
+  ) => {
+    if (event.sender !== win.webContents || !Array.isArray(rows)) return;
+    const b = bar as {
+      x?: unknown;
+      y?: unknown;
+      width?: unknown;
+      height?: unknown;
+    };
+    if (
+      typeof bar !== 'object' ||
+      bar === null ||
+      !isNumber(b.x) ||
+      !isNumber(b.y) ||
+      !isNumber(b.width) ||
+      !isNumber(b.height)
+    )
+      return;
+    const clean: Suggestion[] = [];
+    for (const row of rows.slice(0, MAX_SUGGESTIONS)) {
+      const r = row as Partial<Suggestion> | null;
+      if (
+        !r ||
+        typeof r.url !== 'string' ||
+        typeof r.title !== 'string' ||
+        typeof r.detail !== 'string' ||
+        !KINDS.includes(r.kind as SuggestionKind)
+      )
+        continue;
+      clean.push({
+        kind: r.kind as SuggestionKind,
+        title: r.title.slice(0, 300),
+        detail: r.detail.slice(0, 300),
+        url: r.url.slice(0, 2000),
+        ...(isId(r.tabId) ? { tabId: r.tabId } : {}),
+        ...(r.closed === true ? { closed: true } : {}),
+      });
+    }
+    if (clean.length === 0) {
+      hideSuggest();
+      return;
+    }
+    suggestRows = clean;
+    const index = isNumber(selected) ? selected : -1;
+    const show = () =>
+      suggestPage.send('suggest:rows', { rows: clean, selected: index });
+    suggestView.setBounds(
+      suggestRect(b as never, clean.length, windowSize().height),
+    );
+    if (!suggestShown) {
+      suggestShown = true;
+      suggestView.setVisible(true);
+      restack();
+    }
+    if (suggestReady) show();
+    else suggestWhenReady = show;
+  };
+  const onSuggestPick = (event: Electron.IpcMainEvent, index: unknown) => {
+    if (
+      (event.sender !== suggestPage && event.sender !== win.webContents) ||
+      !isNumber(index)
+    )
+      return;
+    pickSuggestion(index);
+  };
+  const onSuggestHide = (event: Electron.IpcMainEvent) => {
+    if (event.sender === win.webContents) hideSuggest();
+  };
+  const onSuggestReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender !== suggestPage) return;
+    suggestReady = true;
+    const waiting = suggestWhenReady;
+    suggestWhenReady = null;
+    waiting?.();
+  };
+  ipcMain.on('suggest:show', onSuggestShow);
+  ipcMain.on('suggest:pick', onSuggestPick);
+  ipcMain.on('suggest:hide', onSuggestHide);
+  ipcMain.on('suggest:ready', onSuggestReady);
+  win.on('blur', hideSuggest);
+  win.on('resize', hideSuggest);
+
   // The find bar's own page: says it is listening, searches, steps, and closes.
   const fromFind = (event: Electron.IpcMainEvent) => event.sender === find;
   const onFindReady = (event: Electron.IpcMainEvent) => {
@@ -3447,6 +3635,7 @@ ${artifact.content.slice(0, 1500)}`;
   void loadUi(sidebar, 'sidebar');
   void loadUi(popup, 'popup');
   void loadUi(find, 'find');
+  void loadUi(suggestPage, 'suggest');
 
   // While developing, the dev server sometimes rebuilds its bundled libraries just
   // as the app starts, and a page that loads in that moment fails to start (it
@@ -3501,6 +3690,11 @@ ${artifact.content.slice(0, 1500)}`;
     stopWatching();
     for (const timer of startupTimers) clearTimeout(timer);
     ipcMain.removeListener('ui:ready', onUiReady);
+    ipcMain.removeHandler('suggest:query');
+    ipcMain.removeListener('suggest:show', onSuggestShow);
+    ipcMain.removeListener('suggest:pick', onSuggestPick);
+    ipcMain.removeListener('suggest:hide', onSuggestHide);
+    ipcMain.removeListener('suggest:ready', onSuggestReady);
     ipcMain.removeListener('find:ready', onFindReady);
     ipcMain.removeListener('find:query', onFindQuery);
     ipcMain.removeListener('find:close', onFindClose);

@@ -1,6 +1,7 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
+import type { Suggestion } from './suggest';
 import type { HistoryEntry } from './history';
 import type { LibrarySettings } from './librarySettings';
 import type { ThemeChoice } from './themeSettings';
@@ -265,6 +266,21 @@ export interface BrowserApi {
   toggleSidebarPin: () => void;
   // The toolbar "…" menu (the browser's tools), opened at a place in the window.
   showToolsMenu: (x: number, y: number) => void;
+  // Address-bar suggestions: ask for rows; show them under the address bar (with
+  // which one is highlighted, -1 for none); pick one; hide them. The dropdown's own
+  // page listens for the rows and reports a click.
+  suggestQuery: (text: string) => Promise<Suggestion[]>;
+  suggestShow: (
+    rows: Suggestion[],
+    selected: number,
+    bar: { x: number; y: number; width: number; height: number },
+  ) => void;
+  suggestHide: () => void;
+  suggestPick: (index: number) => void;
+  suggestReady: () => void;
+  onSuggestRows: (
+    callback: (payload: { rows: Suggestion[]; selected: number }) => void,
+  ) => () => void;
   // The Library panel: browsing history and recently closed tabs.
   libraryHistory: (query: string) => Promise<HistoryEntry[]>;
   // The star in the address bar (bookmark, or save into a Space).

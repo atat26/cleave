@@ -9,6 +9,12 @@ export function searchUrl(text: string): string {
   return SEARCH_URL + encodeURIComponent(text.trim());
 }
 
+// Does what was typed look like an address (not a search)?
+export function looksLikeAddress(input: string): boolean {
+  const resolved = resolveInput(input);
+  return resolved !== '' && !resolved.startsWith(SEARCH_URL);
+}
+
 // Turn whatever the user typed into a safe URL to load.
 // - Normal http(s) addresses are used as they are.
 // - Things that look like a host get "https://" added.

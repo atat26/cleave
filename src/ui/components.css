@@ -1530,3 +1530,26 @@ button {
 .star-btn.is-on .i {
   fill: currentColor;
 }
+
+/* ---- Address-bar suggestions (their own view under the address bar) -------------- */
+.suggest-list {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.suggest-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 44px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-md);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.suggest-row.is-active {
+  background: var(--c-active);
+}

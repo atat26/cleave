@@ -12,6 +12,7 @@ import { App } from './App';
 import { KitPage } from './KitPage';
 import { FindApp } from './FindApp';
 import { PopupApp } from './PopupApp';
+import { SuggestApp } from './SuggestApp';
 
 // Light or dark: the app asks the computer (which follows your Appearance choice,
 // set in the main process) and marks the page so the dark colours apply.
@@ -33,6 +34,8 @@ createRoot(document.getElementById('root')!).render(
       <PopupApp />
     ) : window.location.hash === '#find' ? (
       <FindApp />
+    ) : window.location.hash === '#suggest' ? (
+      <SuggestApp />
     ) : (
       <App />
     )}
