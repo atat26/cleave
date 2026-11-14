@@ -13,6 +13,10 @@ const browserApi: BrowserApi = {
   toggleSidebarPin: () => ipcRenderer.send('sidebar:toggle-pin'),
   showToolsMenu: (x, y) => ipcRenderer.send('toolbar:menu', x, y),
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
+  showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
+  libraryBookmarks: (query) => ipcRenderer.invoke('library:bookmarks', query),
+  libraryRemoveBookmark: (id) =>
+    ipcRenderer.send('library:remove-bookmark', id),
   libraryClosed: () => ipcRenderer.invoke('library:closed'),
   libraryDeleted: () => ipcRenderer.invoke('library:deleted'),
   libraryRestore: (kind, id) => ipcRenderer.send('library:restore', kind, id),

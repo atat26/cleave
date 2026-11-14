@@ -66,6 +66,15 @@ import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import {
+  addBookmark,
+  defaultBookmarks,
+  isBookmarked,
+  parseBookmarks,
+  removeBookmark,
+  removeBookmarkByUrl,
+  searchBookmarks,
+} from './bookmarks';
+import {
   defaultLibrarySettings,
   parseLibrarySettings,
   withLibrarySettings,
@@ -151,6 +160,8 @@ import {
   zoomChipMenuItems,
   libraryMenuItems,
   parseLibraryChoice,
+  parseStarChoice,
+  starMenuItems,
   parseAddChoice,
   parseArtifactChoice,
   parseChatChoice,
@@ -306,6 +317,14 @@ export async function createTabs(
     }, 300);
   };
   const historySaver = createSaver(historyFile, () => history);
+  // The pages you bookmarked (see bookmarks.ts).
+  const bookmarksFile = path.join(app.getPath('userData'), 'bookmarks.json');
+  let bookmarks = await loadJson(
+    bookmarksFile,
+    parseBookmarks,
+    defaultBookmarks,
+  );
+  const bookmarksSaver = createSaver(bookmarksFile, () => bookmarks);
   const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
   let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
   const closedSaver = createSaver(closedFile, () => closedTabs);
@@ -619,6 +638,7 @@ export async function createTabs(
       })),
       active: state.active,
       zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
+      bookmarked: isBookmarked(bookmarks, activePage()?.getURL()),
       loading:
         id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
@@ -1010,6 +1030,50 @@ export async function createTabs(
     closedSaver.schedule();
     libraryChanged();
     reopenClosedTab(taken.tab);
+  };
+
+  // ---- Bookmarks and saving a page into a Space ---------------------------------
+
+  // Bookmark the selected page, or take the bookmark off.
+  const toggleBookmark = () => {
+    const contents = activePage();
+    if (!contents) return;
+    const url = contents.getURL();
+    bookmarks = isBookmarked(bookmarks, url)
+      ? removeBookmarkByUrl(bookmarks, url)
+      : addBookmark(bookmarks, url, contents.getTitle(), Date.now());
+    bookmarksSaver.schedule();
+    libraryChanged();
+    sendState();
+  };
+
+  // The Spaces the selected page can go into, and where it already is.
+  const starSpaces = () => {
+    const url = activePage()?.getURL() ?? '';
+    return state.spaces.map((space) => ({
+      id: space.id,
+      name: space.name,
+      emoji: emojiOr(space.emoji, DEFAULT_SPACE_EMOJI),
+      saved: model.isPageInSpace(state, url, space.id),
+    }));
+  };
+
+  // Save the selected page into a Space as a kept page (no tab is opened).
+  const savePageHere = (spaceId: number) => {
+    const contents = activePage();
+    if (!contents) return;
+    const saved = model.savePageToSpace(
+      state,
+      { url: contents.getURL(), title: contents.getTitle() },
+      spaceId,
+    );
+    if (saved.added) commit(saved.state);
+  };
+
+  const saveToNewSpace = () => {
+    const created = model.addSpace(state);
+    commit(created.state);
+    savePageHere(created.id);
   };
 
   // ---- Zoom, print, developer tools ------------------------------------------
@@ -1965,6 +2029,8 @@ export async function createTabs(
       items = pageMenuItems({
         canGoBack: contents.navigationHistory.canGoBack(),
         canGoForward: contents.navigationHistory.canGoForward(),
+        bookmarked: isBookmarked(bookmarks, contents.getURL()),
+        spaces: starSpaces(),
       });
 
     showMenu(
@@ -2003,6 +2069,15 @@ export async function createTabs(
         break;
       case 'find':
         openFind();
+        break;
+      case 'bookmark':
+        toggleBookmark();
+        break;
+      case 'save-to-space':
+        savePageHere(choice.spaceId);
+        break;
+      case 'save-to-new-space':
+        saveToNewSpace();
         break;
       case 'zoom-in':
         changeZoom(1);
@@ -2324,6 +2399,9 @@ export async function createTabs(
     if (key === 'f') {
       event.preventDefault();
       openFind();
+    } else if (key === 'd') {
+      event.preventDefault();
+      toggleBookmark();
     } else if (key === '=' || key === '+') {
       event.preventDefault();
       changeZoom(1);
@@ -2633,6 +2711,15 @@ export async function createTabs(
       const kept = historyUrl(url);
       if (kept !== null) openTab(kept, currentSpaceId());
     },
+    'library:remove-bookmark': (id) => {
+      if (!isId(id)) return;
+      const next = removeBookmark(bookmarks, id);
+      if (next === bookmarks) return;
+      bookmarks = next;
+      bookmarksSaver.schedule();
+      libraryChanged();
+      sendState();
+    },
     'library:remove-visit': (id) => {
       if (!isId(id)) return;
       const next = removeVisit(history, id);
@@ -2716,6 +2803,28 @@ export async function createTabs(
         (choice) => {
           const parsed = parseToolsChoice(choice);
           if (parsed) runToolsChoice(parsed);
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    // The star in the address bar: bookmark the page, or save it into a Space.
+    'star:menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const contents = activePage();
+      if (!contents) return;
+      showMenu(
+        starMenuItems({
+          bookmarked: isBookmarked(bookmarks, contents.getURL()),
+          spaces: starSpaces(),
+        }),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseStarChoice(choice);
+          if (!parsed) return;
+          if (parsed.action === 'bookmark') toggleBookmark();
+          else if (parsed.action === 'space') savePageHere(parsed.spaceId);
+          else saveToNewSpace();
         },
         requestSender ?? win.webContents,
       );
@@ -3083,6 +3192,11 @@ export async function createTabs(
     libraryChanged();
     return librarySettings;
   });
+  ipcMain.handle('library:bookmarks', (event, query: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const text = typeof query === 'string' ? query.slice(0, 200) : '';
+    return searchBookmarks(bookmarks, text);
+  });
   ipcMain.handle('library:closed', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return [...closedTabs.tabs].reverse().map((t) => {
@@ -3379,6 +3493,7 @@ ${artifact.content.slice(0, 1500)}`;
     librarySaver.flushSync();
     zoomSaver.flushSync();
     historySaver.flushSync();
+    bookmarksSaver.flushSync();
     closedSaver.flushSync();
   });
   win.on('closed', () => {
@@ -3393,6 +3508,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);
     ipcMain.removeHandler('library:history');
+    ipcMain.removeHandler('library:bookmarks');
     ipcMain.removeHandler('library:deleted');
     ipcMain.removeHandler('library-settings:get');
     ipcMain.removeHandler('library-settings:set');

@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { dayGroups } from './history';
 import type { HistoryEntry } from './history';
 import type { ClosedTabInfo, DeletedItemInfo } from './types';
-import { IconButton, Input, ItemEmoji, Segmented } from './ui/controls';
+import type { Bookmark } from './bookmarks';
+import { IconButton, Input, ItemEmoji, TabList } from './ui/controls';
 import { Icon } from './ui/Icon';
 
-type Section = 'history' | 'closed' | 'deleted';
+type Section = 'bookmarks' | 'history' | 'closed' | 'deleted';
 
 const hostOf = (url: string): string => {
   try {
@@ -89,7 +90,8 @@ function Row({
 // The Library: pages you have visited, and tabs you closed recently. (Recently
 // deleted chats and artifacts, downloads and bookmarks join it later.)
 export function LibraryPanel() {
-  const [section, setSection] = useState<Section>('history');
+  const [section, setSection] = useState<Section>('bookmarks');
+  const [bookmarks, setBookmarks] = useState<Bookmark[] | null>(null);
   const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [closed, setClosed] = useState<ClosedTabInfo[] | null>(null);
@@ -101,6 +103,23 @@ export function LibraryPanel() {
     () => window.browserApi.onLibraryChanged(() => setTick((n) => n + 1)),
     [],
   );
+
+  useEffect(() => {
+    if (section !== 'bookmarks') return;
+    let cancelled = false;
+    const timer = setTimeout(
+      () => {
+        void window.browserApi.libraryBookmarks(query).then((found) => {
+          if (!cancelled) setBookmarks(found);
+        });
+      },
+      query === '' ? 0 : 150,
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [section, query, tick]);
 
   useEffect(() => {
     if (section !== 'history') return;
@@ -143,11 +162,15 @@ export function LibraryPanel() {
 
   return (
     <div>
-      <Segmented<Section>
+      <TabList<Section>
         label="Library"
         value={section}
-        onChange={setSection}
-        options={[
+        onChange={(next) => {
+          setSection(next);
+          setQuery('');
+        }}
+        tabs={[
+          { value: 'bookmarks', label: 'Bookmarks' },
           { value: 'history', label: 'History' },
           { value: 'closed', label: 'Closed' },
           { value: 'deleted', label: 'Deleted' },
@@ -157,10 +180,14 @@ export function LibraryPanel() {
         className="row-flex"
         style={{ gap: 'var(--s-2)', margin: 'var(--s-3) 0' }}
       >
-        {section === 'history' ? (
+        {section === 'history' || section === 'bookmarks' ? (
           <Input
-            aria-label="Search history"
-            placeholder="Search history"
+            aria-label={
+              section === 'history' ? 'Search history' : 'Search bookmarks'
+            }
+            placeholder={
+              section === 'history' ? 'Search history' : 'Search bookmarks'
+            }
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             style={{ flex: 1, minWidth: 0 }}
@@ -174,21 +201,45 @@ export function LibraryPanel() {
             Recently deleted chats and artifacts. Click one to bring it back.
           </span>
         )}
-        <IconButton
-          icon="more"
-          size="sm"
-          label="Clear…"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const box = event.currentTarget.getBoundingClientRect();
-            window.browserApi.showLibraryMenu(
-              section,
-              box.right - 190,
-              box.bottom + 4,
-            );
-          }}
-        />
+        {section !== 'bookmarks' && (
+          <IconButton
+            icon="more"
+            size="sm"
+            label="Clear…"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              window.browserApi.showLibraryMenu(
+                section,
+                box.right - 190,
+                box.bottom + 4,
+              );
+            }}
+          />
+        )}
       </div>
+
+      {section === 'bookmarks' &&
+        (bookmarks === null ? null : bookmarks.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            {query === ''
+              ? 'No bookmarks yet. Click the star in the address bar (or press Ctrl+D) to bookmark a page.'
+              : 'Nothing found.'}
+          </p>
+        ) : (
+          bookmarks.map((bookmark) => (
+            <Row
+              key={bookmark.id}
+              title={bookmark.title || hostOf(bookmark.url)}
+              detail={hostOf(bookmark.url)}
+              actionLabel={`Remove bookmark ${bookmark.title || hostOf(bookmark.url)}`}
+              onOpen={() => window.browserApi.libraryOpen(bookmark.url)}
+              onAction={() =>
+                window.browserApi.libraryRemoveBookmark(bookmark.id)
+              }
+            />
+          ))
+        ))}
 
       {section === 'history' &&
         (entries === null ? null : entries.length === 0 ? (
