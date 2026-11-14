@@ -10,6 +10,7 @@ import './ui/tokens.css';
 import './ui/components.css';
 import { App } from './App';
 import { KitPage } from './KitPage';
+import { FindApp } from './FindApp';
 import { PopupApp } from './PopupApp';
 
 // Light or dark: the app asks the computer (which follows your Appearance choice,
@@ -30,6 +31,8 @@ createRoot(document.getElementById('root')!).render(
       <KitPage />
     ) : window.location.hash === '#popup' ? (
       <PopupApp />
+    ) : window.location.hash === '#find' ? (
+      <FindApp />
     ) : (
       <App />
     )}

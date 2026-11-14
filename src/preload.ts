@@ -11,6 +11,35 @@ const browserApi: BrowserApi = {
   goForward: () => ipcRenderer.send('tab:forward'),
   reloadPage: () => ipcRenderer.send('tab:reload'),
   toggleSidebarPin: () => ipcRenderer.send('sidebar:toggle-pin'),
+  showToolsMenu: (x, y) => ipcRenderer.send('toolbar:menu', x, y),
+  findReady: () => ipcRenderer.send('find:ready'),
+  findQuery: (text, forward, again) =>
+    ipcRenderer.send('find:query', text, forward, again),
+  findClose: () => ipcRenderer.send('find:close'),
+  onFindOpen: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('find:open', listener);
+    return () => {
+      ipcRenderer.removeListener('find:open', listener);
+    };
+  },
+  onFindClosed: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('find:closed', listener);
+    return () => {
+      ipcRenderer.removeListener('find:closed', listener);
+    };
+  },
+  onFindResult: (callback) => {
+    const listener = (
+      _event: unknown,
+      result: Parameters<typeof callback>[0],
+    ) => callback(result);
+    ipcRenderer.on('find:result', listener);
+    return () => {
+      ipcRenderer.removeListener('find:result', listener);
+    };
+  },
   moveTab: (tabId, spaceId, beforeTabId) =>
     ipcRenderer.send('sidebar:move-tab', tabId, spaceId, beforeTabId),
   moveArtifactTab: (artifactId, spaceId, beforeArtifactId) =>

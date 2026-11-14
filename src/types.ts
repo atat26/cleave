@@ -233,6 +233,17 @@ export interface BrowserApi {
   reloadPage: () => void;
   // Pin the sidebar open, or unpin it (back to the strip).
   toggleSidebarPin: () => void;
+  // The toolbar "…" menu (the browser's tools), opened at a place in the window.
+  showToolsMenu: (x: number, y: number) => void;
+  // Find in page. Only the find bar's own page uses these.
+  findReady: () => void;
+  findQuery: (text: string, forward: boolean, again: boolean) => void;
+  findClose: () => void;
+  onFindOpen: (callback: () => void) => () => void;
+  onFindClosed: (callback: () => void) => () => void;
+  onFindResult: (
+    callback: (result: { active: number; total: number }) => void,
+  ) => () => void;
   // Drag and drop in the sidebar: put a tab in a Space (null: outside every Space)
   // before another tab (null: at the end); the same for an open artifact and a Space.
   moveTab: (

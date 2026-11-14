@@ -64,6 +64,7 @@ import type { Cdp, DoneResult } from './pageActions';
 import { buildOutline } from './pageOutline';
 import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
+import { findBarRect } from './findBar';
 import type { NameResult } from './naming';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
@@ -111,6 +112,8 @@ import {
   pageMenuItems,
   pageSelectionMenuItems,
   parsePageChoice,
+  parseToolsChoice,
+  toolsMenuItems,
   parseAddChoice,
   parseArtifactChoice,
   parseChatChoice,
@@ -317,6 +320,32 @@ export async function createTabs(
   const popup = popupView.webContents;
   popup.setWindowOpenHandler(() => ({ action: 'deny' }));
   popup.on('will-navigate', (event) => event.preventDefault());
+
+  // The find bar: a small view of our own over the top right of the page. Unlike
+  // a menu it is only as big as the bar, so the page stays usable while it is open.
+  const findView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  findView.setBackgroundColor('#00000000');
+  findView.setVisible(false);
+  const find = findView.webContents;
+  find.setWindowOpenHandler(() => ({ action: 'deny' }));
+  find.on('will-navigate', (event) => event.preventDefault());
+  // The tab being searched (null: the bar is closed).
+  let findTabId: number | null = null;
+  let findReady = false;
+  let findWhenReady: (() => void) | null = null;
+  // Keep the find bar above the pages and below the sidebar and the popup layer.
+  const restack = () => {
+    if (findTabId !== null) win.contentView.addChildView(findView);
+    win.contentView.addChildView(sidebarView);
+    win.contentView.addChildView(popupView);
+  };
   // The popup page says when it is listening, so a menu is never sent too early.
   let popupReady = false;
   let waitingForPopup: (() => void) | null = null;
@@ -569,6 +598,7 @@ export async function createTabs(
       if (shown) view.setBounds(pageBounds());
       view.setVisible(shown);
     }
+    syncFind();
     sendLayout();
   };
 
@@ -744,10 +774,9 @@ export async function createTabs(
     });
     views.set(tab.id, view);
     win.contentView.addChildView(view);
-    // Adding an existing view again moves it to the top: keep the sidebar above,
-    // and the popup layer above that.
-    win.contentView.addChildView(sidebarView);
-    win.contentView.addChildView(popupView);
+    // Adding an existing view again moves it to the top: keep the find bar, the
+    // sidebar and the popup layer above it, in that order.
+    restack();
     // The page is a rounded card inset in the frame.
     view.setBorderRadius(PAGE_RADIUS);
     view.setBounds(pageBounds());
@@ -775,16 +804,68 @@ export async function createTabs(
     contents.on('page-favicon-updated', (_event, favicons) =>
       updateTab(tab.id, { favicon: favicons.find(model.isWebUrl) ?? null }),
     );
-    contents.on('did-navigate', () =>
+    contents.on('found-in-page', (_event, result) => {
+      if (tab.id !== findTabId || find.isDestroyed()) return;
+      find.send('find:result', {
+        active: result.activeMatchOrdinal,
+        total: result.matches,
+      });
+    });
+    contents.on('did-navigate', () => {
+      // A new page: the search is over.
+      if (tab.id === findTabId) closeFind(false);
       // The new page will report its own icon.
-      updateTab(tab.id, { url: contents.getURL(), favicon: null }),
-    );
+      updateTab(tab.id, { url: contents.getURL(), favicon: null });
+    });
     contents.on('did-navigate-in-page', () =>
       updateTab(tab.id, { url: contents.getURL() }),
     );
 
     void contents.loadURL(tab.url);
     return view;
+  };
+
+  // ---- Find in page --------------------------------------------------------
+
+  const placeFind = () => {
+    if (findTabId !== null) findView.setBounds(findBarRect(pageBounds()));
+  };
+
+  const openFind = () => {
+    const id = activeTabId();
+    if (id === null || !views.has(id) || !pageIsShown()) return;
+    // The bar belongs to one page; asking for it on another starts over.
+    if (findTabId !== null && findTabId !== id) closeFind(false);
+    findTabId = id;
+    placeFind();
+    findView.setVisible(true);
+    restack();
+    const tell = () => find.send('find:open');
+    if (findReady) tell();
+    else findWhenReady = tell;
+    find.focus();
+  };
+
+  // Close the bar and clear the highlights. `focusPage`: give the keyboard back to
+  // the page (not wanted when the page itself is going away).
+  function closeFind(focusPage = true) {
+    const id = findTabId;
+    if (id === null) return;
+    findTabId = null;
+    const view = views.get(id);
+    if (view && !view.webContents.isDestroyed()) {
+      view.webContents.stopFindInPage('clearSelection');
+      if (focusPage && pageIsShown()) view.webContents.focus();
+    }
+    findView.setVisible(false);
+    if (!find.isDestroyed()) find.send('find:closed');
+  }
+
+  // The bar only makes sense over the page it was opened on, while it is showing.
+  const syncFind = () => {
+    if (findTabId === null) return;
+    if (activeTabId() !== findTabId || !pageIsShown()) closeFind(false);
+    else placeFind();
   };
 
   // Show whatever is selected: wake the active tab if needed, hide the other
@@ -798,6 +879,7 @@ export async function createTabs(
       if (tabId === id) view.setBounds(pageBounds());
       view.setVisible(tabId === id && pageIsShown());
     }
+    syncFind();
     // Keyboard focus goes to the page, unless it is hidden (chat-only mode).
     if (id !== null && pageIsShown()) views.get(id)?.webContents.focus();
     else win.webContents.focus();
@@ -1709,6 +1791,9 @@ export async function createTabs(
       case 'reload':
         contents.reload();
         break;
+      case 'find':
+        openFind();
+        break;
       case 'add-page-to-chat':
         linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
         break;
@@ -1999,7 +2084,10 @@ export async function createTabs(
     if (input.type !== 'keyDown' || !input.control || input.alt || input.meta)
       return;
     const key = input.key.toLowerCase();
-    if (key === 't') {
+    if (key === 'f') {
+      event.preventDefault();
+      openFind();
+    } else if (key === 't') {
       event.preventDefault();
       openTab(NEW_TAB_URL, currentSpaceId());
     } else if (key === 'r') {
@@ -2245,6 +2333,20 @@ export async function createTabs(
       applyLayout(true);
       sendState();
     },
+    // The toolbar "…" menu: the browser's tools.
+    'toolbar:menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const id = activeTabId();
+      showMenu(
+        toolsMenuItems({ hasPage: id !== null && pageIsShown() }),
+        x,
+        y,
+        (choice) => {
+          if (parseToolsChoice(choice)?.action === 'find') openFind();
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     // The pin in the sidebar's header: pin it open, or back to the strip (which
     // slides open over the page while the mouse is on it).
     'sidebar:toggle-pin': () => {
@@ -2485,6 +2587,42 @@ export async function createTabs(
   };
   ipcMain.on('ui:ready', onUiReady);
 
+  // The find bar's own page: says it is listening, searches, steps, and closes.
+  const fromFind = (event: Electron.IpcMainEvent) => event.sender === find;
+  const onFindReady = (event: Electron.IpcMainEvent) => {
+    if (!fromFind(event)) return;
+    findReady = true;
+    const waiting = findWhenReady;
+    findWhenReady = null;
+    waiting?.();
+  };
+  const onFindQuery = (
+    event: Electron.IpcMainEvent,
+    text: unknown,
+    forward: unknown,
+    again: unknown,
+  ) => {
+    if (!fromFind(event) || findTabId === null) return;
+    const contents = views.get(findTabId)?.webContents;
+    if (!contents || contents.isDestroyed() || typeof text !== 'string') return;
+    if (text === '') {
+      contents.stopFindInPage('clearSelection');
+      if (!find.isDestroyed())
+        find.send('find:result', { active: 0, total: 0 });
+      return;
+    }
+    contents.findInPage(text.slice(0, 500), {
+      forward: forward !== false,
+      findNext: again === true,
+    });
+  };
+  const onFindClose = (event: Electron.IpcMainEvent) => {
+    if (fromFind(event)) closeFind();
+  };
+  ipcMain.on('find:ready', onFindReady);
+  ipcMain.on('find:query', onFindQuery);
+  ipcMain.on('find:close', onFindClose);
+
   const listeners = Object.entries(requests).map(([channel, handle]) => {
     const listener = (event: Electron.IpcMainEvent, ...args: unknown[]) => {
       if (event.sender === win.webContents || event.sender === sidebar) {
@@ -2722,6 +2860,7 @@ ${artifact.content.slice(0, 1500)}`;
   const startupTimers = [300, 1000].map((ms) => setTimeout(relayout, ms));
 
   win.webContents.on('before-input-event', handleShortcut);
+  find.on('before-input-event', handleShortcut);
   sidebar.on('before-input-event', handleShortcut);
 
   // Send the first state once each UI page is ready to listen. (Reading the save
@@ -2737,6 +2876,7 @@ ${artifact.content.slice(0, 1500)}`;
   }
   void loadUi(sidebar, 'sidebar');
   void loadUi(popup, 'popup');
+  void loadUi(find, 'find');
 
   // While developing, the dev server sometimes rebuilds its bundled libraries just
   // as the app starts, and a page that loads in that moment fails to start (it
@@ -2782,6 +2922,9 @@ ${artifact.content.slice(0, 1500)}`;
     stopWatching();
     for (const timer of startupTimers) clearTimeout(timer);
     ipcMain.removeListener('ui:ready', onUiReady);
+    ipcMain.removeListener('find:ready', onFindReady);
+    ipcMain.removeListener('find:query', onFindQuery);
+    ipcMain.removeListener('find:close', onFindClose);
     ipcMain.removeListener('popup:ready', onPopupReady);
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);

@@ -1468,3 +1468,24 @@ button {
   opacity: 1;
   pointer-events: auto;
 }
+
+/* ---- The find bar (its own small view over a page) -------------------------------- */
+.find-bar {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: var(--s-2);
+  box-sizing: border-box;
+}
+.find-bar .input {
+  flex: 1;
+  min-width: 0;
+}
+.find-count {
+  flex: none;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
