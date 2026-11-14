@@ -22,6 +22,8 @@ import {
   parseEmojiChoice,
   parseToolsChoice,
   toolsMenuItems,
+  libraryMenuItems,
+  parseLibraryChoice,
   zoomChipMenuItems,
   parseLinkChoice,
   parseMessageChoice,
@@ -908,4 +910,35 @@ test("the page's right-click menu reads its zoom, print and inspect choices back
   });
   assert.deepEqual(parsePageChoice('page.print'), { action: 'print' });
   assert.deepEqual(parsePageChoice('page.inspect'), { action: 'inspect' });
+});
+
+test('the Library "…" menu clears the history by range or the closed list, and reads it back', () => {
+  assert.deepEqual(menuIds(libraryMenuItems('history')), [
+    'library.clear-hour',
+    'library.clear-day',
+    'library.clear-all',
+  ]);
+  assert.equal(
+    entry(libraryMenuItems('history'), 'library.clear-all').danger,
+    true,
+  );
+  assert.deepEqual(menuIds(libraryMenuItems('closed')), [
+    'library.clear-closed',
+  ]);
+  assert.deepEqual(parseLibraryChoice('library.clear-hour'), {
+    action: 'clear-history',
+    range: 'hour',
+  });
+  assert.deepEqual(parseLibraryChoice('library.clear-day'), {
+    action: 'clear-history',
+    range: 'day',
+  });
+  assert.deepEqual(parseLibraryChoice('library.clear-all'), {
+    action: 'clear-history',
+    range: 'all',
+  });
+  assert.deepEqual(parseLibraryChoice('library.clear-closed'), {
+    action: 'clear-closed',
+  });
+  assert.equal(parseLibraryChoice('library.clear-week'), null);
 });

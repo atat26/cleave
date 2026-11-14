@@ -74,6 +74,7 @@ export const RIGHT_PANELS = [
   'tools',
   'artifacts',
   'extensions',
+  'library',
   'settings',
 ] as const;
 export type RightPanel = (typeof RIGHT_PANELS)[number];
@@ -96,6 +97,7 @@ export const PANEL_CONTEXT: Record<RightPanel, PanelContext> = {
   tools: 'chat',
   artifacts: 'always',
   extensions: 'web',
+  library: 'always',
   settings: 'always',
 };
 

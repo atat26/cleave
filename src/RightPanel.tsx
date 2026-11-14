@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { ArtifactsPanel } from './ArtifactsPanel';
+import { LibraryPanel } from './LibraryPanel';
 import { PAGE_INSET, RAIL_WIDTH, TOOLBAR_HEIGHT } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
@@ -13,6 +14,7 @@ const TITLES: Record<RightPanelName, string> = {
   tools: 'Tools',
   artifacts: 'Artifacts',
   extensions: 'Extensions',
+  library: 'Library',
   settings: 'Settings',
 };
 
@@ -92,6 +94,8 @@ export function RightPanel({
         >
           {panel === 'settings' ? (
             <SettingsPanel />
+          ) : panel === 'library' ? (
+            <LibraryPanel />
           ) : panel === 'tools' ? (
             <ToolsPanel />
           ) : panel === 'artifacts' ? (

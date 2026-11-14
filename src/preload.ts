@@ -12,6 +12,19 @@ const browserApi: BrowserApi = {
   reloadPage: () => ipcRenderer.send('tab:reload'),
   toggleSidebarPin: () => ipcRenderer.send('sidebar:toggle-pin'),
   showToolsMenu: (x, y) => ipcRenderer.send('toolbar:menu', x, y),
+  libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
+  libraryClosed: () => ipcRenderer.invoke('library:closed'),
+  libraryOpen: (url) => ipcRenderer.send('library:open', url),
+  libraryRemoveVisit: (id) => ipcRenderer.send('library:remove-visit', id),
+  libraryReopenClosed: (id) => ipcRenderer.send('library:reopen-closed', id),
+  showLibraryMenu: (list, x, y) => ipcRenderer.send('library:menu', list, x, y),
+  onLibraryChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('library:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('library:changed', listener);
+    };
+  },
   showZoomMenu: (x, y) => ipcRenderer.send('zoom:menu', x, y),
   findReady: () => ipcRenderer.send('find:ready'),
   findQuery: (text, forward, again) =>
