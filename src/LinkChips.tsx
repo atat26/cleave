@@ -5,7 +5,7 @@ import type { Workspace } from './chatLinks';
 import { SPACE_COLOR_HEX } from './colors';
 import { labelFor } from './Sidebar';
 import type { LinkKind, Mention } from './chats';
-import { Button } from './ui/controls';
+import { Button, IconButton } from './ui/controls';
 import type { ArtifactInfo, ChatRef, SpaceInfo, TabInfo } from './types';
 
 // Linking Spaces and tabs to a chat. This file draws the link chips above the
@@ -187,6 +187,7 @@ export function LinkChips({
         return (
           <span
             key={`${ref.kind}:${ref.id}`}
+            className="reveal-host"
             title={tip}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -242,6 +243,7 @@ export function LinkChips({
             )}
             <button
               type="button"
+              className="reveal"
               aria-label={`Remove link to ${link.label}`}
               title="Remove this link"
               onClick={() =>
@@ -354,17 +356,15 @@ export function AddMenuButton({
   const keepFocus = (e: React.MouseEvent) => e.preventDefault();
   return (
     <>
-      <Button
-        size="sm"
+      <IconButton
         icon="plus"
-        aria-label="Add"
+        size="sm"
+        className={open ? 'reveal is-on' : 'reveal'}
+        label="Add a page or an artifact to the chat"
         aria-expanded={open}
         onMouseDown={keepFocus}
         onClick={() => setOpen(!open)}
-        title="Add a page or an artifact to the chat"
-      >
-        Add
-      </Button>
+      />
       {open && (
         <>
           <Button

@@ -539,7 +539,7 @@ button {
   transition: opacity var(--dur-fast);
 }
 .lrow:hover .hover-only,
-.lrow:focus-within .hover-only {
+.lrow:has(:focus-visible) .hover-only {
   opacity: 1;
 }
 /* A row whose hover-only buttons take no room until the mouse is on it (so a
@@ -548,7 +548,7 @@ button {
   display: none;
 }
 .lrow.collapse-actions:hover .hover-only,
-.lrow.collapse-actions:focus-within .hover-only {
+.lrow.collapse-actions:has(:focus-visible) .hover-only {
   display: inline-flex;
 }
 .lrow .btn-icon {
@@ -1221,7 +1221,7 @@ button {
   transition: opacity var(--dur-fast);
 }
 .msg-wrap:hover .msg-actions .btn,
-.msg-wrap:focus-within .msg-actions .btn {
+.msg-wrap:has(:focus-visible) .msg-actions .btn {
   opacity: 1;
 }
 
@@ -1406,4 +1406,65 @@ button {
   display: inline-flex;
   cursor: grab;
   color: var(--c-text-3);
+}
+
+/* ---- Quiet controls: shown only when they are relevant ----------------------------
+   A control with class "reveal" is invisible until the pointer or the keyboard is on
+   its "reveal-host" (the item or header it belongs to). It keeps its place (nothing
+   jumps), cannot be hit by accident while hidden, and Tab reaches it (focus reveals
+   the whole host). "is-on" keeps one visible (for example while it is working). */
+.reveal {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast);
+}
+.reveal-host:hover > .reveal,
+.reveal-host:has(:focus-visible) > .reveal,
+.reveal.is-on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The sidebar header: "+" is always there; "+ Space" fades in over the title when
+   the pointer is on the "+", and the pin when it is on the header. */
+.sb-head {
+  position: relative;
+}
+.sb-add {
+  display: flex;
+  align-items: center;
+  /* Reaches over the gap to "+ Space" (without moving anything), so moving the
+     pointer from the "+" to it does not lose the hover on the way. */
+  padding-right: 12px;
+  margin-right: -12px;
+}
+.sb-space {
+  position: absolute;
+  /* Above the title it covers (a title that has faded is still there to be hit). */
+  z-index: 2;
+  left: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.sb-head:has(.sb-add:hover) .sb-title,
+.sb-head:has(.sb-add:has(:focus-visible)) .sb-title {
+  opacity: 0;
+}
+.sb-title {
+  transition: opacity var(--dur-fast);
+}
+
+/* A card on a Space's overview: one "…" in its corner while the pointer is on it. */
+.ov-card {
+  position: relative;
+}
+.ov-more {
+  flex: none;
+  margin: -2px -4px 0 0;
+}
+.ov-card:hover .ov-more,
+.ov-card:has(:focus-visible) .ov-more {
+  opacity: 1;
+  pointer-events: auto;
 }

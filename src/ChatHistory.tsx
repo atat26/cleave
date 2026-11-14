@@ -122,6 +122,7 @@ export function ChatList({
   return (
     <>
       <div
+        className="reveal-host"
         style={{
           display: 'flex',
           alignItems: 'center',

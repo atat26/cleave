@@ -175,7 +175,7 @@ export function Toolbar({
       >
         {chatOnly ? (
           <>
-            <div className="tb-chat">
+            <div className="tb-chat reveal-host">
               <ChatTitle chats={chats} />
             </div>
           </>

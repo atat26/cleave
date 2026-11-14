@@ -41,6 +41,7 @@ export function ChatSwitcher({
 
   return (
     <div
+      className="reveal-host"
       style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}
       // Right-click the name for the same menu as a chat's row in the chat list.
       onContextMenu={(event) => {
@@ -95,6 +96,7 @@ export function ChatSwitcher({
       )}
       <IconButton
         icon="plus"
+        className="reveal"
         label="New chat"
         size="sm"
         onClick={() => window.browserApi.newChat()}

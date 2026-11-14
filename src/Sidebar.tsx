@@ -427,6 +427,7 @@ function FullSidebar({
   return (
     <>
       <div
+        className="sb-head reveal-host"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -439,31 +440,37 @@ function FullSidebar({
           flexShrink: 0,
         }}
       >
-        {/* The new-tab "+" is in the same place (top left) as in the narrow strip. */}
-        <button
-          type="button"
-          aria-label="New tab"
-          title="New tab (Ctrl+T)"
-          onClick={() => window.browserApi.newTab(null)}
-          style={iconButtonStyle}
-        >
-          +
-        </button>
-        <span style={{ flex: 1, paddingLeft: 4 }}>Tabs</span>
-        <button
-          type="button"
-          aria-label="New Space"
-          title="New Space"
-          onClick={() => window.browserApi.newSpace()}
-          style={{
-            ...iconButtonStyle,
-            width: 'auto',
-            padding: '0 8px',
-            fontSize: 12,
-          }}
-        >
-          + Space
-        </button>
+        {/* The new-tab "+" is in the same place (top left) as in the narrow strip.
+            Resting the pointer on it brings up "+ Space" beside it. */}
+        <div className="sb-add reveal-host">
+          <button
+            type="button"
+            aria-label="New tab"
+            title="New tab (Ctrl+T)"
+            onClick={() => window.browserApi.newTab(null)}
+            style={iconButtonStyle}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="reveal sb-space"
+            aria-label="New Space"
+            title="New Space"
+            onClick={() => window.browserApi.newSpace()}
+            style={{
+              ...iconButtonStyle,
+              width: 'auto',
+              padding: '0 8px',
+              fontSize: 12,
+            }}
+          >
+            + Space
+          </button>
+        </div>
+        <span className="sb-title" style={{ flex: 1, paddingLeft: 4 }}>
+          Tabs
+        </span>
         <PinButton pinned={state.sidebarPinned} />
       </div>
 

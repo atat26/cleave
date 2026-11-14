@@ -68,6 +68,8 @@ export interface ChatService {
   // Send the UI the messages that have @ mentions or attached pages again (their
   // tokens changed, for example after a closed page was reopened).
   refreshMentions(): void;
+  // Name a chat with the model (the "name it with AI" button and menu entry).
+  nameChat(chatId: number): Promise<NameResult>;
   // Stop everything and unhook from the window.
   dispose(): void;
 }
@@ -692,6 +694,7 @@ export function createChatService(options: {
 
   return {
     runningChats: () => runner.runningChats(),
+    nameChat: (chatId) => nameChat(chatId, true),
     stop: (chatId) => runner.stop(chatId),
     refreshMentions() {
       for (const chat of options.getChats().conversations) {

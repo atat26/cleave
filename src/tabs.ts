@@ -64,6 +64,7 @@ import type { Cdp, DoneResult } from './pageActions';
 import { buildOutline } from './pageOutline';
 import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
+import type { NameResult } from './naming';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
 import { snapshotLookup } from './chatLinks';
@@ -1491,6 +1492,9 @@ export async function createTabs(
           win.webContents.send('artifact:begin-rename', id);
         }
         break;
+      case 'name-ai':
+        nameFromMenu('artifact', id);
+        break;
       case 'icon':
         pickEmoji(artifact.emoji, (picked) => {
           const result = artifactsModel.updateArtifact(
@@ -1783,6 +1787,9 @@ export async function createTabs(
       case 'rename':
         menuActions.renameSpace(spaceId);
         break;
+      case 'name-ai':
+        nameFromMenu('space', spaceId);
+        break;
       case 'icon':
         pickEmoji(space.emoji, (picked) =>
           commit(
@@ -1830,6 +1837,9 @@ export async function createTabs(
       case 'rename':
         chatMenuActions.renameChat(choice.chatId);
         break;
+      case 'name-ai':
+        nameFromMenu('chat', choice.chatId);
+        break;
       case 'icon': {
         const chatId = choice.chatId;
         pickEmoji(
@@ -1857,6 +1867,9 @@ export async function createTabs(
     const choice = parseTabChoice(choiceId);
     if (!tab || !choice) return;
     switch (choice.action) {
+      case 'open':
+        reopenTab(tabId);
+        break;
       case 'new-below':
         commitAndShow(
           revealPage(
@@ -2505,8 +2518,7 @@ export async function createTabs(
   });
   // The "name it with AI" button on a Space or an artifact (a chat's is handled by
   // the chat service). It replaces the name and emoji; the result says how it went.
-  ipcMain.handle('name:ai', async (event, kind: unknown, id: unknown) => {
-    if (!fromWindow(event)) throw new Error('Not allowed.');
+  const nameThing = async (kind: unknown, id: unknown): Promise<NameResult> => {
     if (!isId(id)) return { ok: false, error: 'That no longer exists.' };
     if (kind === 'space') {
       const space = model.findSpace(state, id);
@@ -2563,7 +2575,35 @@ ${artifact.content.slice(0, 1500)}`;
       return result;
     }
     return { ok: false, error: 'That cannot be named.' };
+  };
+  ipcMain.handle('name:ai', (event, kind: unknown, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (kind === 'chat') {
+      return isId(id)
+        ? (chatService?.nameChat(id) ??
+            Promise.resolve({ ok: false, error: 'Not ready yet.' }))
+        : Promise.resolve({ ok: false, error: 'That no longer exists.' });
+    }
+    return nameThing(kind, id);
   });
+  // "Name with AI" from a menu: the same, with a plain message if it fails (there
+  // is no button to show it on).
+  const nameFromMenu = (kind: 'chat' | 'space' | 'artifact', id: number) => {
+    const run =
+      kind === 'chat'
+        ? (chatService?.nameChat(id) ??
+          Promise.resolve({ ok: false as const, error: 'Not ready yet.' }))
+        : nameThing(kind, id);
+    void run.then((result) => {
+      if (!result.ok && !win.isDestroyed()) {
+        void dialog.showMessageBox(win, {
+          type: 'info',
+          message: "Couldn't name it",
+          detail: result.error,
+        });
+      }
+    });
+  };
   ipcMain.handle('theme:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return themeSettings.theme;

@@ -195,6 +195,7 @@ export function ArtifactsPanel({
   const row = (a: ArtifactInfo) => (
     <li
       key={a.id}
+      className="reveal-host"
       onContextMenu={(event) => {
         event.preventDefault();
         window.browserApi.showArtifactMenu(a.id, event.clientX, event.clientY);
@@ -248,6 +249,7 @@ export function ArtifactsPanel({
       </div>
       <button
         type="button"
+        className="reveal"
         aria-label={`Delete ${a.title}`}
         title="Delete"
         onClick={() => window.browserApi.artifactDelete(a.id)}

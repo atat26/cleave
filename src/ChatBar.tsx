@@ -90,6 +90,7 @@ export function ChatBar({
     <IconButton
       icon="x"
       size="sm"
+      className="reveal"
       label="Close chat (show only the page)"
       onClick={() => window.browserApi.setViewMode('page')}
     />
@@ -113,7 +114,7 @@ export function ChatBar({
         {/* With only the chat open, its name is shown up in the top strip
             and the chat list is in the sidebar, so no header is needed here. */}
         {full && !chatOnly && (
-          <div className="chat-head">
+          <div className="chat-head reveal-host">
             <div style={{ flex: 1, minWidth: 0 }}>
               <ChatSwitcher
                 chats={chats}
@@ -125,6 +126,7 @@ export function ChatBar({
             <IconButton
               icon="chev-d"
               size="sm"
+              className="reveal"
               label="Shrink chat (Ctrl+J)"
               onClick={() => window.browserApi.toggleChat()}
             />
@@ -186,6 +188,7 @@ export function ChatBar({
                   <IconButton
                     icon="chev-u"
                     size="sm"
+                    className="reveal"
                     label="Expand chat (Ctrl+J)"
                     onClick={() => window.browserApi.toggleChat()}
                   />
