@@ -12,6 +12,22 @@ const browserApi: BrowserApi = {
   reloadPage: () => ipcRenderer.send('tab:reload'),
   toggleSidebarPin: () => ipcRenderer.send('sidebar:toggle-pin'),
   showToolsMenu: (x, y) => ipcRenderer.send('toolbar:menu', x, y),
+  suggestQuery: (text) => ipcRenderer.invoke('suggest:query', text),
+  suggestShow: (rows, selected, bar) =>
+    ipcRenderer.send('suggest:show', rows, selected, bar),
+  suggestHide: () => ipcRenderer.send('suggest:hide'),
+  suggestPick: (index) => ipcRenderer.send('suggest:pick', index),
+  suggestReady: () => ipcRenderer.send('suggest:ready'),
+  onSuggestRows: (callback) => {
+    const listener = (
+      _event: unknown,
+      payload: Parameters<typeof callback>[0],
+    ) => callback(payload);
+    ipcRenderer.on('suggest:rows', listener);
+    return () => {
+      ipcRenderer.removeListener('suggest:rows', listener);
+    };
+  },
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
   showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
   libraryBookmarks: (query) => ipcRenderer.invoke('library:bookmarks', query),

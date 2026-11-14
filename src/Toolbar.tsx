@@ -5,6 +5,7 @@ import type { ViewMode } from './model';
 import { NameButton } from './NameButton';
 import { describeSite } from './site';
 import { zoomLabel } from './zoom';
+import type { Suggestion } from './suggest';
 import type { ChatsInfo } from './types';
 import { IconButton, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
@@ -145,9 +146,53 @@ export function Toolbar({
     if (document.activeElement !== inputRef.current) setText(url);
   }, [url]);
 
+  // The suggestions under the address bar (drawn by a view of their own).
+  const [rows, setRows] = useState<Suggestion[]>([]);
+  const [selected, setSelected] = useState(-1);
+  const latest = useRef(0);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  const showRows = (next: Suggestion[], index: number) => {
+    const box = barRef.current?.getBoundingClientRect();
+    if (!box || next.length === 0) {
+      window.browserApi.suggestHide();
+      return;
+    }
+    window.browserApi.suggestShow(next, index, {
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+    });
+  };
+  const closeSuggestions = () => {
+    latest.current++;
+    setRows([]);
+    setSelected(-1);
+    window.browserApi.suggestHide();
+  };
+  const askSuggestions = (value: string) => {
+    const mine = ++latest.current;
+    if (value.trim() === '') {
+      closeSuggestions();
+      return;
+    }
+    void window.browserApi.suggestQuery(value).then((found) => {
+      if (mine !== latest.current) return; // You have typed more since.
+      setRows(found);
+      setSelected(-1);
+      showRows(found, -1);
+    });
+  };
+  // A new page (or a new tab): the list is over.
+  useEffect(closeSuggestions, [url]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    window.browserApi.navigate(text);
+    const row = selected >= 0 ? rows[selected] : undefined;
+    if (row) window.browserApi.suggestPick(selected);
+    else window.browserApi.navigate(text);
+    closeSuggestions();
     inputRef.current?.blur();
   };
 
@@ -212,7 +257,7 @@ export function Toolbar({
                 }
               />
             </div>
-            <div className="addressbar" role="search">
+            <div ref={barRef} className="addressbar" role="search">
               {site && (
                 <span
                   className="site"
@@ -229,7 +274,34 @@ export function Toolbar({
               <input
                 ref={inputRef}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  askSuggestions(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    rows.length > 0 &&
+                    (e.key === 'ArrowDown' || e.key === 'ArrowUp')
+                  ) {
+                    e.preventDefault();
+                    const count = rows.length;
+                    const next =
+                      e.key === 'ArrowDown'
+                        ? selected + 1 >= count
+                          ? -1
+                          : selected + 1
+                        : selected - 1 < -1
+                          ? count - 1
+                          : selected - 1;
+                    setSelected(next);
+                    showRows(rows, next);
+                  } else if (e.key === 'Escape' && rows.length > 0) {
+                    e.preventDefault();
+                    closeSuggestions();
+                  }
+                }}
+                // A moment's grace, so a click on a suggestion is not lost.
+                onBlur={() => setTimeout(closeSuggestions, 150)}
                 onFocus={(e) => e.target.select()}
                 onContextMenu={(event) => {
                   event.preventDefault();
