@@ -79,6 +79,15 @@ import {
   parseDownloadSettings,
   withDownloadSettings,
 } from './downloadSettings';
+import {
+  classify,
+  decide,
+  defaultPermissions,
+  parsePermissions,
+  setAnswer,
+  siteKey,
+} from './permissions';
+import type { AskKind } from './permissions';
 import { MAX_SUGGESTIONS, suggest, suggestRect } from './suggest';
 import type { Suggestion, SuggestionKind } from './suggest';
 import {
@@ -176,6 +185,8 @@ import {
   zoomChipMenuItems,
   downloadMenuItems,
   libraryMenuItems,
+  parsePermissionChoice,
+  permissionPromptItems,
   parseDownloadChoice,
   parseLibraryChoice,
   parseStarChoice,
@@ -343,7 +354,18 @@ export async function createTabs(
     defaultBookmarks,
   );
   const bookmarksSaver = createSaver(bookmarksFile, () => bookmarks);
-  // Downloads: the list, and where files are saved (see downloadManager.ts).
+  // What sites may do (camera, location...): see permissions.ts.
+  const permissionsFile = path.join(
+    app.getPath('userData'),
+    'permissions.json',
+  );
+  let permissions = await loadJson(
+    permissionsFile,
+    parsePermissions,
+    defaultPermissions,
+  );
+  const permissionsSaver = createSaver(permissionsFile, () => permissions);
+  // Downloads: the manager catches what pages download (see downloadManager.ts).
   const downloadsFile = path.join(app.getPath('userData'), 'downloads.json');
   let downloads = await loadJson(
     downloadsFile,
@@ -528,6 +550,8 @@ export async function createTabs(
     items: MenuItem[];
     choose: (id: string) => void;
     opener: Electron.WebContents;
+    // Called when the menu closes without anything being chosen.
+    dismissed?: () => void;
   } | null = null;
 
   // ---- Layout ----------------------------------------------------------------
@@ -897,9 +921,10 @@ export async function createTabs(
     opener: Electron.WebContents,
     alignCenter?: number,
     picker = false,
+    dismissed?: () => void,
   ) => {
     if (openMenu) closeMenu(false);
-    openMenu = { items, choose, opener };
+    openMenu = { items, choose, opener, dismissed };
     lastMenu = { x, y, opener };
     busy++;
     const send = () =>
@@ -915,9 +940,10 @@ export async function createTabs(
 
   const closeMenu = (giveBackKeyboard = true) => {
     if (!openMenu) return;
-    const { opener } = openMenu;
+    const { opener, dismissed } = openMenu;
     openMenu = null;
     busy = Math.max(0, busy - 1);
+    dismissed?.();
     waitingForPopup = null;
     if (!popup.isDestroyed()) popup.send('popup:hide');
     popupView.setVisible(false);
@@ -1547,6 +1573,114 @@ export async function createTabs(
     else working.delete(tabId);
     sendState();
   };
+  // ---- What sites may do: camera, microphone, location, notifications ------
+  // A site that asks gets a small question under the address bar (one at a time).
+  // The answer can be remembered. Anything we do not know is refused, and so is
+  // every ask from a page that is not showing, or from a site that is not secure.
+  const pageOf = (contents: Electron.WebContents | null) =>
+    contents !== null &&
+    [...views.values()].some((view) => view.webContents === contents);
+  const askQueue: (() => void)[] = [];
+  let asking = false;
+  const nextQuestion = () => {
+    asking = false;
+    const next = askQueue.shift();
+    if (next) next();
+  };
+  const askAboutSite = (
+    contents: Electron.WebContents,
+    site: string,
+    kinds: AskKind[],
+    reply: (allowed: boolean) => void,
+  ) => {
+    const run = () => {
+      asking = true;
+      // A question is only asked on the page you are looking at.
+      const still = decide(permissions, site, kinds);
+      if (still.verdict !== 'ask') {
+        reply(still.verdict === 'allow');
+        nextQuestion();
+        return;
+      }
+      if (contents.isDestroyed() || activePage() !== contents) {
+        reply(false);
+        nextQuestion();
+        return;
+      }
+      const rect = pageBounds();
+      const host = new URL(site).host;
+      showMenu(
+        permissionPromptItems(host, still.kinds),
+        rect.x + 16,
+        rect.y + 4,
+        (id) => {
+          const choice = parsePermissionChoice(id);
+          if (choice === 'allow' || choice === 'block') {
+            for (const kind of still.kinds) {
+              permissions = setAnswer(permissions, site, kind, choice);
+            }
+            permissionsSaver.schedule();
+          }
+          reply(choice === 'allow' || choice === 'once');
+          nextQuestion();
+        },
+        win.webContents,
+        undefined,
+        false,
+        () => {
+          reply(false);
+          nextQuestion();
+        },
+      );
+    };
+    if (asking) askQueue.push(run);
+    else run();
+  };
+  const shownTypes = (details: unknown): readonly string[] => {
+    const types = (details as { mediaTypes?: unknown }).mediaTypes;
+    return Array.isArray(types)
+      ? types.filter((t) => typeof t === 'string')
+      : [];
+  };
+  session.defaultSession.setPermissionRequestHandler(
+    (contents, permission, callback, details) => {
+      const types = shownTypes(details);
+      const verdict = classify(permission, types);
+      if (verdict.verdict !== 'ask') {
+        // The harmless ones are fine for pages; our own screens get nothing else.
+        callback(verdict.verdict === 'allow');
+        return;
+      }
+      if (!pageOf(contents)) {
+        callback(false);
+        return;
+      }
+      const site = siteKey(contents.getURL());
+      const decision = decide(permissions, site, verdict.kinds);
+      if (decision.verdict !== 'ask' || site === null) {
+        callback(decision.verdict === 'allow');
+        return;
+      }
+      askAboutSite(contents, site, decision.kinds, callback);
+    },
+  );
+  // Quiet checks ("may I?") never ask: only what was already allowed passes.
+  session.defaultSession.setPermissionCheckHandler(
+    (contents, permission, _origin, details) => {
+      const mediaType = (details as { mediaType?: string }).mediaType;
+      const verdict = classify(
+        permission,
+        mediaType === undefined || mediaType === 'unknown'
+          ? ['video', 'audio']
+          : [mediaType],
+      );
+      if (verdict.verdict !== 'ask') return verdict.verdict === 'allow';
+      if (!pageOf(contents)) return false;
+      const site = siteKey(contents?.getURL() ?? '');
+      return decide(permissions, site, verdict.kinds).verdict === 'allow';
+    },
+  );
+
   session.defaultSession.on('will-download', (event, _item, contents) => {
     const tabId = [...views].find(([, v]) => v.webContents === contents)?.[0];
     if (tabId !== undefined && working.has(tabId)) event.preventDefault();
@@ -3270,6 +3404,7 @@ export async function createTabs(
     // Only an item of the menu that is open (and enabled) counts.
     if (!isChoosable(openMenu.items, id)) return;
     const { choose } = openMenu;
+    openMenu.dismissed = undefined; // something was chosen
     closeMenu(true);
     choose(id);
   };
@@ -3877,6 +4012,7 @@ ${artifact.content.slice(0, 1500)}`;
     historySaver.flushSync();
     bookmarksSaver.flushSync();
     downloadsSaver.flushSync();
+    permissionsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
   });

@@ -25,6 +25,8 @@ import {
   downloadMenuItems,
   libraryMenuItems,
   parseDownloadChoice,
+  parsePermissionChoice,
+  permissionPromptItems,
   parseStarChoice,
   starMenuItems,
   parseLibraryChoice,
@@ -1069,4 +1071,18 @@ test("a download's menu offers only what fits how it stands, and reads back", ()
   assert.deepEqual(parseLibraryChoice('library.clear-downloads'), {
     action: 'clear-downloads',
   });
+});
+
+test("a site's question names it, offers three answers, and reads back", () => {
+  const items = permissionPromptItems('a.com', ['camera']);
+  assert.equal(items[0].type, 'header');
+  assert.deepEqual(menuIds(items), [
+    'permission.allow',
+    'permission.once',
+    'permission.block',
+  ]);
+  assert.equal(parsePermissionChoice('permission.allow'), 'allow');
+  assert.equal(parsePermissionChoice('permission.once'), 'once');
+  assert.equal(parsePermissionChoice('permission.block'), 'block');
+  assert.equal(parsePermissionChoice('permission.always'), null);
 });

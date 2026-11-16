@@ -2,6 +2,8 @@
 // the reading of a chosen item's id back into what to do. Pure code with no
 // Electron, so it is easy to test. The actions themselves live in tabs.ts.
 import type { MenuItem } from './menuTypes.ts';
+import { askText } from './permissions.ts';
+import type { AskKind } from './permissions.ts';
 import * as model from './model.ts';
 import type { SavedState } from './model.ts';
 import { ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
@@ -1609,6 +1611,41 @@ export function parseDownloadChoice(id: string): DownloadChoice | null {
       return { action: 'cancel' };
     case 'download.remove':
       return { action: 'remove' };
+  }
+  return null;
+}
+
+// ---- The question a site asks (camera, location...) ---------------------------
+// Shown in the popup layer under the address bar. Closing it without answering
+// refuses this once and remembers nothing.
+
+export type PermissionChoice = 'allow' | 'once' | 'block';
+
+export function permissionPromptItems(
+  host: string,
+  kinds: AskKind[],
+): MenuItem[] {
+  return [
+    { type: 'header', label: askText(host, kinds) },
+    { type: 'item', id: 'permission.allow', label: 'Allow', icon: 'check' },
+    {
+      type: 'item',
+      id: 'permission.once',
+      label: 'Allow this time',
+      icon: 'clock',
+    },
+    { type: 'item', id: 'permission.block', label: 'Block', icon: 'x' },
+  ];
+}
+
+export function parsePermissionChoice(id: string): PermissionChoice | null {
+  switch (id) {
+    case 'permission.allow':
+      return 'allow';
+    case 'permission.once':
+      return 'once';
+    case 'permission.block':
+      return 'block';
   }
   return null;
 }
