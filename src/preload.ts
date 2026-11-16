@@ -30,6 +30,7 @@ const browserApi: BrowserApi = {
   },
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
   showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
+  showSiteMenu: (x, y) => ipcRenderer.send('site:menu', x, y),
   libraryBookmarks: (query) => ipcRenderer.invoke('library:bookmarks', query),
   libraryRemoveBookmark: (id) =>
     ipcRenderer.send('library:remove-bookmark', id),

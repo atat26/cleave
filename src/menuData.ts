@@ -2,8 +2,9 @@
 // the reading of a chosen item's id back into what to do. Pure code with no
 // Electron, so it is easy to test. The actions themselves live in tabs.ts.
 import type { MenuItem } from './menuTypes.ts';
-import { askText } from './permissions.ts';
-import type { AskKind } from './permissions.ts';
+import type { IconName } from './ui/iconData.ts';
+import { ASK_KINDS, askText } from './permissions.ts';
+import type { Answer, AskKind } from './permissions.ts';
 import * as model from './model.ts';
 import type { SavedState } from './model.ts';
 import { ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
@@ -1619,6 +1620,14 @@ export function parseDownloadChoice(id: string): DownloadChoice | null {
 // Shown in the popup layer under the address bar. Closing it without answering
 // refuses this once and remembers nothing.
 
+const PERMISSION_ICONS: Record<AskKind, IconName> = {
+  camera: 'camera',
+  microphone: 'mic',
+  location: 'pin',
+  notifications: 'bell',
+  clipboard: 'paste',
+};
+
 export type PermissionChoice = 'allow' | 'once' | 'block';
 
 export function permissionPromptItems(
@@ -1626,15 +1635,18 @@ export function permissionPromptItems(
   kinds: AskKind[],
 ): MenuItem[] {
   return [
-    { type: 'header', label: askText(host, kinds) },
-    { type: 'item', id: 'permission.allow', label: 'Allow', icon: 'check' },
+    {
+      type: 'header',
+      label: askText(host, kinds),
+      icon: PERMISSION_ICONS[kinds[0]] ?? 'globe',
+    },
     {
       type: 'item',
-      id: 'permission.once',
-      label: 'Allow this time',
-      icon: 'clock',
+      id: 'permission.allow',
+      label: 'Allow while visiting the site',
     },
-    { type: 'item', id: 'permission.block', label: 'Block', icon: 'x' },
+    { type: 'item', id: 'permission.once', label: 'Allow this time' },
+    { type: 'item', id: 'permission.block', label: 'Never allow' },
   ];
 }
 
@@ -1648,4 +1660,103 @@ export function parsePermissionChoice(id: string): PermissionChoice | null {
       return 'block';
   }
   return null;
+}
+
+// ---- The site chip's menu (what this site may do) -----------------------------
+// Opened from the lock at the start of the address bar. Each kind of thing a site
+// can ask for has a small menu: Ask (the default), Allow, Block.
+
+export type SiteChoice =
+  | { action: 'set'; kind: AskKind; answer: Answer | null }
+  | { action: 'reset' };
+
+const SITE_KINDS: { kind: AskKind; label: string; icon: IconName }[] = [
+  { kind: 'camera', label: 'Camera', icon: 'camera' },
+  { kind: 'microphone', label: 'Microphone', icon: 'mic' },
+  { kind: 'location', label: 'Location', icon: 'pin' },
+  { kind: 'notifications', label: 'Notifications', icon: 'bell' },
+  { kind: 'clipboard', label: 'Clipboard', icon: 'paste' },
+];
+
+export function siteMenuItems(options: {
+  host: string;
+  secure: boolean;
+  // The site can ask for permissions (https, or this computer).
+  canAsk: boolean;
+  // What is remembered for the site, by kind (empty if nothing).
+  answers: Partial<Record<AskKind, Answer>>;
+}): MenuItem[] {
+  const header: MenuItem = {
+    type: 'header',
+    label: options.host,
+    icon: options.secure ? 'lock' : 'warn',
+    detail: options.secure
+      ? 'Connection is secure'
+      : 'Connection is not secure',
+  };
+  if (!options.canAsk) {
+    return [
+      header,
+      {
+        type: 'item',
+        id: 'site.insecure',
+        label: 'A site that is not secure cannot ask for permissions',
+        disabled: true,
+      },
+    ];
+  }
+  // Like Chrome, only what you have changed for this site is listed; the rest is
+  // simply "ask".
+  const changed = SITE_KINDS.filter(({ kind }) => options.answers[kind]);
+  if (changed.length === 0) {
+    return [
+      header,
+      {
+        type: 'item',
+        id: 'site.none',
+        label:
+          'No saved permissions. This site asks before using your camera, location and so on.',
+        disabled: true,
+      },
+    ];
+  }
+  return [
+    header,
+    ...changed.map(
+      ({ kind, label, icon }): MenuItem => ({
+        type: 'item',
+        id: `site.kind:${kind}`,
+        label,
+        icon,
+        submenu: (['ask', 'allow', 'block'] as const).map(
+          (answer): MenuItem => ({
+            type: 'item',
+            id: `site.set:${kind}:${answer}`,
+            label:
+              answer === 'ask' ? 'Ask' : answer === 'allow' ? 'Allow' : 'Block',
+            checked: (options.answers[kind] ?? 'ask') === answer,
+          }),
+        ),
+      }),
+    ),
+    {
+      type: 'item',
+      id: 'site.reset',
+      label: 'Reset permissions for this site',
+      icon: 'undo',
+    },
+  ];
+}
+
+export function parseSiteChoice(id: string): SiteChoice | null {
+  if (id === 'site.reset') return { action: 'reset' };
+  const m = /^site\.set:([a-z]+):(ask|allow|block)$/.exec(id);
+  if (!m) return null;
+  const kind = ASK_KINDS.find((k) => k === m[1]);
+  if (!kind) return null;
+  return {
+    action: 'set',
+    kind,
+    answer: m[2] === 'ask' ? null : (m[2] as Answer),
+  };
 }

@@ -26,6 +26,8 @@ import {
   libraryMenuItems,
   parseDownloadChoice,
   parsePermissionChoice,
+  parseSiteChoice,
+  siteMenuItems,
   permissionPromptItems,
   parseStarChoice,
   starMenuItems,
@@ -1085,4 +1087,70 @@ test("a site's question names it, offers three answers, and reads back", () => {
   assert.equal(parsePermissionChoice('permission.once'), 'once');
   assert.equal(parsePermissionChoice('permission.block'), 'block');
   assert.equal(parsePermissionChoice('permission.always'), null);
+});
+
+test("the site chip's menu shows each permission's state and reads choices back", () => {
+  const items = siteMenuItems({
+    host: 'a.com',
+    secure: true,
+    canAsk: true,
+    answers: { camera: 'allow', location: 'block' },
+  });
+  assert.equal(items[0].type, 'header');
+  const camera = entry(items, 'site.kind:camera');
+  assert.equal(camera.label, 'Camera');
+  assert.equal(entry(items, 'site.kind:location').label, 'Location');
+  const subs = camera.submenu!.filter((i) => i.type === 'item') as MenuEntry[];
+  assert.deepEqual(
+    subs.map((i) => [i.id, i.checked === true]),
+    [
+      ['site.set:camera:ask', false],
+      ['site.set:camera:allow', true],
+      ['site.set:camera:block', false],
+    ],
+  );
+  assert.notEqual(entry(items, 'site.reset').disabled, true);
+  // Only what was changed is listed; the rest is just "ask".
+  assert.equal(
+    menuIds(items).some((id) => id.startsWith('site.kind:microphone')),
+    false,
+  );
+  const fresh = siteMenuItems({
+    host: 'a.com',
+    secure: true,
+    canAsk: true,
+    answers: {},
+  });
+  assert.deepEqual(menuIds(fresh), ['site.none']);
+  // A site that is not secure can ask for nothing, so there is nothing to set.
+  assert.deepEqual(
+    menuIds(
+      siteMenuItems({
+        host: 'a.com',
+        secure: false,
+        canAsk: false,
+        answers: {},
+      }),
+    ),
+    ['site.insecure'],
+  );
+  assert.deepEqual(parseSiteChoice('site.set:camera:allow'), {
+    action: 'set',
+    kind: 'camera',
+    answer: 'allow',
+  });
+  assert.deepEqual(parseSiteChoice('site.set:location:ask'), {
+    action: 'set',
+    kind: 'location',
+    answer: null,
+  });
+  assert.deepEqual(parseSiteChoice('site.reset'), { action: 'reset' });
+  for (const bad of [
+    '',
+    'site.set:usb:allow',
+    'site.set:camera:maybe',
+    'site.kind:camera',
+  ]) {
+    assert.equal(parseSiteChoice(bad), null, bad);
+  }
 });
