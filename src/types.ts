@@ -298,6 +298,8 @@ export interface BrowserApi {
   libraryHistory: (query: string) => Promise<HistoryEntry[]>;
   // The star in the address bar (bookmark, or save into a Space).
   showStarMenu: (x: number, y: number) => void;
+  // The lock chip's menu: what this site may do.
+  showSiteMenu: (x: number, y: number) => void;
   libraryBookmarks: (query: string) => Promise<Bookmark[]>;
   libraryRemoveBookmark: (id: number) => void;
   // Downloads: the list, and Settings > Downloads.
@@ -436,6 +438,8 @@ export interface BrowserApi {
       x: number;
       y: number;
       alignCenter?: number;
+      // Draw a card for a site instead of a menu.
+      panel?: 'prompt' | 'site';
       // Draw the emoji picker instead of a menu.
       picker?: boolean;
     }) => void,

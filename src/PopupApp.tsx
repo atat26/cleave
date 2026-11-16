@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import type { MenuItem } from './menuTypes';
 import { ContextMenu } from './ui/ContextMenu';
 import { EmojiPicker } from './ui/EmojiPicker';
+import { SitePanel } from './ui/SitePanel';
 
 interface Shown {
   items: MenuItem[];
@@ -14,6 +15,8 @@ interface Shown {
   y: number;
   alignCenter?: number;
   picker?: boolean;
+  // Draw a card for a site instead of a menu (see ui/SitePanel.tsx).
+  panel?: 'prompt' | 'site';
 }
 
 export function PopupApp() {
@@ -50,7 +53,21 @@ export function PopupApp() {
       }}
     >
       <div onMouseDown={(event) => event.stopPropagation()}>
-        {shown.picker ? (
+        {shown.panel ? (
+          <SitePanel
+            kind={shown.panel}
+            items={shown.items}
+            x={shown.x}
+            y={shown.y}
+            onClose={close}
+            onChoose={(id) => {
+              // The site card stays open while you change things (the app sends it
+              // again, updated); the question closes on an answer.
+              if (shown.panel === 'prompt') setShown(null);
+              window.browserApi.popupChoose(id);
+            }}
+          />
+        ) : shown.picker ? (
           <EmojiPicker
             items={shown.items}
             x={shown.x}

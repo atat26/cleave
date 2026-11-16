@@ -84,10 +84,12 @@ import {
   decide,
   defaultPermissions,
   parsePermissions,
+  resetSite,
   setAnswer,
   siteKey,
 } from './permissions';
 import type { AskKind } from './permissions';
+import { describeSite } from './site';
 import { MAX_SUGGESTIONS, suggest, suggestRect } from './suggest';
 import type { Suggestion, SuggestionKind } from './suggest';
 import {
@@ -186,7 +188,9 @@ import {
   downloadMenuItems,
   libraryMenuItems,
   parsePermissionChoice,
+  parseSiteChoice,
   permissionPromptItems,
+  siteMenuItems,
   parseDownloadChoice,
   parseLibraryChoice,
   parseStarChoice,
@@ -552,6 +556,13 @@ export async function createTabs(
     opener: Electron.WebContents;
     // Called when the menu closes without anything being chosen.
     dismissed?: () => void;
+    // What is drawn, so a card can be sent again with changes.
+    shown: {
+      items: MenuItem[];
+      x: number;
+      y: number;
+      panel?: 'prompt' | 'site';
+    };
   } | null = null;
 
   // ---- Layout ----------------------------------------------------------------
@@ -922,13 +933,20 @@ export async function createTabs(
     alignCenter?: number,
     picker = false,
     dismissed?: () => void,
+    panel?: 'prompt' | 'site',
   ) => {
     if (openMenu) closeMenu(false);
-    openMenu = { items, choose, opener, dismissed };
+    openMenu = {
+      items,
+      choose,
+      opener,
+      dismissed,
+      shown: { items, x, y, panel },
+    };
     lastMenu = { x, y, opener };
     busy++;
     const send = () =>
-      popup.send('popup:show', { items, x, y, alignCenter, picker });
+      popup.send('popup:show', { items, x, y, alignCenter, picker, panel });
     const size = windowSize();
     popupView.setBounds({ x: 0, y: 0, width: size.width, height: size.height });
     popupView.setVisible(true);
@@ -1631,6 +1649,7 @@ export async function createTabs(
           reply(false);
           nextQuestion();
         },
+        'prompt',
       );
     };
     if (asking) askQueue.push(run);
@@ -3178,6 +3197,53 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
+    // The lock chip in the address bar: what this site may do.
+    'site:menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const contents = activePage();
+      // The same address the chip shows.
+      const id = activeTabId();
+      const address =
+        (id === null ? undefined : model.findTab(state, id)?.url) ??
+        contents?.getURL() ??
+        '';
+      const info = contents ? describeSite(address) : null;
+      if (!contents || !info) return;
+      const key = siteKey(address);
+      const build = () =>
+        siteMenuItems({
+          host: info.host,
+          secure: info.secure,
+          canAsk: key !== null,
+          answers: key === null ? {} : (permissions.sites[key] ?? {}),
+        });
+      showMenu(
+        build(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseSiteChoice(choice);
+          if (!parsed || key === null) return;
+          permissions =
+            parsed.action === 'reset'
+              ? resetSite(permissions, key)
+              : setAnswer(permissions, key, parsed.kind, parsed.answer);
+          permissionsSaver.schedule();
+          // The card stays open, showing the new state.
+          if (openMenu) {
+            const items = build();
+            openMenu.items = items;
+            openMenu.shown = { ...openMenu.shown, items };
+            popup.send('popup:show', openMenu.shown);
+          }
+        },
+        requestSender ?? win.webContents,
+        undefined,
+        false,
+        undefined,
+        'site',
+      );
+    },
     // The zoom chip in the address bar.
     'zoom:menu': (x, y) => {
       if (!isNumber(x) || !isNumber(y)) return;
@@ -3404,6 +3470,11 @@ export async function createTabs(
     // Only an item of the menu that is open (and enabled) counts.
     if (!isChoosable(openMenu.items, id)) return;
     const { choose } = openMenu;
+    if (openMenu.shown.panel === 'site') {
+      // The site card stays open: the choice is applied and the card sent again.
+      choose(id);
+      return;
+    }
     openMenu.dismissed = undefined; // something was chosen
     closeMenu(true);
     choose(id);

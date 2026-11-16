@@ -845,6 +845,10 @@ button {
   padding: 0 var(--s-2) 0 var(--s-1);
 }
 .addressbar .site {
+  border: 0;
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
   height: 24px;
   border-radius: var(--r-pill);
   background: var(--c-surface-3);
@@ -1580,4 +1584,92 @@ button {
   stroke: var(--c-accent);
   stroke-linecap: round;
   transform-origin: center;
+}
+
+/* The cards a site gets (a question, or what it may do): see ui/SitePanel.tsx. */
+.site-panel {
+  position: absolute;
+  box-sizing: border-box;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-popup);
+  padding: var(--s-4);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  animation: pop var(--dur-med) var(--ease-out);
+}
+.sp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+.sp-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-3);
+  display: grid;
+  place-items: center;
+  color: var(--c-text-2);
+}
+.sp-titles {
+  min-width: 0;
+  flex: 1;
+}
+.sp-titles h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+.sp-detail {
+  margin: 2px 0 0;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.sp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+.sp-actions .btn {
+  width: 100%;
+  justify-content: center;
+}
+.sp-section {
+  margin: var(--s-4) 0 var(--s-1);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--c-border);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 36px;
+}
+.sp-row > .i {
+  flex: none;
+  color: var(--c-text-2);
+}
+.sp-label {
+  flex: 1;
+  min-width: 0;
+}
+.sp-note {
+  margin: var(--s-3) 0 0;
+  color: var(--c-text-2);
+}
+.sp-foot {
+  margin-top: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  justify-content: flex-start;
 }

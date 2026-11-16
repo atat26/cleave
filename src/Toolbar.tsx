@@ -312,17 +312,23 @@ export function Toolbar({
             </div>
             <div ref={barRef} className="addressbar" role="search">
               {site && (
-                <span
+                <button
+                  type="button"
                   className="site"
+                  aria-haspopup="menu"
                   title={
                     site.secure
-                      ? 'The connection to this site is secure'
-                      : 'The connection to this site is not secure'
+                      ? 'Secure connection. Site permissions'
+                      : 'Not secure. Site permissions'
                   }
+                  onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect();
+                    window.browserApi.showSiteMenu(box.left, box.bottom + 4);
+                  }}
                 >
                   <Icon name={site.secure ? 'lock' : 'warn'} />
                   <span className="truncate">{site.host}</span>
-                </span>
+                </button>
               )}
               <input
                 ref={inputRef}

@@ -41,6 +41,9 @@ export interface MenuSeparator {
 export interface MenuHeader {
   type: 'header';
   label: string;
+  // For the cards a site gets (see ui/SitePanel.tsx): a picture and a line under it.
+  icon?: IconName;
+  detail?: string;
 }
 
 export type MenuItem = MenuEntry | MenuSeparator | MenuHeader;
