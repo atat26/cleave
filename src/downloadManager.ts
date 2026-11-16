@@ -39,6 +39,9 @@ export interface DownloadManagerDeps {
   setList(next: DownloadsState): void;
   // Is this one of the app's web pages (and not one of its own screens)?
   isPage(contents: WebContents | undefined): boolean;
+  // Show the system's save window for a file and return the place you picked (or
+  // null if you cancelled).
+  chooseSavePath(defaultPath: string): Promise<string | null>;
   // Ask a yes/no question in a native window.
   confirm(options: {
     title: string;
@@ -65,6 +68,9 @@ export function registerDownloads(deps: DownloadManagerDeps) {
   const live = new Map<number, ElectronItem>();
   // When each page started its recent downloads (see floodCheck).
   const starts = new Map<number, number[]>();
+  // Addresses you asked to "Save … as…": their downloads always show the save window.
+  const askFor = new Map<string, number>();
+  const ASK_MS = 15_000;
 
   const change = (
     id: number,
@@ -109,7 +115,10 @@ export function registerDownloads(deps: DownloadManagerDeps) {
         fs.existsSync(path.join(folder, candidate)),
       ),
     );
-    if (settings.askWhere) {
+    // You chose "Save … as…" for this one: the save window always shows.
+    const asked = item.getURLChain().some((url) => askFor.delete(url));
+    const askNow = settings.askWhere || asked;
+    if (askNow) {
       // No path set: Electron shows its save window, starting at the same place.
       item.setSaveDialogOptions({ defaultPath: target });
     } else {
@@ -126,7 +135,7 @@ export function registerDownloads(deps: DownloadManagerDeps) {
       {
         url: source,
         name,
-        path: settings.askWhere ? '' : target,
+        path: askNow ? '' : target,
         totalBytes: item.getTotalBytes(),
         state: 'downloading',
       },
@@ -180,6 +189,55 @@ export function registerDownloads(deps: DownloadManagerDeps) {
   deps.session.on('will-download', onWillDownload);
 
   return {
+    // "Save link as…" / "Save image as…": download this address, always through the
+    // save window. Only ordinary web addresses are taken.
+    saveUrl(contents: WebContents, url: string) {
+      if (!deps.isPage(contents) || !/^https?:\/\//i.test(url)) return;
+      const now = Date.now();
+      for (const [key, when] of askFor) {
+        if (now - when > ASK_MS) askFor.delete(key);
+      }
+      askFor.set(url, now);
+      contents.downloadURL(url);
+    },
+    // "Save page as…": the whole page (its pictures and styles go in a folder next to
+    // it) to the place you pick, and it shows in the Downloads list.
+    async savePage(contents: WebContents) {
+      if (!deps.isPage(contents)) return;
+      const source = historyUrl(contents.getURL());
+      if (source === null) return;
+      const name = cleanFileName(contents.getTitle() || 'page').replace(
+        /\.(?:html?|php|aspx?)$/i,
+        '',
+      );
+      const picked = await deps.chooseSavePath(
+        path.join(downloadFolder(deps.getSettings()), `${name}.html`),
+      );
+      if (picked === null || !path.isAbsolute(picked)) return;
+      const added = addDownload(
+        deps.getList(),
+        {
+          url: source,
+          name: path.basename(picked),
+          path: picked,
+          totalBytes: 0,
+          state: 'downloading',
+        },
+        Date.now(),
+      );
+      deps.setList(added.state);
+      try {
+        await contents.savePage(picked, 'HTMLComplete');
+        const size = fs.statSync(picked).size;
+        change(added.id, {
+          state: 'done',
+          receivedBytes: size,
+          totalBytes: size,
+        });
+      } catch {
+        change(added.id, { state: 'failed' });
+      }
+    },
     pause: (id: number) => live.get(id)?.pause(),
     resume: (id: number) => {
       const item = live.get(id);
