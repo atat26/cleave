@@ -1,6 +1,8 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
+import type { DownloadItem } from './downloadList';
+import type { DownloadSettings } from './downloadSettings';
 import type { Suggestion } from './suggest';
 import type { HistoryEntry } from './history';
 import type { LibrarySettings } from './librarySettings';
@@ -287,6 +289,14 @@ export interface BrowserApi {
   showStarMenu: (x: number, y: number) => void;
   libraryBookmarks: (query: string) => Promise<Bookmark[]>;
   libraryRemoveBookmark: (id: number) => void;
+  // Downloads: the list, and Settings > Downloads.
+  downloadsList: () => Promise<DownloadItem[]>;
+  downloadSettingsGet: () => Promise<DownloadSettings>;
+  downloadSettingsSet: (
+    changes: Partial<Omit<DownloadSettings, 'version'>>,
+  ) => Promise<DownloadSettings>;
+  downloadSettingsPickFolder: () => Promise<DownloadSettings>;
+  downloadsOpenFolder: () => Promise<void>;
   libraryClosed: () => Promise<ClosedTabInfo[]>;
   // Chats and artifacts deleted lately, newest first, and what to do with them.
   libraryDeleted: () => Promise<DeletedItemInfo[]>;

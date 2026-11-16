@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { takeRequestedSection } from './settingsNav';
 import { AppearanceSettings } from './AppearanceSettings';
+import { DownloadsSection } from './DownloadsSection';
 import { LibrarySection } from './LibrarySection';
 import { NamingSection } from './NamingSection';
 import { WebSearchSettings } from './WebSearchSettings';
@@ -69,6 +70,11 @@ const SECTIONS = [
     id: 'appearance',
     label: 'Appearance',
     about: 'Light, dark, or match your computer',
+  },
+  {
+    id: 'downloads',
+    label: 'Downloads',
+    about: 'Where files are saved',
   },
   {
     id: 'library',
@@ -590,6 +596,7 @@ export function SettingsPanel() {
       {section === 'appearance' && <AppearanceSettings />}
       {section === 'naming' && <NamingSection />}
       {section === 'library' && <LibrarySection />}
+      {section === 'downloads' && <DownloadsSection />}
 
       {section === 'prompt' && (
         <>

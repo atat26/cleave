@@ -7,6 +7,7 @@ import {
   nativeTheme,
   screen,
   session,
+  shell,
   WebContentsView,
 } from 'electron';
 import path from 'node:path';
@@ -65,6 +66,13 @@ import { buildOutline } from './pageOutline';
 import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
+import { registerDownloads } from './downloadManager';
+import { defaultDownloads, parseDownloads } from './downloadList';
+import {
+  defaultDownloadSettings,
+  parseDownloadSettings,
+  withDownloadSettings,
+} from './downloadSettings';
 import { MAX_SUGGESTIONS, suggest, suggestRect } from './suggest';
 import type { Suggestion, SuggestionKind } from './suggest';
 import {
@@ -327,6 +335,27 @@ export async function createTabs(
     defaultBookmarks,
   );
   const bookmarksSaver = createSaver(bookmarksFile, () => bookmarks);
+  // Downloads: the list, and where files are saved (see downloadManager.ts).
+  const downloadsFile = path.join(app.getPath('userData'), 'downloads.json');
+  let downloads = await loadJson(
+    downloadsFile,
+    (raw) => parseDownloads(raw, Date.now()),
+    defaultDownloads,
+  );
+  const downloadsSaver = createSaver(downloadsFile, () => downloads);
+  const downloadSettingsFile = path.join(
+    app.getPath('userData'),
+    'download-settings.json',
+  );
+  let downloadSettings = await loadJson(
+    downloadSettingsFile,
+    parseDownloadSettings,
+    defaultDownloadSettings,
+  );
+  const downloadSettingsSaver = createSaver(
+    downloadSettingsFile,
+    () => downloadSettings,
+  );
   const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
   let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
   const closedSaver = createSaver(closedFile, () => closedTabs);
@@ -3326,6 +3355,58 @@ export async function createTabs(
   // change applies from the assistant's next reply.
   const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
     event.sender === win.webContents;
+  // Downloads: the manager catches what pages download (see downloadManager.ts).
+  const downloadManager = registerDownloads({
+    session: session.defaultSession,
+    getSettings: () => downloadSettings,
+    getList: () => downloads,
+    setList: (next) => {
+      downloads = next;
+      downloadsSaver.schedule();
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('downloads:changed');
+      }
+    },
+    isPage: (contents) =>
+      contents !== undefined &&
+      [...views.values()].some((view) => view.webContents === contents),
+    confirm,
+  });
+  ipcMain.handle('downloads:list', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return downloads.items;
+  });
+  ipcMain.handle('download-settings:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return downloadSettings;
+  });
+  ipcMain.handle('download-settings:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    downloadSettings = withDownloadSettings(downloadSettings, changes);
+    downloadSettingsSaver.schedule();
+    return downloadSettings;
+  });
+  // "Change…": pick the folder in the system's folder window.
+  ipcMain.handle('download-settings:pick-folder', async (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose where downloads are saved',
+      defaultPath: downloadSettings.folder ?? app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (!result.canceled && result.filePaths[0]) {
+      downloadSettings = withDownloadSettings(downloadSettings, {
+        folder: result.filePaths[0],
+      });
+      downloadSettingsSaver.schedule();
+    }
+    return downloadSettings;
+  });
+  ipcMain.handle('downloads:open-folder', async (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    await shell.openPath(downloadSettings.folder ?? app.getPath('downloads'));
+  });
+
   // The Library panel reads the lists (it asks again when told they changed).
   ipcMain.handle('library:history', (event, query: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
@@ -3683,6 +3764,8 @@ ${artifact.content.slice(0, 1500)}`;
     zoomSaver.flushSync();
     historySaver.flushSync();
     bookmarksSaver.flushSync();
+    downloadsSaver.flushSync();
+    downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
   });
   win.on('closed', () => {
@@ -3701,6 +3784,12 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('popup:ready', onPopupReady);
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);
+    downloadManager.dispose();
+    ipcMain.removeHandler('downloads:list');
+    ipcMain.removeHandler('download-settings:get');
+    ipcMain.removeHandler('download-settings:set');
+    ipcMain.removeHandler('download-settings:pick-folder');
+    ipcMain.removeHandler('downloads:open-folder');
     ipcMain.removeHandler('library:history');
     ipcMain.removeHandler('library:bookmarks');
     ipcMain.removeHandler('library:deleted');
