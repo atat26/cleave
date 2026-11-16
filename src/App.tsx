@@ -3,6 +3,7 @@ import { ChatBar } from './ChatBar';
 import { CHAT_FULL_MIN_HEIGHT, RAIL_WIDTH } from './layout';
 import { ArtifactView } from './ArtifactView';
 import { pushInsert } from './composerBus';
+import { requestSettingsSection } from './settingsNav';
 import { LeadView } from './LeadView';
 import type { RightPanel as RightPanelName } from './model';
 import { Rail } from './Rail';
@@ -66,6 +67,11 @@ export function App() {
   useEffect(() => {
     if (IS_SIDEBAR) return;
     return window.browserApi.onComposerInsert(pushInsert);
+  }, []);
+  // The lock card's "Site settings" opens Settings on its privacy part.
+  useEffect(() => {
+    if (IS_SIDEBAR) return;
+    return window.browserApi.onSettingsSection(requestSettingsSection);
   }, []);
   useEffect(
     () => window.browserApi.onChatRenameRequest(setChatRenameRequest),

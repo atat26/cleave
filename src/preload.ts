@@ -53,6 +53,35 @@ const browserApi: BrowserApi = {
       ipcRenderer.removeListener('library:select-list', listener);
     };
   },
+  privacySites: () => ipcRenderer.invoke('privacy:sites'),
+  privacySiteDetail: (site) => ipcRenderer.invoke('privacy:site-detail', site),
+  privacySetAnswer: (site, kind, answer) =>
+    ipcRenderer.invoke('privacy:set-answer', site, kind, answer),
+  privacyDataSites: () => ipcRenderer.invoke('privacy:data-sites'),
+  privacyClearSite: (target) =>
+    ipcRenderer.invoke('privacy:clear-site', target),
+  showPrivacyDataMenu: (kind, name, x, y) =>
+    ipcRenderer.send('privacy:data-menu', kind, name, x, y),
+  onSettingsSection: (callback) => {
+    const listener = (
+      _event: unknown,
+      section: Parameters<typeof callback>[0],
+    ) => callback(section);
+    ipcRenderer.on('settings:section', listener);
+    return () => {
+      ipcRenderer.removeListener('settings:section', listener);
+    };
+  },
+  privacyResetSite: (site) => ipcRenderer.invoke('privacy:reset-site', site),
+  privacyClear: (what) => ipcRenderer.invoke('privacy:clear', what),
+  showPrivacyMenu: (site, x, y) => ipcRenderer.send('privacy:menu', site, x, y),
+  onPrivacyChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('privacy:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('privacy:changed', listener);
+    };
+  },
   downloadSettingsGet: () => ipcRenderer.invoke('download-settings:get'),
   downloadSettingsSet: (changes) =>
     ipcRenderer.invoke('download-settings:set', changes),

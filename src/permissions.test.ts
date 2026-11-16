@@ -9,6 +9,7 @@ import {
   parsePermissions,
   resetSite,
   setAnswer,
+  siteRows,
   siteKey,
 } from './permissions.ts';
 
@@ -132,4 +133,20 @@ test('the question names the site and says what it wants, in plain words', () =>
     askText('a.com', ['location']),
     'a.com wants to know your location',
   );
+});
+
+test('Settings lists the sites with saved answers, by name, in short words', () => {
+  let state = defaultPermissions();
+  state = setAnswer(state, 'https://b.com', 'camera', 'allow');
+  state = setAnswer(state, 'https://a.com', 'location', 'block');
+  state = setAnswer(state, 'https://a.com', 'camera', 'allow');
+  assert.deepEqual(siteRows(state), [
+    {
+      site: 'https://a.com',
+      host: 'a.com',
+      summary: ['Camera: Allowed', 'Location: Blocked'],
+    },
+    { site: 'https://b.com', host: 'b.com', summary: ['Camera: Allowed'] },
+  ]);
+  assert.deepEqual(siteRows(defaultPermissions()), []);
 });
