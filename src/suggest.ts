@@ -3,6 +3,8 @@
 // history, best first. Pure code with no Electron, so it is easy to test.
 import { historyUrl } from './history.ts';
 import { looksLikeAddress, resolveInput } from './url.ts';
+import { DEFAULT_ENGINE } from './searchEngine.ts';
+import type { Engine } from './searchEngine.ts';
 
 export type SuggestionKind = 'search' | 'go' | 'bookmark' | 'history' | 'tab';
 
@@ -37,16 +39,19 @@ const hostOf = (url: string): string => {
 };
 
 // What you typed, as the first row: an address to go to, or a web search.
-export function typedRow(text: string): Suggestion | null {
+export function typedRow(
+  text: string,
+  engine: Engine = DEFAULT_ENGINE,
+): Suggestion | null {
   const typed = text.trim();
   if (typed === '') return null;
-  const url = resolveInput(typed);
+  const url = resolveInput(typed, engine.template);
   return looksLikeAddress(typed)
     ? { kind: 'go', title: typed, detail: 'Go to this address', url }
     : {
         kind: 'search',
         title: typed,
-        detail: 'Search the web',
+        detail: `Search with ${engine.name}`,
         url,
       };
 }
@@ -90,8 +95,9 @@ export function suggest(
   text: string,
   sources: SuggestSources,
   now: number,
+  engine: Engine = DEFAULT_ENGINE,
 ): Suggestion[] {
-  const first = typedRow(text);
+  const first = typedRow(text, engine);
   if (first === null) return [];
   const words = text.toLowerCase().split(/\s+/).filter(Boolean);
   const typedKey = first.kind === 'go' ? historyUrl(first.url) : null;

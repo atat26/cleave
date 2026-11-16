@@ -53,6 +53,9 @@ const browserApi: BrowserApi = {
       ipcRenderer.removeListener('library:select-list', listener);
     };
   },
+  searchEngineGet: () => ipcRenderer.invoke('search-engine:get'),
+  searchEngineSet: (changes) =>
+    ipcRenderer.invoke('search-engine:set', changes),
   privacySites: () => ipcRenderer.invoke('privacy:sites'),
   privacySiteDetail: (site) => ipcRenderer.invoke('privacy:site-detail', site),
   privacySetAnswer: (site, kind, answer) =>

@@ -219,3 +219,15 @@ test('the dropdown sits under the address bar, as wide as it, and fits its rows'
     0,
   );
 });
+
+test('the first row names the search engine in use', () => {
+  const google = {
+    id: 'google',
+    name: 'Google',
+    template: 'https://www.google.com/search?q=%s',
+  };
+  const row = typedRow('cheap gpu', google);
+  assert.equal(row?.detail, 'Search with Google');
+  assert.equal(row?.url, 'https://www.google.com/search?q=cheap%20gpu');
+  assert.equal(typedRow('cheap gpu')?.detail, 'Search with DuckDuckGo');
+});

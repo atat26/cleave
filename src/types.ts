@@ -4,6 +4,7 @@ import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
 import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
 import type { SiteDataRow, SiteGroup } from './siteData';
+import type { SearchEngineSettings } from './searchEngine';
 
 // A main site with its cookies, for Settings (icons are remembered from pages).
 export interface SiteDataGroup extends Omit<SiteGroup, 'hosts'> {
@@ -324,6 +325,9 @@ export interface BrowserApi {
   showLibrary: (list: LibraryList) => void;
   onDownloadsChanged: (callback: () => void) => () => void;
   onLibrarySelectList: (callback: (list: LibraryList) => void) => () => void;
+  // Settings > Search engine: the one the address bar uses.
+  searchEngineGet: () => Promise<SearchEngineSettings>;
+  searchEngineSet: (changes: unknown) => Promise<SearchEngineSettings>;
   // Settings > Privacy: the sites with saved permissions, and clearing data.
   privacySites: () => Promise<SiteRow[]>;
   // One site's page in Settings, and changing one of its permissions (null: ask).

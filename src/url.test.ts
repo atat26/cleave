@@ -23,3 +23,20 @@ test('what is typed is turned into a safe address or a search', () => {
     'https://duckduckgo.com/?q=javascript%3Aalert(1)',
   );
 });
+
+test('searches use the chosen engine; addresses are never searched', () => {
+  const google = 'https://www.google.com/search?q=%s';
+  assert.equal(
+    resolveInput('giant pandas', google),
+    'https://www.google.com/search?q=giant%20pandas',
+  );
+  assert.equal(
+    searchUrl('example.com', google),
+    'https://www.google.com/search?q=example.com',
+  );
+  assert.equal(resolveInput('example.com', google), 'https://example.com/');
+  assert.equal(
+    resolveInput('javascript:alert(1)', google),
+    'https://www.google.com/search?q=javascript%3Aalert(1)',
+  );
+});
