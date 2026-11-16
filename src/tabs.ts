@@ -80,6 +80,7 @@ import {
   withDownloadSettings,
 } from './downloadSettings';
 import {
+  ASK_KINDS,
   classify,
   decide,
   defaultPermissions,
@@ -87,6 +88,7 @@ import {
   resetSite,
   setAnswer,
   siteKey,
+  siteRows,
 } from './permissions';
 import type { AskKind } from './permissions';
 import {
@@ -97,6 +99,13 @@ import {
   parseCertLink,
 } from './certPage';
 import { describeSite } from './site';
+import { cookieIsOfSite, siteDataGroups } from './siteData';
+import {
+  defaultFavicons,
+  faviconFor,
+  parseFavicons,
+  rememberFavicon,
+} from './favicons';
 import { MAX_SUGGESTIONS, suggest, suggestRect } from './suggest';
 import type { Suggestion, SuggestionKind } from './suggest';
 import {
@@ -195,7 +204,10 @@ import {
   downloadMenuItems,
   libraryMenuItems,
   parsePermissionChoice,
+  parsePrivacyChoice,
   parseSiteChoice,
+  privacyDataMenuItems,
+  privacySiteMenuItems,
   permissionPromptItems,
   siteMenuItems,
   parseDownloadChoice,
@@ -376,6 +388,17 @@ export async function createTabs(
     defaultPermissions,
   );
   const permissionsSaver = createSaver(permissionsFile, () => permissions);
+  // The little pictures of the sites you open, for lists in Settings.
+  const faviconsFile = path.join(app.getPath('userData'), 'favicons.json');
+  let favicons = await loadJson(faviconsFile, parseFavicons, defaultFavicons);
+  const faviconsSaver = createSaver(faviconsFile, () => favicons);
+  // Remember a change, and tell Settings so its list is always up to date.
+  const permissionsChanged = () => {
+    permissionsSaver.schedule();
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('privacy:changed');
+    }
+  };
   // Downloads: the manager catches what pages download (see downloadManager.ts).
   const downloadsFile = path.join(app.getPath('userData'), 'downloads.json');
   let downloads = await loadJson(
@@ -1080,9 +1103,15 @@ export async function createTabs(
     contents.on('page-title-updated', (_event, title) =>
       updateTab(tab.id, { title }),
     );
-    contents.on('page-favicon-updated', (_event, favicons) =>
-      updateTab(tab.id, { favicon: favicons.find(model.isWebUrl) ?? null }),
-    );
+    contents.on('page-favicon-updated', (_event, icons) => {
+      const icon = icons.find(model.isWebUrl) ?? null;
+      updateTab(tab.id, { favicon: icon });
+      const next = rememberFavicon(favicons, contents.getURL(), icon);
+      if (next !== favicons) {
+        favicons = next;
+        faviconsSaver.schedule();
+      }
+    });
     // A page starts at the zoom its site was given. (Ctrl+scroll asks for a step.)
     contents.on('dom-ready', () => applySiteZoom(tab.id));
     contents.on('zoom-changed', (_event, direction) => {
@@ -1739,7 +1768,7 @@ export async function createTabs(
             for (const kind of still.kinds) {
               permissions = setAnswer(permissions, site, kind, choice);
             }
-            permissionsSaver.schedule();
+            permissionsChanged();
           }
           reply(choice === 'allow' || choice === 'once');
           nextQuestion();
@@ -2072,6 +2101,55 @@ export async function createTabs(
       sendState();
     })
     .catch(() => undefined);
+
+  // Clear what a site saved on this computer (cookies and stored data): one name
+  // ("mail.google.com") or a main site with everything under it ("google.com").
+  // Only sites that are in the list can be named. Asks first.
+  const clearSiteData = async (target: unknown) => {
+    const { site, host } = (target ?? {}) as { site?: unknown; host?: unknown };
+    const ses = session.defaultSession;
+    const cookies = await ses.cookies.get({});
+    const groups = siteDataGroups(cookies);
+    let names: string[] = [];
+    let label = '';
+    if (typeof site === 'string') {
+      const group = groups.find((g) => g.site === site);
+      names = group?.hosts.map((h) => h.host) ?? [];
+      label =
+        group && group.hosts.length > 1 ? `${site} and its subsites` : site;
+    } else if (typeof host === 'string') {
+      names = groups.some((g) => g.hosts.some((h) => h.host === host))
+        ? [host]
+        : [];
+      label = host;
+    }
+    if (names.length === 0) return false;
+    const yes = await confirm({
+      title: 'Clear data for this site?',
+      message: `Clear the data ${label} saved here?`,
+      detail:
+        'This removes its cookies and stored data, so you will be signed out of it. Your history, bookmarks and the permissions you gave it stay.',
+      button: 'Clear data',
+    });
+    if (!yes) return false;
+    for (const name of names) {
+      for (const cookie of cookies.filter((c) => cookieIsOfSite(c, name))) {
+        const domain = (cookie.domain ?? '').replace(/^\./, '');
+        await ses.cookies
+          .remove(
+            `${cookie.secure ? 'https' : 'http'}://${domain}${cookie.path ?? '/'}`,
+            cookie.name,
+          )
+          .catch(() => undefined);
+      }
+      for (const origin of [name, `www.${name}`]) {
+        for (const scheme of ['https', 'http']) {
+          await ses.clearStorageData({ origin: `${scheme}://${origin}` });
+        }
+      }
+    }
+    return true;
+  };
 
   // What the Downloads list's buttons and menu do.
   const runDownloadAction = (id: number, action: string) => {
@@ -3164,6 +3242,50 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
+    // A site in Settings > Privacy (right-click).
+    'privacy:menu': (site, x, y) => {
+      if (typeof site !== 'string' || !isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        privacySiteMenuItems(),
+        x,
+        y,
+        (choice) => {
+          if (parsePrivacyChoice(choice) !== 'reset') return;
+          permissions = resetSite(permissions, site);
+          permissionsChanged();
+          if (!win.webContents.isDestroyed()) {
+            win.webContents.send('privacy:changed');
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    // A site in the list of saved cookies and data (right-click).
+    'privacy:data-menu': (kind, name, x, y) => {
+      if (
+        (kind !== 'site' && kind !== 'host') ||
+        typeof name !== 'string' ||
+        !isNumber(x) ||
+        !isNumber(y)
+      )
+        return;
+      showMenu(
+        privacyDataMenuItems(),
+        x,
+        y,
+        (choice) => {
+          if (parsePrivacyChoice(choice) !== 'clear') return;
+          void clearSiteData(
+            kind === 'site' ? { site: name } : { host: name },
+          ).then((cleared) => {
+            if (cleared && !win.webContents.isDestroyed()) {
+              win.webContents.send('privacy:changed');
+            }
+          });
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     // Open the Library on a list (the download indicator opens it on Downloads).
     'library:show': (list) => {
       if (
@@ -3350,12 +3472,17 @@ export async function createTabs(
             sendState();
             return;
           }
-          if (!parsed || key === null) return;
-          permissions =
-            parsed.action === 'reset'
-              ? resetSite(permissions, key)
-              : setAnswer(permissions, key, parsed.kind, parsed.answer);
-          permissionsSaver.schedule();
+          if (parsed?.action === 'settings') {
+            closeMenu(true);
+            openSettings();
+            if (!win.webContents.isDestroyed()) {
+              win.webContents.send('settings:section', 'privacy');
+            }
+            return;
+          }
+          if (!parsed || parsed.action !== 'set' || key === null) return;
+          permissions = setAnswer(permissions, key, parsed.kind, parsed.answer);
+          permissionsChanged();
           // The card stays open, showing the new state.
           if (openMenu) {
             const items = build();
@@ -3821,6 +3948,97 @@ export async function createTabs(
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return downloads.items;
   });
+  const permissionRows = () =>
+    siteRows(permissions).map((row) => ({
+      ...row,
+      icon: faviconFor(favicons, row.host),
+    }));
+  ipcMain.handle('privacy:sites', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return permissionRows();
+  });
+  // The sites that have cookies saved here.
+  ipcMain.handle('privacy:data-sites', async (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return siteDataGroups(await session.defaultSession.cookies.get({})).map(
+      (group) => ({
+        ...group,
+        icon: faviconFor(favicons, group.site),
+        hosts: group.hosts.map((row) => ({
+          ...row,
+          icon: faviconFor(favicons, row.host, group.site),
+        })),
+      }),
+    );
+  });
+  ipcMain.handle('privacy:clear-site', async (event, target: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return clearSiteData(target);
+  });
+  const siteDetail = (site: string) => ({
+    site,
+    host: new URL(site).host,
+    icon: faviconFor(favicons, new URL(site).host),
+    answers: permissions.sites[site] ?? {},
+  });
+  // One site's page in Settings: all its permissions.
+  ipcMain.handle('privacy:site-detail', (event, site: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (typeof site !== 'string' || siteKey(site) !== site) return null;
+    return siteDetail(site);
+  });
+  ipcMain.handle(
+    'privacy:set-answer',
+    (event, site: unknown, kind: unknown, answer: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (typeof site !== 'string' || siteKey(site) !== site) return null;
+      const asked = ASK_KINDS.find((k) => k === kind);
+      if (
+        !asked ||
+        (answer !== null && answer !== 'allow' && answer !== 'block')
+      ) {
+        return siteDetail(site);
+      }
+      permissions = setAnswer(permissions, site, asked, answer);
+      permissionsChanged();
+      return siteDetail(site);
+    },
+  );
+  ipcMain.handle('privacy:reset-site', (event, site: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (typeof site === 'string') {
+      permissions = resetSite(permissions, site);
+      permissionsChanged();
+    }
+    return permissionRows();
+  });
+  // "Clear browsing data": cookies and stored data, and/or saved page files.
+  // Asks first. History, bookmarks and downloads are not touched.
+  ipcMain.handle('privacy:clear', async (event, what: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const { siteData, cache } = (what ?? {}) as {
+      siteData?: unknown;
+      cache?: unknown;
+    };
+    if (siteData !== true && cache !== true) return false;
+    const yes = await confirm({
+      title: 'Clear browsing data?',
+      message: 'Clear browsing data?',
+      detail:
+        siteData === true
+          ? 'This removes cookies and stored data for every site, so you will be signed out of them. Your history, bookmarks, downloads and site permissions stay.'
+          : 'This removes pages and pictures saved to load sites faster. Nothing else changes.',
+      button: 'Clear data',
+    });
+    if (!yes) return false;
+    if (siteData === true) await session.defaultSession.clearStorageData();
+    if (cache === true) {
+      await session.defaultSession.clearCache();
+      favicons = defaultFavicons();
+      faviconsSaver.schedule();
+    }
+    return true;
+  });
   ipcMain.handle('download-settings:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return downloadSettings;
@@ -4211,6 +4429,7 @@ ${artifact.content.slice(0, 1500)}`;
     bookmarksSaver.flushSync();
     downloadsSaver.flushSync();
     permissionsSaver.flushSync();
+    faviconsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
   });
@@ -4233,6 +4452,13 @@ ${artifact.content.slice(0, 1500)}`;
     app.removeListener('certificate-error', onCertificateError);
     downloadManager.dispose();
     ipcMain.removeHandler('downloads:list');
+    ipcMain.removeHandler('privacy:sites');
+    ipcMain.removeHandler('privacy:data-sites');
+    ipcMain.removeHandler('privacy:clear-site');
+    ipcMain.removeHandler('privacy:site-detail');
+    ipcMain.removeHandler('privacy:set-answer');
+    ipcMain.removeHandler('privacy:reset-site');
+    ipcMain.removeHandler('privacy:clear');
     ipcMain.removeHandler('download-settings:get');
     ipcMain.removeHandler('download-settings:set');
     ipcMain.removeHandler('download-settings:pick-folder');

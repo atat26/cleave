@@ -210,3 +210,48 @@ export function askText(host: string, kinds: AskKind[]): string {
       : words;
   return `${host} wants to ${joined.join(' and ')}`;
 }
+
+export const KIND_LABELS: Record<AskKind, string> = {
+  camera: 'Camera',
+  microphone: 'Microphone',
+  location: 'Location',
+  notifications: 'Notifications',
+  clipboard: 'Clipboard',
+};
+
+// Everything about one site, for its page in Settings.
+export interface SiteDetail {
+  site: string;
+  host: string;
+  icon: string | null;
+  // What is remembered, by kind (a kind that is missing means "ask").
+  answers: Partial<Record<AskKind, Answer>>;
+}
+
+export interface SiteRow {
+  site: string;
+  host: string;
+  // What you chose, as short words: "Camera: Allowed".
+  summary: string[];
+  // The site's icon, if one was seen (added by the app).
+  icon?: string | null;
+}
+
+// The sites with saved answers, as rows for Settings (by name).
+export function siteRows(state: PermissionsState): SiteRow[] {
+  return Object.entries(state.sites)
+    .map(([site, answers]) => ({
+      site,
+      host: new URL(site).host,
+      summary: ASK_KINDS.flatMap((kind) => {
+        const answer = answers[kind];
+        return answer
+          ? [
+              `${KIND_LABELS[kind]}: ${answer === 'allow' ? 'Allowed' : 'Blocked'}`,
+            ]
+          : [];
+      }),
+    }))
+    .filter((row) => row.summary.length > 0)
+    .sort((a, b) => a.host.localeCompare(b.host));
+}

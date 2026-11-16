@@ -26,6 +26,9 @@ import {
   libraryMenuItems,
   parseDownloadChoice,
   parsePermissionChoice,
+  parsePrivacyChoice,
+  privacyDataMenuItems,
+  privacySiteMenuItems,
   parseSiteChoice,
   siteMenuItems,
   permissionPromptItems,
@@ -1109,7 +1112,6 @@ test("the site chip's menu shows each permission's state and reads choices back"
       ['site.set:camera:block', false],
     ],
   );
-  assert.notEqual(entry(items, 'site.reset').disabled, true);
   // Only what was changed is listed; the rest is just "ask".
   assert.equal(
     menuIds(items).some((id) => id.startsWith('site.kind:microphone')),
@@ -1121,7 +1123,7 @@ test("the site chip's menu shows each permission's state and reads choices back"
     canAsk: true,
     answers: {},
   });
-  assert.deepEqual(menuIds(fresh), ['site.none']);
+  assert.deepEqual(menuIds(fresh), ['site.none', 'site.settings']);
   // A site that is not secure can ask for nothing, so there is nothing to set.
   assert.deepEqual(
     menuIds(
@@ -1132,7 +1134,7 @@ test("the site chip's menu shows each permission's state and reads choices back"
         answers: {},
       }),
     ),
-    ['site.insecure'],
+    ['site.insecure', 'site.settings'],
   );
   assert.deepEqual(parseSiteChoice('site.set:camera:allow'), {
     action: 'set',
@@ -1144,7 +1146,8 @@ test("the site chip's menu shows each permission's state and reads choices back"
     kind: 'location',
     answer: null,
   });
-  assert.deepEqual(parseSiteChoice('site.reset'), { action: 'reset' });
+  assert.deepEqual(parseSiteChoice('site.settings'), { action: 'settings' });
+  assert.equal(parseSiteChoice('site.reset'), null);
   for (const bad of [
     '',
     'site.set:usb:allow',
@@ -1171,6 +1174,15 @@ test('a site you went on to despite its certificate is never called secure', () 
   );
   assert.equal(header.type === 'header' ? header.icon : '', 'warn');
   assert.ok(menuIds(items).includes('site.rewarn'));
+  // One button to the settings; no reset or clearing in the card itself.
+  assert.ok(menuIds(items).includes('site.settings'));
+  assert.ok(!menuIds(items).includes('site.clear-data'));
+  assert.ok(!menuIds(items).includes('site.reset'));
+  assert.deepEqual(menuIds(privacySiteMenuItems()), ['privacy.reset']);
+  assert.equal(parsePrivacyChoice('privacy.reset'), 'reset');
+  assert.deepEqual(menuIds(privacyDataMenuItems()), ['privacy.clear-data']);
+  assert.equal(parsePrivacyChoice('privacy.clear-data'), 'clear');
+  assert.equal(parsePrivacyChoice('privacy.delete'), null);
   assert.deepEqual(parseSiteChoice('site.rewarn'), { action: 'rewarn' });
   // An ordinary site has no such row.
   assert.ok(

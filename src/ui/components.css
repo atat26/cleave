@@ -1673,3 +1673,72 @@ button {
   display: flex;
   justify-content: flex-start;
 }
+
+/* Lists of sites in Settings > Privacy and security: a bordered list, one row per
+   site with its icon, thin lines between rows, and subsites under a main site. */
+.pv-list {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.pv-list > div + div,
+.pv-list > .pv-row + .pv-row {
+  border-top: 1px solid var(--c-border);
+}
+.pv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-sm);
+}
+.pv-row:hover {
+  background: var(--c-hover);
+}
+.pv-sub {
+  background: var(--c-surface-2, var(--c-surface));
+  border-top: 1px solid var(--c-border);
+}
+/* The caret of a site with several names: out of sight until the row is hovered
+   (or the keyboard is on it, or it is open), when it makes room and shows. */
+.pv-caret-slot {
+  flex: none;
+  width: 0;
+  /* Takes up no room at all (not even the gap) until it opens. */
+  margin-right: calc(var(--s-2) * -1);
+  overflow: hidden;
+  display: flex;
+  transition:
+    width var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    margin-right var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+.pv-row:hover .pv-caret-slot,
+.pv-row:has(:focus-visible) .pv-caret-slot,
+.pv-caret-slot.is-open {
+  width: 28px;
+  margin-right: 0;
+}
+.pv-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+}
+.pv-letter {
+  display: grid;
+  place-items: center;
+  background: var(--c-surface-3);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+
+/* A row that opens something when clicked. */
+.pv-click {
+  cursor: pointer;
+}
+.pv-click:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}

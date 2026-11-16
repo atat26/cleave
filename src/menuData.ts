@@ -1668,8 +1668,8 @@ export function parsePermissionChoice(id: string): PermissionChoice | null {
 
 export type SiteChoice =
   | { action: 'set'; kind: AskKind; answer: Answer | null }
-  | { action: 'reset' }
-  | { action: 'rewarn' };
+  | { action: 'rewarn' }
+  | { action: 'settings' };
 
 const SITE_KINDS: { kind: AskKind; label: string; icon: IconName }[] = [
   { kind: 'camera', label: 'Camera', icon: 'camera' },
@@ -1701,6 +1701,14 @@ export function siteMenuItems(options: {
         },
       ]
     : [];
+  // One button to the part of Settings where a site's permissions and saved data
+  // are managed.
+  const settings: MenuItem = {
+    type: 'item',
+    id: 'site.settings',
+    label: 'Site settings',
+    icon: 'settings',
+  };
   const header: MenuItem = {
     type: 'header',
     label: options.host,
@@ -1721,6 +1729,7 @@ export function siteMenuItems(options: {
         disabled: true,
       },
       ...warn,
+      settings,
     ];
   }
   // Like Chrome, only what you have changed for this site is listed; the rest is
@@ -1737,6 +1746,7 @@ export function siteMenuItems(options: {
         disabled: true,
       },
       ...warn,
+      settings,
     ];
   }
   return [
@@ -1758,19 +1768,14 @@ export function siteMenuItems(options: {
         ),
       }),
     ),
-    {
-      type: 'item',
-      id: 'site.reset',
-      label: 'Reset permissions for this site',
-      icon: 'undo',
-    },
     ...warn,
+    settings,
   ];
 }
 
 export function parseSiteChoice(id: string): SiteChoice | null {
-  if (id === 'site.reset') return { action: 'reset' };
   if (id === 'site.rewarn') return { action: 'rewarn' };
+  if (id === 'site.settings') return { action: 'settings' };
   const m = /^site\.set:([a-z]+):(ask|allow|block)$/.exec(id);
   if (!m) return null;
   const kind = ASK_KINDS.find((k) => k === m[1]);
@@ -1780,4 +1785,35 @@ export function parseSiteChoice(id: string): SiteChoice | null {
     kind,
     answer: m[2] === 'ask' ? null : (m[2] as Answer),
   };
+}
+
+// ---- A site in Settings > Privacy (right-click) -------------------------------
+
+export function privacySiteMenuItems(): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'privacy.reset',
+      label: 'Reset permissions for this site',
+      icon: 'undo',
+    },
+  ];
+}
+
+// A site in the list of saved cookies and data (right-click).
+export function privacyDataMenuItems(): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'privacy.clear-data',
+      label: 'Clear data for this site…',
+      icon: 'trash',
+    },
+  ];
+}
+
+export function parsePrivacyChoice(id: string): 'reset' | 'clear' | null {
+  if (id === 'privacy.reset') return 'reset';
+  if (id === 'privacy.clear-data') return 'clear';
+  return null;
 }

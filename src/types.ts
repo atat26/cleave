@@ -2,6 +2,15 @@ import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
+import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
+import type { SiteDataRow, SiteGroup } from './siteData';
+
+// A main site with its cookies, for Settings (icons are remembered from pages).
+export interface SiteDataGroup extends Omit<SiteGroup, 'hosts'> {
+  icon: string | null;
+  hosts: (SiteDataRow & { icon: string | null })[];
+}
+import type { SettingsSection } from './settingsNav';
 import type { DownloadSettings } from './downloadSettings';
 import type { Suggestion } from './suggest';
 import type { HistoryEntry } from './history';
@@ -315,6 +324,40 @@ export interface BrowserApi {
   showLibrary: (list: LibraryList) => void;
   onDownloadsChanged: (callback: () => void) => () => void;
   onLibrarySelectList: (callback: (list: LibraryList) => void) => () => void;
+  // Settings > Privacy: the sites with saved permissions, and clearing data.
+  privacySites: () => Promise<SiteRow[]>;
+  // One site's page in Settings, and changing one of its permissions (null: ask).
+  privacySiteDetail: (site: string) => Promise<SiteDetail | null>;
+  privacySetAnswer: (
+    site: string,
+    kind: AskKind,
+    answer: Answer | null,
+  ) => Promise<SiteDetail | null>;
+  // The sites that have cookies saved, and clearing one site's data (asks first;
+  // true if it was cleared).
+  privacyDataSites: () => Promise<SiteDataGroup[]>;
+  // A main site (and everything under it) or one name.
+  privacyClearSite: (
+    target: { site: string } | { host: string },
+  ) => Promise<boolean>;
+  showPrivacyDataMenu: (
+    kind: 'site' | 'host',
+    name: string,
+    x: number,
+    y: number,
+  ) => void;
+  // The app asks Settings to open on a part (the lock card's "Site settings").
+  onSettingsSection: (
+    callback: (section: SettingsSection) => void,
+  ) => () => void;
+  privacyResetSite: (site: string) => Promise<SiteRow[]>;
+  // Resolves true if it was cleared (it asks first).
+  privacyClear: (what: {
+    siteData: boolean;
+    cache: boolean;
+  }) => Promise<boolean>;
+  showPrivacyMenu: (site: string, x: number, y: number) => void;
+  onPrivacyChanged: (callback: () => void) => () => void;
   downloadSettingsGet: () => Promise<DownloadSettings>;
   downloadSettingsSet: (
     changes: Partial<Omit<DownloadSettings, 'version'>>,
