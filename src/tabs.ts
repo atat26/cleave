@@ -3335,6 +3335,21 @@ export async function createTabs(
         y,
         (choice) => {
           const parsed = parseSiteChoice(choice);
+          if (parsed?.action === 'rewarn') {
+            // Warnings back on: forget the choice and load the page again, which
+            // shows the warning page.
+            try {
+              certAllowed.delete(new URL(address).hostname);
+            } catch {
+              // Not an address; nothing to forget.
+            }
+            closeMenu(true);
+            void contents.session
+              .closeAllConnections()
+              .then(() => reloadTab(id ?? -1, contents));
+            sendState();
+            return;
+          }
           if (!parsed || key === null) return;
           permissions =
             parsed.action === 'reset'

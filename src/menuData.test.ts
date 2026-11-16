@@ -1170,4 +1170,12 @@ test('a site you went on to despite its certificate is never called secure', () 
     'Certificate is not valid',
   );
   assert.equal(header.type === 'header' ? header.icon : '', 'warn');
+  assert.ok(menuIds(items).includes('site.rewarn'));
+  assert.deepEqual(parseSiteChoice('site.rewarn'), { action: 'rewarn' });
+  // An ordinary site has no such row.
+  assert.ok(
+    !menuIds(
+      siteMenuItems({ host: 'a.com', secure: true, canAsk: true, answers: {} }),
+    ).includes('site.rewarn'),
+  );
 });
