@@ -249,3 +249,51 @@ export function floodCheck(
   if (recent.length >= FLOOD_LIMIT) return { allowed: false, starts: recent };
   return { allowed: true, starts: [...recent, now] };
 }
+
+// ---- What the toolbar's download indicator shows ---------------------------------
+
+// A finished download is mentioned for this long.
+export const RECENT_MS = 10_000;
+
+export interface DownloadSummary {
+  // How many are going now.
+  active: number;
+  // Their combined progress, 0 to 1 (null when a size is not known).
+  progress: number | null;
+  // Nothing active, but one just finished or failed (shown for a few seconds).
+  recent: 'done' | 'failed' | null;
+}
+
+export function downloadSummary(
+  state: DownloadsState,
+  now: number,
+): DownloadSummary {
+  const going = state.items.filter((i) => isActive(i.state));
+  if (going.length > 0) {
+    const known = going.every((i) => i.totalBytes > 0);
+    const total = going.reduce((sum, i) => sum + i.totalBytes, 0);
+    const got = going.reduce((sum, i) => sum + i.receivedBytes, 0);
+    return {
+      active: going.length,
+      progress: known && total > 0 ? Math.min(1, got / total) : null,
+      recent: null,
+    };
+  }
+  // The most recent ending, if it was just now.
+  let last: DownloadItem | null = null;
+  for (const item of state.items) {
+    if (
+      item.endedAt !== null &&
+      (item.state === 'done' || item.state === 'failed')
+    ) {
+      if (last === null || item.endedAt >= (last.endedAt ?? 0)) last = item;
+    }
+  }
+  const recent =
+    last !== null && last.endedAt !== null && now - last.endedAt < RECENT_MS
+      ? last.state === 'done'
+        ? 'done'
+        : 'failed'
+      : null;
+  return { active: 0, progress: null, recent };
+}

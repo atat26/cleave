@@ -34,6 +34,24 @@ const browserApi: BrowserApi = {
   libraryRemoveBookmark: (id) =>
     ipcRenderer.send('library:remove-bookmark', id),
   downloadsList: () => ipcRenderer.invoke('downloads:list'),
+  downloadsAct: (id, action) => ipcRenderer.send('downloads:act', id, action),
+  showDownloadMenu: (id, x, y) => ipcRenderer.send('downloads:menu', id, x, y),
+  showLibrary: (list) => ipcRenderer.send('library:show', list),
+  onDownloadsChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('downloads:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('downloads:changed', listener);
+    };
+  },
+  onLibrarySelectList: (callback) => {
+    const listener = (_event: unknown, list: Parameters<typeof callback>[0]) =>
+      callback(list);
+    ipcRenderer.on('library:select-list', listener);
+    return () => {
+      ipcRenderer.removeListener('library:select-list', listener);
+    };
+  },
   downloadSettingsGet: () => ipcRenderer.invoke('download-settings:get'),
   downloadSettingsSet: (changes) =>
     ipcRenderer.invoke('download-settings:set', changes),

@@ -22,7 +22,9 @@ import {
   parseEmojiChoice,
   parseToolsChoice,
   toolsMenuItems,
+  downloadMenuItems,
   libraryMenuItems,
+  parseDownloadChoice,
   parseStarChoice,
   starMenuItems,
   parseLibraryChoice,
@@ -1006,4 +1008,47 @@ test('star and page-menu choices to bookmark or save are read back', () => {
   });
   assert.equal(entry(page, 'page.bookmark').label, 'Remove bookmark');
   assert.ok(menuIds(page).includes('page.save-space:4'));
+});
+
+test("a download's menu offers only what fits how it stands, and reads back", () => {
+  assert.deepEqual(menuIds(downloadMenuItems({ state: 'done' })), [
+    'download.open',
+    'download.show',
+    'download.remove',
+  ]);
+  assert.deepEqual(menuIds(downloadMenuItems({ state: 'downloading' })), [
+    'download.pause',
+    'download.cancel',
+    'download.remove',
+  ]);
+  assert.deepEqual(menuIds(downloadMenuItems({ state: 'paused' })), [
+    'download.resume',
+    'download.cancel',
+    'download.remove',
+  ]);
+  for (const state of ['failed', 'cancelled', 'blocked'] as const) {
+    assert.deepEqual(menuIds(downloadMenuItems({ state })), [
+      'download.remove',
+    ]);
+  }
+  assert.deepEqual(parseDownloadChoice('download.open'), { action: 'open' });
+  assert.deepEqual(parseDownloadChoice('download.show'), { action: 'show' });
+  assert.deepEqual(parseDownloadChoice('download.pause'), { action: 'pause' });
+  assert.deepEqual(parseDownloadChoice('download.resume'), {
+    action: 'resume',
+  });
+  assert.deepEqual(parseDownloadChoice('download.cancel'), {
+    action: 'cancel',
+  });
+  assert.deepEqual(parseDownloadChoice('download.remove'), {
+    action: 'remove',
+  });
+  assert.equal(parseDownloadChoice('download.delete-file'), null);
+  // The Library's "…" for downloads clears the finished ones.
+  assert.deepEqual(menuIds(libraryMenuItems('downloads')), [
+    'library.clear-downloads',
+  ]);
+  assert.deepEqual(parseLibraryChoice('library.clear-downloads'), {
+    action: 'clear-downloads',
+  });
 });
