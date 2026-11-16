@@ -962,6 +962,7 @@ export type PageChoice =
   | { action: 'zoom-out' }
   | { action: 'zoom-reset' }
   | { action: 'print' }
+  | { action: 'save-page-as' }
   | { action: 'inspect' }
   | { action: 'add-page-to-chat' }
   | { action: 'open-link' }
@@ -969,7 +970,9 @@ export type PageChoice =
   | { action: 'open-link-in-new-space' }
   | { action: 'add-link-to-chat' }
   | { action: 'copy-link' }
+  | { action: 'save-link-as' }
   | { action: 'open-image' }
+  | { action: 'save-image-as' }
   | { action: 'copy-image' }
   | { action: 'copy-image-address' }
   | { action: 'copy-selection' }
@@ -1043,6 +1046,13 @@ export function pageMenuItems(options: {
     { type: 'separator' },
     {
       type: 'item',
+      id: 'page.save-as',
+      label: 'Save page as…',
+      icon: 'download',
+      shortcut: 'Ctrl+S',
+    },
+    {
+      type: 'item',
       id: 'page.print',
       label: 'Print…',
       icon: 'print',
@@ -1108,6 +1118,12 @@ export function pageLinkMenuItems(
       label: 'Copy link address',
       icon: 'link',
     },
+    {
+      type: 'item',
+      id: 'page.save-link-as',
+      label: 'Save link as…',
+      icon: 'download',
+    },
   ];
 }
 
@@ -1126,6 +1142,12 @@ export function pageImageMenuItems(): MenuItem[] {
       id: 'page.copy-image-address',
       label: 'Copy image address',
       icon: 'link',
+    },
+    {
+      type: 'item',
+      id: 'page.save-image-as',
+      label: 'Save image as…',
+      icon: 'download',
     },
   ];
 }
@@ -1183,6 +1205,12 @@ export function parsePageChoice(id: string): PageChoice | null {
       return { action: 'zoom-reset' };
     case 'page.print':
       return { action: 'print' };
+    case 'page.save-as':
+      return { action: 'save-page-as' };
+    case 'page.save-link-as':
+      return { action: 'save-link-as' };
+    case 'page.save-image-as':
+      return { action: 'save-image-as' };
     case 'page.inspect':
       return { action: 'inspect' };
     case 'page.add-to-chat':

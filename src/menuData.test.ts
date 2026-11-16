@@ -661,12 +661,13 @@ test('the page menu: Back and Forward grey out when there is nowhere to go', () 
     'page.bookmark',
     'page.save-to-space',
     'page.save-new-space',
+    'page.save-as',
     'page.print',
     'page.inspect',
   ]);
 });
 
-test('the link menu lists your Spaces to open it in, and there is no save-as anywhere', () => {
+test('the link menu lists your Spaces to open it in', () => {
   const { state, workId, homeId } = build();
   const items = pageLinkMenuItems(state);
   const spaces = entry(items, 'page.open-link-in').submenu!;
@@ -686,8 +687,9 @@ test('the link menu lists your Spaces to open it in, and there is no save-as any
       .map((i) => (i as MenuEntry).id),
     ['page.open-link-in-new-space'],
   );
-  // Nothing in any page menu makes a page save a file (Print opens the system's
-  // own print window, where saving a PDF is the user's own choice).
+  // The only entries that save a file are the three "Save … as…" ones; each opens
+  // the system's save window, so you always choose where it goes. Nothing saves or
+  // downloads on its own (Print opens the system's own print window).
   const all = [
     ...menuIds(items),
     ...menuIds(pageImageMenuItems()),
@@ -696,8 +698,17 @@ test('the link menu lists your Spaces to open it in, and there is no save-as any
   ];
   assert.ok(
     all.every(
-      (id) => !/save|download/.test(id.replace(/save-(?:to-|new-)?space/g, '')),
+      (id) =>
+        !/save|download/.test(
+          id
+            .replace(/save-(?:to-|new-)?space/g, '')
+            .replace(/^page\.save-(?:page|link|image)?-?as$/, ''),
+        ),
     ),
+  );
+  assert.deepEqual(
+    all.filter((id) => /^page\.save-(?:link-|image-)?as$/.test(id)),
+    ['page.save-link-as', 'page.save-image-as', 'page.save-as'],
   );
 });
 
@@ -728,11 +739,18 @@ test('page menu choices are read back; unknown ones are not understood', () => {
       assert.ok(parsePageChoice(id), id);
     }
   }
+  assert.deepEqual(parsePageChoice('page.save-as'), { action: 'save-page-as' });
+  assert.deepEqual(parsePageChoice('page.save-link-as'), {
+    action: 'save-link-as',
+  });
+  assert.deepEqual(parsePageChoice('page.save-image-as'), {
+    action: 'save-image-as',
+  });
   assert.deepEqual(parsePageChoice('page.open-link-in:9'), {
     action: 'open-link-in',
     spaceId: 9,
   });
-  for (const bad of ['', 'page.open-link-in:x', 'page.save-as', 'tab.close']) {
+  for (const bad of ['', 'page.open-link-in:x', 'page.save-all', 'tab.close']) {
     assert.equal(parsePageChoice(bad), null, bad);
   }
 });

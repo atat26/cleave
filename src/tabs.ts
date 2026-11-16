@@ -1238,6 +1238,12 @@ export async function createTabs(
     if (contents) contents.print({ printBackground: true });
   };
 
+  // Ctrl+S / the page menu: save the page you are on to a file you pick.
+  const savePageAs = () => {
+    const contents = activePage();
+    if (contents) void downloadManager.savePage(contents);
+  };
+
   const toggleDevTools = () => activePage()?.toggleDevTools();
 
   // What a choice in the "…" menu (or the zoom chip's) does.
@@ -2242,6 +2248,15 @@ export async function createTabs(
       case 'print':
         printPage();
         break;
+      case 'save-page-as':
+        savePageAs();
+        break;
+      case 'save-link-as':
+        downloadManager.saveUrl(contents, params.linkURL);
+        break;
+      case 'save-image-as':
+        downloadManager.saveUrl(contents, params.srcURL);
+        break;
       case 'inspect':
         contents.inspectElement(params.x, params.y);
         break;
@@ -2562,6 +2577,9 @@ export async function createTabs(
     } else if (key === '0') {
       event.preventDefault();
       changeZoom(0);
+    } else if (key === 's' && !input.shift) {
+      event.preventDefault();
+      savePageAs();
     } else if (key === 'p') {
       event.preventDefault();
       printPage();
@@ -3457,6 +3475,13 @@ export async function createTabs(
     isPage: (contents) =>
       contents !== undefined &&
       [...views.values()].some((view) => view.webContents === contents),
+    chooseSavePath: async (defaultPath) => {
+      const result = await dialog.showSaveDialog(win, {
+        defaultPath,
+        filters: [{ name: 'Web page', extensions: ['html'] }],
+      });
+      return result.canceled || !result.filePath ? null : result.filePath;
+    },
     confirm,
   });
   ipcMain.handle('downloads:list', (event) => {
