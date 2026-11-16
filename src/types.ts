@@ -231,6 +231,8 @@ export interface UiState {
   // What the toolbar's download indicator shows (it is only there when something is
   // going, or one just finished).
   downloads: DownloadSummary;
+  // The page is on a site you went on to despite its certificate (not secure).
+  certBypassed: boolean;
   // The ACTIVE web tab is still loading (its reload button becomes Stop).
   loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.

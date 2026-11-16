@@ -25,6 +25,8 @@ interface ToolbarProps {
   bookmarked: boolean;
   // Downloads going on, or one that just finished (the indicator shows only then).
   downloads: DownloadSummary;
+  // The site's certificate is wrong and you went on anyway: never shown as secure.
+  certBypassed: boolean;
   // What the middle of the window shows right now.
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
@@ -188,6 +190,7 @@ export function Toolbar({
   zoom,
   bookmarked,
   downloads,
+  certBypassed,
   viewMode,
   chats,
 }: ToolbarProps) {
@@ -249,7 +252,9 @@ export function Toolbar({
     inputRef.current?.blur();
   };
 
-  const site = disabled ? null : describeSite(url);
+  const described = disabled ? null : describeSite(url);
+  const site =
+    described && certBypassed ? { ...described, secure: false } : described;
   const chatOnly = viewMode === 'chat';
 
   return (
@@ -319,7 +324,9 @@ export function Toolbar({
                   title={
                     site.secure
                       ? 'Secure connection. Site permissions'
-                      : 'Not secure. Site permissions'
+                      : certBypassed
+                        ? 'Not secure: the certificate is not valid. Site permissions'
+                        : 'Not secure. Site permissions'
                   }
                   onClick={(event) => {
                     const box = event.currentTarget.getBoundingClientRect();

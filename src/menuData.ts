@@ -1681,6 +1681,8 @@ const SITE_KINDS: { kind: AskKind; label: string; icon: IconName }[] = [
 export function siteMenuItems(options: {
   host: string;
   secure: boolean;
+  // The certificate is wrong and you went on anyway.
+  problem?: boolean;
   // The site can ask for permissions (https, or this computer).
   canAsk: boolean;
   // What is remembered for the site, by kind (empty if nothing).
@@ -1690,9 +1692,11 @@ export function siteMenuItems(options: {
     type: 'header',
     label: options.host,
     icon: options.secure ? 'lock' : 'warn',
-    detail: options.secure
-      ? 'Connection is secure'
-      : 'Connection is not secure',
+    detail: options.problem
+      ? 'Certificate is not valid'
+      : options.secure
+        ? 'Connection is secure'
+        : 'Connection is not secure',
   };
   if (!options.canAsk) {
     return [
