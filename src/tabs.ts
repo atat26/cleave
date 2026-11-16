@@ -185,6 +185,13 @@ import type { FrameLayout, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
 import { resolveInput, searchUrl } from './url';
 import {
+  activeEngine,
+  defaultSearchEngineSettings,
+  engineHome,
+  parseSearchEngineSettings,
+  withSearchEngine,
+} from './searchEngine';
+import {
   addMenuItems,
   artifactMenuItems,
   chatRowMenuItems,
@@ -377,6 +384,19 @@ export async function createTabs(
     defaultBookmarks,
   );
   const bookmarksSaver = createSaver(bookmarksFile, () => bookmarks);
+  // The search engine the address bar uses: see searchEngine.ts.
+  const searchEngineFile = path.join(
+    app.getPath('userData'),
+    'search-engine.json',
+  );
+  let searchEngine = await loadJson(
+    searchEngineFile,
+    parseSearchEngineSettings,
+    defaultSearchEngineSettings,
+  );
+  const searchEngineSaver = createSaver(searchEngineFile, () => searchEngine);
+  // Where a new tab opens: the home page of the search engine in use.
+  const newTabUrl = () => engineHome(activeEngine(searchEngine));
   // What sites may do (camera, location...): see permissions.ts.
   const permissionsFile = path.join(
     app.getPath('userData'),
@@ -1194,7 +1214,7 @@ export async function createTabs(
       } else if (contents.navigationHistory.canGoBack()) {
         contents.navigationHistory.goBack();
       } else {
-        void contents.loadURL(NEW_TAB_URL);
+        void contents.loadURL(newTabUrl());
       }
     });
 
@@ -1230,6 +1250,7 @@ export async function createTabs(
         })),
       },
       Date.now(),
+      activeEngine(searchEngine),
     );
 
   // Go to an address in the selected tab (or in a new one when no page is selected,
@@ -1496,7 +1517,7 @@ export async function createTabs(
   // The window is never left with nothing to show.
   const withSomethingActive = (next: SavedState): SavedState =>
     next.active === null
-      ? model.addTab(next, { url: NEW_TAB_URL }).state
+      ? model.addTab(next, { url: newTabUrl() }).state
       : next;
 
   // Close a tab. In a Space the page stays as a closed link on the overview.
@@ -2386,7 +2407,7 @@ export async function createTabs(
     if (!choice || !model.findSpace(state, spaceId)) return;
     switch (choice.action) {
       case 'page':
-        openTab(NEW_TAB_URL, spaceId);
+        openTab(newTabUrl(), spaceId);
         break;
       case 'new-artifact': {
         const result = artifactsModel.createArtifact(
@@ -2630,7 +2651,10 @@ export async function createTabs(
         clipboard.writeText(params.selectionText);
         break;
       case 'search-selection':
-        openTab(searchUrl(params.selectionText), here);
+        openTab(
+          searchUrl(params.selectionText, activeEngine(searchEngine).template),
+          here,
+        );
         break;
       case 'add-selection-to-chat':
         insertIntoChat(params.selectionText);
@@ -2658,7 +2682,7 @@ export async function createTabs(
         select({ kind: 'lead', spaceId });
         break;
       case 'new-tab':
-        openTab(NEW_TAB_URL, spaceId);
+        openTab(newTabUrl(), spaceId);
         break;
       case 'add-to-chat':
         linkToChat({
@@ -2758,7 +2782,7 @@ export async function createTabs(
         commitAndShow(
           revealPage(
             model.addTab(state, {
-              url: NEW_TAB_URL,
+              url: newTabUrl(),
               spaceId: tab.spaceId,
               after: tabId,
             }).state,
@@ -2927,7 +2951,7 @@ export async function createTabs(
       reopenLastClosed();
     } else if (key === 't') {
       event.preventDefault();
-      openTab(NEW_TAB_URL, currentSpaceId());
+      openTab(newTabUrl(), currentSpaceId());
     } else if (key === 'r') {
       event.preventDefault();
       const id = activeTabId();
@@ -2964,7 +2988,7 @@ export async function createTabs(
     'tab:navigate': (input) => {
       const id = activeTabId();
       if (id === null || typeof input !== 'string') return;
-      const url = resolveInput(input);
+      const url = resolveInput(input, activeEngine(searchEngine).template);
       if (url === '') return;
       void views.get(id)?.webContents.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
@@ -3002,7 +3026,7 @@ export async function createTabs(
       if (history?.canGoForward()) history.goForward();
     },
     'tab:new': (spaceId) => {
-      if (isIdOrNull(spaceId)) openTab(NEW_TAB_URL, spaceId);
+      if (isIdOrNull(spaceId)) openTab(newTabUrl(), spaceId);
     },
     'tab:close': (id) => {
       if (isId(id)) closeTab(id);
@@ -3953,6 +3977,16 @@ export async function createTabs(
       ...row,
       icon: faviconFor(favicons, row.host),
     }));
+  ipcMain.handle('search-engine:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return searchEngine;
+  });
+  ipcMain.handle('search-engine:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    searchEngine = withSearchEngine(searchEngine, changes);
+    searchEngineSaver.schedule();
+    return searchEngine;
+  });
   ipcMain.handle('privacy:sites', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return permissionRows();
@@ -4429,6 +4463,7 @@ ${artifact.content.slice(0, 1500)}`;
     bookmarksSaver.flushSync();
     downloadsSaver.flushSync();
     permissionsSaver.flushSync();
+    searchEngineSaver.flushSync();
     faviconsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
@@ -4452,6 +4487,8 @@ ${artifact.content.slice(0, 1500)}`;
     app.removeListener('certificate-error', onCertificateError);
     downloadManager.dispose();
     ipcMain.removeHandler('downloads:list');
+    ipcMain.removeHandler('search-engine:get');
+    ipcMain.removeHandler('search-engine:set');
     ipcMain.removeHandler('privacy:sites');
     ipcMain.removeHandler('privacy:data-sites');
     ipcMain.removeHandler('privacy:clear-site');

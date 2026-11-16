@@ -3,6 +3,7 @@ import { onSectionRequested, takeRequestedSection } from './settingsNav';
 import { AppearanceSettings } from './AppearanceSettings';
 import { DownloadsSection } from './DownloadsSection';
 import { PrivacySection } from './PrivacySection';
+import { SearchEngineSection } from './SearchEngineSection';
 import { LibrarySection } from './LibrarySection';
 import { NamingSection } from './NamingSection';
 import { WebSearchSettings } from './WebSearchSettings';
@@ -76,6 +77,11 @@ const SECTIONS = [
     id: 'downloads',
     label: 'Downloads',
     about: 'Where files are saved',
+  },
+  {
+    id: 'search-engine',
+    label: 'Search engine',
+    about: 'Where address-bar searches go',
   },
   {
     id: 'privacy',
@@ -613,6 +619,7 @@ export function SettingsPanel() {
       {section === 'library' && <LibrarySection />}
       {section === 'downloads' && <DownloadsSection />}
       {section === 'privacy' && <PrivacySection />}
+      {section === 'search-engine' && <SearchEngineSection />}
 
       {section === 'prompt' && (
         <>
