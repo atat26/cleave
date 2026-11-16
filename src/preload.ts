@@ -33,6 +33,13 @@ const browserApi: BrowserApi = {
   libraryBookmarks: (query) => ipcRenderer.invoke('library:bookmarks', query),
   libraryRemoveBookmark: (id) =>
     ipcRenderer.send('library:remove-bookmark', id),
+  downloadsList: () => ipcRenderer.invoke('downloads:list'),
+  downloadSettingsGet: () => ipcRenderer.invoke('download-settings:get'),
+  downloadSettingsSet: (changes) =>
+    ipcRenderer.invoke('download-settings:set', changes),
+  downloadSettingsPickFolder: () =>
+    ipcRenderer.invoke('download-settings:pick-folder'),
+  downloadsOpenFolder: () => ipcRenderer.invoke('downloads:open-folder'),
   libraryClosed: () => ipcRenderer.invoke('library:closed'),
   libraryDeleted: () => ipcRenderer.invoke('library:deleted'),
   libraryRestore: (kind, id) => ipcRenderer.send('library:restore', kind, id),
