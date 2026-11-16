@@ -5,6 +5,7 @@ import type { ViewMode } from './model';
 import { NameButton } from './NameButton';
 import { describeSite } from './site';
 import { zoomLabel } from './zoom';
+import type { DownloadSummary } from './downloadList';
 import type { Suggestion } from './suggest';
 import type { ChatsInfo } from './types';
 import { IconButton, ItemEmoji, Segmented } from './ui/controls';
@@ -22,6 +23,8 @@ interface ToolbarProps {
   zoom: number;
   // The page is bookmarked (the star is filled).
   bookmarked: boolean;
+  // Downloads going on, or one that just finished (the indicator shows only then).
+  downloads: DownloadSummary;
   // What the middle of the window shows right now.
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
@@ -86,6 +89,55 @@ function ChatTitle({ chats }: { chats: ChatsInfo }) {
   );
 }
 
+// The download indicator: only there while something is downloading (with a ring
+// that fills as it goes) or for a few seconds after one finishes or fails. Click it
+// to open the Downloads list.
+const RING = 2 * Math.PI * 14;
+function DownloadIndicator({ info }: { info: DownloadSummary }) {
+  if (info.active === 0 && info.recent === null) return null;
+  const going = info.active > 0;
+  const label = going
+    ? `${info.active} download${info.active === 1 ? '' : 's'} in progress. Show downloads`
+    : info.recent === 'failed'
+      ? 'A download failed. Show downloads'
+      : 'Download finished. Show downloads';
+  return (
+    <span className="dl-indicator">
+      {going && (
+        <svg className="dl-ring" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" className="dl-ring-track" />
+          <circle
+            cx="16"
+            cy="16"
+            r="14"
+            className={
+              info.progress === null ? 'dl-ring-bar spin' : 'dl-ring-bar'
+            }
+            strokeDasharray={
+              info.progress === null
+                ? `${RING * 0.25} ${RING}`
+                : `${RING * info.progress} ${RING}`
+            }
+          />
+        </svg>
+      )}
+      <IconButton
+        icon={going ? 'download' : info.recent === 'failed' ? 'warn' : 'check'}
+        label={label}
+        onClick={() => {
+          // Remembered first, so a panel that is not open yet starts on Downloads.
+          try {
+            localStorage.setItem('libraryList', 'downloads');
+          } catch {
+            // Not remembered; the message below still switches an open panel.
+          }
+          window.browserApi.showLibrary('downloads');
+        }}
+      />
+    </span>
+  );
+}
+
 const VIEW_ORDER: ViewMode[] = ['page', 'both', 'chat'];
 const VIEW_ICON = { page: 'page', both: 'split', chat: 'chat' } as const;
 
@@ -135,6 +187,7 @@ export function Toolbar({
   loading,
   zoom,
   bookmarked,
+  downloads,
   viewMode,
   chats,
 }: ToolbarProps) {
@@ -362,6 +415,7 @@ export function Toolbar({
         )}
         <div className="tb-actions">
           <ViewSwitch viewMode={viewMode} />
+          <DownloadIndicator info={downloads} />
           <IconButton
             icon="more"
             label="More: find in page and other tools"

@@ -1358,12 +1358,23 @@ export function parseToolsChoice(id: string): ToolsChoice | null {
 export type LibraryChoice =
   | { action: 'clear-history'; range: 'hour' | 'day' | 'all' }
   | { action: 'clear-closed' }
+  | { action: 'clear-downloads' }
   | { action: 'empty-deleted' };
 
 // What the "…" next to the Library's search box offers, for the list shown.
 export function libraryMenuItems(
-  list: 'history' | 'closed' | 'deleted',
+  list: 'history' | 'closed' | 'deleted' | 'downloads',
 ): MenuItem[] {
+  if (list === 'downloads') {
+    return [
+      {
+        type: 'item',
+        id: 'library.clear-downloads',
+        label: 'Clear finished downloads',
+        icon: 'trash',
+      },
+    ];
+  }
   if (list === 'deleted') {
     return [
       {
@@ -1421,6 +1432,8 @@ export function parseLibraryChoice(id: string): LibraryChoice | null {
       return { action: 'clear-closed' };
     case 'library.empty-deleted':
       return { action: 'empty-deleted' };
+    case 'library.clear-downloads':
+      return { action: 'clear-downloads' };
   }
   return null;
 }
@@ -1492,4 +1505,82 @@ export function parseStarChoice(id: string): StarChoice | null {
   if (id === 'star.new-space') return { action: 'new-space' };
   const m = /^star\.space:(\d+)$/.exec(id);
   return m ? { action: 'space', spaceId: Number(m[1]) } : null;
+}
+
+// ---- A download's right-click menu, and the Library's "…" for downloads ----------
+
+export type DownloadChoice =
+  | { action: 'open' }
+  | { action: 'show' }
+  | { action: 'pause' }
+  | { action: 'resume' }
+  | { action: 'cancel' }
+  | { action: 'remove' };
+
+// What can be done with a download, by how it stands.
+export function downloadMenuItems(download: {
+  state: 'downloading' | 'paused' | 'done' | 'cancelled' | 'failed' | 'blocked';
+}): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (download.state === 'done') {
+    items.push(
+      { type: 'item', id: 'download.open', label: 'Open', icon: 'file' },
+      {
+        type: 'item',
+        id: 'download.show',
+        label: 'Show in folder',
+        icon: 'folder',
+      },
+      { type: 'separator' },
+    );
+  }
+  if (download.state === 'downloading') {
+    items.push({
+      type: 'item',
+      id: 'download.pause',
+      label: 'Pause',
+      icon: 'stop',
+    });
+  }
+  if (download.state === 'paused') {
+    items.push({
+      type: 'item',
+      id: 'download.resume',
+      label: 'Resume',
+      icon: 'play',
+    });
+  }
+  if (download.state === 'downloading' || download.state === 'paused') {
+    items.push({
+      type: 'item',
+      id: 'download.cancel',
+      label: 'Cancel download',
+      icon: 'x',
+    });
+  }
+  items.push({
+    type: 'item',
+    id: 'download.remove',
+    label: 'Remove from list',
+    icon: 'trash',
+  });
+  return items;
+}
+
+export function parseDownloadChoice(id: string): DownloadChoice | null {
+  switch (id) {
+    case 'download.open':
+      return { action: 'open' };
+    case 'download.show':
+      return { action: 'show' };
+    case 'download.pause':
+      return { action: 'pause' };
+    case 'download.resume':
+      return { action: 'resume' };
+    case 'download.cancel':
+      return { action: 'cancel' };
+    case 'download.remove':
+      return { action: 'remove' };
+  }
+  return null;
 }

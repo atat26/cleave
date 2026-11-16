@@ -133,6 +133,7 @@ export function App() {
         loading={state.loading}
         zoom={state.zoom}
         bookmarked={state.bookmarked}
+        downloads={state.downloads}
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}

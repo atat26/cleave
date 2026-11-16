@@ -67,7 +67,13 @@ import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import { registerDownloads } from './downloadManager';
-import { defaultDownloads, parseDownloads } from './downloadList';
+import {
+  clearFinished,
+  defaultDownloads,
+  downloadSummary,
+  parseDownloads,
+  RECENT_MS,
+} from './downloadList';
 import {
   defaultDownloadSettings,
   parseDownloadSettings,
@@ -168,7 +174,9 @@ import {
   parseToolsChoice,
   toolsMenuItems,
   zoomChipMenuItems,
+  downloadMenuItems,
   libraryMenuItems,
+  parseDownloadChoice,
   parseLibraryChoice,
   parseStarChoice,
   starMenuItems,
@@ -693,6 +701,7 @@ export async function createTabs(
       active: state.active,
       zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
       bookmarked: isBookmarked(bookmarks, activePage()?.getURL()),
+      downloads: downloadSummary(downloads, Date.now()),
       loading:
         id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
@@ -1803,6 +1812,30 @@ export async function createTabs(
     })
     .catch(() => undefined);
 
+  // What the Downloads list's buttons and menu do.
+  const runDownloadAction = (id: number, action: string) => {
+    switch (action) {
+      case 'open':
+        void downloadManager.open(id);
+        break;
+      case 'show':
+        downloadManager.showInFolder(id);
+        break;
+      case 'pause':
+        downloadManager.pause(id);
+        break;
+      case 'resume':
+        downloadManager.resume(id);
+        break;
+      case 'cancel':
+        downloadManager.cancel(id);
+        break;
+      case 'remove':
+        downloadManager.remove(id);
+        break;
+    }
+  };
+
   // Remove what has waited in Recently deleted longer than you chose. Runs when the
   // app starts, every few hours, and when you change the time.
   const purgeTrash = () => {
@@ -2829,6 +2862,44 @@ export async function createTabs(
       const kept = historyUrl(url);
       if (kept !== null) openTab(kept, currentSpaceId());
     },
+    // The Downloads list: act on one download (the buttons and the row's menu).
+    'downloads:act': (id, action) => {
+      if (!isId(id) || typeof action !== 'string') return;
+      runDownloadAction(id, action);
+    },
+    'downloads:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const found = downloads.items.find((d) => d.id === id);
+      if (!found) return;
+      showMenu(
+        downloadMenuItems(found),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseDownloadChoice(choice);
+          if (parsed) runDownloadAction(id, parsed.action);
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    // Open the Library on a list (the download indicator opens it on Downloads).
+    'library:show': (list) => {
+      if (
+        list !== 'bookmarks' &&
+        list !== 'history' &&
+        list !== 'downloads' &&
+        list !== 'closed' &&
+        list !== 'deleted'
+      )
+        return;
+      state = model.setRightPanel(state, 'library');
+      saver.schedule();
+      applyLayout(true);
+      sendState();
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send('library:select-list', list);
+      }
+    },
     'library:remove-bookmark': (id) => {
       if (!isId(id)) return;
       const next = removeBookmark(bookmarks, id);
@@ -2857,7 +2928,10 @@ export async function createTabs(
     },
     'library:menu': (list, x, y) => {
       if (
-        (list !== 'history' && list !== 'closed' && list !== 'deleted') ||
+        (list !== 'history' &&
+          list !== 'closed' &&
+          list !== 'deleted' &&
+          list !== 'downloads') ||
         !isNumber(x) ||
         !isNumber(y)
       )
@@ -2873,6 +2947,11 @@ export async function createTabs(
             closedTabs = clearClosed(closedTabs);
             closedSaver.schedule();
             libraryChanged();
+          } else if (parsed.action === 'clear-downloads') {
+            downloads = clearFinished(downloads);
+            downloadsSaver.schedule();
+            win.webContents.send('downloads:changed');
+            sendState();
           } else if (parsed.action === 'empty-deleted') {
             void confirm({
               title: 'Empty Recently deleted',
@@ -3355,6 +3434,7 @@ export async function createTabs(
   // change applies from the assistant's next reply.
   const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
     event.sender === win.webContents;
+  let indicatorTimer: ReturnType<typeof setTimeout> | null = null;
   // Downloads: the manager catches what pages download (see downloadManager.ts).
   const downloadManager = registerDownloads({
     session: session.defaultSession,
@@ -3366,6 +3446,13 @@ export async function createTabs(
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send('downloads:changed');
       }
+      // The indicator follows, and goes quiet a few seconds after the last one ends.
+      sendState();
+      if (indicatorTimer !== null) clearTimeout(indicatorTimer);
+      indicatorTimer = setTimeout(() => {
+        indicatorTimer = null;
+        sendState();
+      }, RECENT_MS + 500);
     },
     isPage: (contents) =>
       contents !== undefined &&

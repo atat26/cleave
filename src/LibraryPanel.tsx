@@ -1,12 +1,32 @@
 import { useEffect, useState } from 'react';
 import { dayGroups } from './history';
 import type { HistoryEntry } from './history';
-import type { ClosedTabInfo, DeletedItemInfo } from './types';
+import { byteText, progressOf, statusText } from './downloadList';
+import type { DownloadItem } from './downloadList';
+import type { ClosedTabInfo, DeletedItemInfo, LibraryList } from './types';
 import type { Bookmark } from './bookmarks';
-import { IconButton, Input, ItemEmoji, TabList } from './ui/controls';
+import { IconButton, Input, ItemEmoji, Progress, Select } from './ui/controls';
 import { Icon } from './ui/Icon';
 
-type Section = 'bookmarks' | 'history' | 'closed' | 'deleted';
+type Section = LibraryList;
+
+const LISTS: { value: Section; label: string }[] = [
+  { value: 'bookmarks', label: 'Bookmarks' },
+  { value: 'history', label: 'History' },
+  { value: 'downloads', label: 'Downloads' },
+  { value: 'closed', label: 'Recently closed' },
+  { value: 'deleted', label: 'Recently deleted' },
+];
+
+// The list you used last (remembered, if the browser allows it).
+const lastList = (): Section => {
+  try {
+    const saved = localStorage.getItem('libraryList');
+    return LISTS.find((l) => l.value === saved)?.value ?? 'bookmarks';
+  } catch {
+    return 'bookmarks';
+  }
+};
 
 const hostOf = (url: string): string => {
   try {
@@ -87,10 +107,110 @@ function Row({
   );
 }
 
+// One download: its name and how it stands, with a bar while it is going. Click a
+// finished one to open it. The buttons (and the right-click menu) show when the
+// pointer or keyboard is on the row.
+function DownloadRow({ item }: { item: DownloadItem }) {
+  const act = (
+    action: 'open' | 'show' | 'pause' | 'resume' | 'cancel' | 'remove',
+  ) => window.browserApi.downloadsAct(item.id, action);
+  const going = item.state === 'downloading' || item.state === 'paused';
+  const open = () => item.state === 'done' && act('open');
+  const share = progressOf(item);
+  return (
+    <div
+      className="lrow reveal-host lib-row"
+      role="button"
+      tabIndex={0}
+      title={item.path || item.url}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          open();
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showDownloadMenu(
+          item.id,
+          event.clientX,
+          event.clientY,
+        );
+      }}
+      style={{
+        opacity:
+          item.state === 'blocked' || item.state === 'cancelled' ? 0.6 : 1,
+      }}
+    >
+      <Icon name={item.state === 'done' ? 'file' : 'download'} />
+      <span className="grow" style={{ minWidth: 0 }}>
+        <span className="truncate" style={{ display: 'block' }}>
+          {item.name}
+        </span>
+        <span
+          className="truncate muted"
+          style={{ display: 'block', fontSize: 'var(--fs-xs)' }}
+        >
+          {statusText(item)}
+        </span>
+        {going && share !== null && (
+          <Progress
+            value={share}
+            label={`${item.name}: ${byteText(item.receivedBytes)}`}
+          />
+        )}
+      </span>
+      {item.state === 'done' && (
+        <IconButton
+          icon="folder"
+          size="sm"
+          className="reveal"
+          label={`Show ${item.name} in its folder`}
+          onClick={(event) => {
+            event.stopPropagation();
+            act('show');
+          }}
+        />
+      )}
+      {going && (
+        <IconButton
+          icon={item.state === 'paused' ? 'play' : 'stop'}
+          size="sm"
+          className="reveal"
+          label={
+            item.state === 'paused'
+              ? `Resume ${item.name}`
+              : `Pause ${item.name}`
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            act(item.state === 'paused' ? 'resume' : 'pause');
+          }}
+        />
+      )}
+      <IconButton
+        icon="x"
+        size="sm"
+        className="reveal"
+        label={
+          going ? `Cancel ${item.name}` : `Remove ${item.name} from the list`
+        }
+        onClick={(event) => {
+          event.stopPropagation();
+          act(going ? 'cancel' : 'remove');
+        }}
+      />
+    </div>
+  );
+}
+
 // The Library: pages you have visited, and tabs you closed recently. (Recently
 // deleted chats and artifacts, downloads and bookmarks join it later.)
 export function LibraryPanel() {
-  const [section, setSection] = useState<Section>('bookmarks');
+  const [section, setSection] = useState<Section>(lastList);
+  const [downloads, setDownloads] = useState<DownloadItem[] | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[] | null>(null);
   const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
@@ -103,6 +223,22 @@ export function LibraryPanel() {
     () => window.browserApi.onLibraryChanged(() => setTick((n) => n + 1)),
     [],
   );
+  useEffect(
+    () => window.browserApi.onDownloadsChanged(() => setTick((n) => n + 1)),
+    [],
+  );
+  // The download indicator opens the Library on Downloads.
+  useEffect(
+    () => window.browserApi.onLibrarySelectList((list) => setSection(list)),
+    [],
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem('libraryList', section);
+    } catch {
+      // Not remembered; fine.
+    }
+  }, [section]);
 
   useEffect(() => {
     if (section !== 'bookmarks') return;
@@ -150,6 +286,17 @@ export function LibraryPanel() {
   }, [section, tick]);
 
   useEffect(() => {
+    if (section !== 'downloads') return;
+    let cancelled = false;
+    void window.browserApi.downloadsList().then((found) => {
+      if (!cancelled) setDownloads([...found].reverse());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [section, tick]);
+
+  useEffect(() => {
     if (section !== 'deleted') return;
     let cancelled = false;
     void window.browserApi.libraryDeleted().then((found) => {
@@ -162,20 +309,21 @@ export function LibraryPanel() {
 
   return (
     <div>
-      <TabList<Section>
-        label="Library"
+      <Select
+        aria-label="Library list"
         value={section}
-        onChange={(next) => {
-          setSection(next);
+        onChange={(event) => {
+          setSection(event.target.value as Section);
           setQuery('');
         }}
-        tabs={[
-          { value: 'bookmarks', label: 'Bookmarks' },
-          { value: 'history', label: 'History' },
-          { value: 'closed', label: 'Closed' },
-          { value: 'deleted', label: 'Deleted' },
-        ]}
-      />
+        style={{ width: '100%' }}
+      >
+        {LISTS.map((list) => (
+          <option key={list.value} value={list.value}>
+            {list.label}
+          </option>
+        ))}
+      </Select>
       <div
         className="row-flex"
         style={{ gap: 'var(--s-2)', margin: 'var(--s-3) 0' }}
@@ -192,6 +340,10 @@ export function LibraryPanel() {
             onChange={(event) => setQuery(event.target.value)}
             style={{ flex: 1, minWidth: 0 }}
           />
+        ) : section === 'downloads' ? (
+          <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
+            Files your pages downloaded. Click one to open it.
+          </span>
         ) : section === 'closed' ? (
           <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
             Recently closed tabs. Ctrl+Shift+T reopens the newest.
@@ -265,6 +417,15 @@ export function LibraryPanel() {
               ))}
             </section>
           ))
+        ))}
+
+      {section === 'downloads' &&
+        (downloads === null ? null : downloads.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Nothing downloaded yet.
+          </p>
+        ) : (
+          downloads.map((item) => <DownloadRow key={item.id} item={item} />)
         ))}
 
       {section === 'deleted' &&

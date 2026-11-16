@@ -1,7 +1,7 @@
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
-import type { DownloadItem } from './downloadList';
+import type { DownloadItem, DownloadSummary } from './downloadList';
 import type { DownloadSettings } from './downloadSettings';
 import type { Suggestion } from './suggest';
 import type { HistoryEntry } from './history';
@@ -161,6 +161,14 @@ export type LlmModelsResult =
   | { ok: false; error: string };
 
 // A conversation as the UI sees it (the messages themselves come later).
+// The lists in the Library panel.
+export type LibraryList =
+  | 'bookmarks'
+  | 'history'
+  | 'downloads'
+  | 'closed'
+  | 'deleted';
+
 // A deleted chat or artifact, as the Library lists it.
 export interface DeletedItemInfo {
   kind: 'chat' | 'artifact';
@@ -220,6 +228,9 @@ export interface UiState {
   zoom: number;
   // The selected page is bookmarked (the star is filled).
   bookmarked: boolean;
+  // What the toolbar's download indicator shows (it is only there when something is
+  // going, or one just finished).
+  downloads: DownloadSummary;
   // The ACTIVE web tab is still loading (its reload button becomes Stop).
   loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
@@ -291,6 +302,15 @@ export interface BrowserApi {
   libraryRemoveBookmark: (id: number) => void;
   // Downloads: the list, and Settings > Downloads.
   downloadsList: () => Promise<DownloadItem[]>;
+  downloadsAct: (
+    id: number,
+    action: 'open' | 'show' | 'pause' | 'resume' | 'cancel' | 'remove',
+  ) => void;
+  showDownloadMenu: (id: number, x: number, y: number) => void;
+  // Open the Library panel on one of its lists.
+  showLibrary: (list: LibraryList) => void;
+  onDownloadsChanged: (callback: () => void) => () => void;
+  onLibrarySelectList: (callback: (list: LibraryList) => void) => () => void;
   downloadSettingsGet: () => Promise<DownloadSettings>;
   downloadSettingsSet: (
     changes: Partial<Omit<DownloadSettings, 'version'>>,
@@ -311,7 +331,7 @@ export interface BrowserApi {
   libraryRemoveVisit: (id: number) => void;
   libraryReopenClosed: (id: number) => void;
   showLibraryMenu: (
-    list: 'history' | 'closed' | 'deleted',
+    list: 'history' | 'closed' | 'deleted' | 'downloads',
     x: number,
     y: number,
   ) => void;

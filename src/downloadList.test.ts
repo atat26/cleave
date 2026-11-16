@@ -5,6 +5,8 @@ import {
   addDownload,
   byteText,
   clearFinished,
+  downloadSummary,
+  RECENT_MS,
   defaultDownloads,
   FLOOD_LIMIT,
   FLOOD_WINDOW_MS,
@@ -181,4 +183,47 @@ test('a download cut off when the app closed is marked failed, and junk is dropp
   for (const junk of [null, 5, 'x', [], {}, { items: 'no' }]) {
     assert.equal(parseDownloads(junk, NOW).items.length, 0);
   }
+});
+
+test('the indicator says how many are going and how far, or that one just finished', () => {
+  let state = addDownload(defaultDownloads(), file('a.bin'), NOW).state;
+  state = addDownload(state, file('b.bin'), NOW).state;
+  state = updateDownload(state, 1, { receivedBytes: 500 }, NOW);
+  state = updateDownload(state, 2, { receivedBytes: 250 }, NOW);
+  const going = downloadSummary(state, NOW + 1);
+  assert.equal(going.active, 2);
+  assert.equal(going.progress, 0.375);
+  assert.equal(going.recent, null);
+  // A download of unknown size makes the combined progress unknown.
+  const unknown = addDownload(
+    state,
+    { ...file('c.bin'), totalBytes: 0 },
+    NOW,
+  ).state;
+  assert.equal(downloadSummary(unknown, NOW).progress, null);
+  // All finished: mentioned for a few seconds, then quiet.
+  let done = updateDownload(state, 1, { state: 'done' }, NOW + 1000);
+  done = updateDownload(done, 2, { state: 'done' }, NOW + 2000);
+  assert.deepEqual(downloadSummary(done, NOW + 3000), {
+    active: 0,
+    progress: null,
+    recent: 'done',
+  });
+  assert.equal(downloadSummary(done, NOW + 2000 + RECENT_MS + 1).recent, null);
+  // A failure is noticed too; cancelled and blocked ones are not news.
+  const failed = updateDownload(state, 1, { state: 'failed' }, NOW + 1000);
+  const mixed = updateDownload(failed, 2, { state: 'cancelled' }, NOW + 1000);
+  assert.equal(downloadSummary(mixed, NOW + 1500).recent, 'failed');
+  const quiet = updateDownload(
+    updateDownload(state, 1, { state: 'cancelled' }, NOW),
+    2,
+    { state: 'cancelled' },
+    NOW,
+  );
+  assert.equal(downloadSummary(quiet, NOW + 1).recent, null);
+  assert.deepEqual(downloadSummary(defaultDownloads(), NOW), {
+    active: 0,
+    progress: null,
+    recent: null,
+  });
 });
