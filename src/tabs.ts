@@ -89,6 +89,13 @@ import {
   siteKey,
 } from './permissions';
 import type { AskKind } from './permissions';
+import {
+  canProceed,
+  certErrorCode,
+  certErrorUrl,
+  isCertError,
+  parseCertLink,
+} from './certPage';
 import { describeSite } from './site';
 import { MAX_SUGGESTIONS, suggest, suggestRect } from './suggest';
 import type { Suggestion, SuggestionKind } from './suggest';
@@ -686,6 +693,25 @@ export async function createTabs(
     }
   };
 
+  // Sites whose certificate is wrong: the tab showing the warning page, and the
+  // sites you chose to go on to anyway (until the app closes).
+  const certErrors = new Map<
+    number,
+    { url: string; code: number; host: string }
+  >();
+  const certAllowed = new Set<string>();
+  // Is this address on a site you went on to despite its certificate? (It is never
+  // shown as secure.)
+  const certBypassed = (address: string | undefined): boolean => {
+    try {
+      return (
+        address !== undefined && certAllowed.has(new URL(address).hostname)
+      );
+    } catch {
+      return false;
+    }
+  };
+
   const sendState = () => {
     if (win.isDestroyed()) return;
     const id = activeTabId();
@@ -736,6 +762,7 @@ export async function createTabs(
       active: state.active,
       zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
       bookmarked: isBookmarked(bookmarks, activePage()?.getURL()),
+      certBypassed: certBypassed(activePage()?.getURL()),
       downloads: downloadSummary(downloads, Date.now()),
       loading:
         id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
@@ -970,6 +997,40 @@ export async function createTabs(
 
   // ---- Web page views ----------------------------------------------------
 
+  // A certificate problem is refused, unless it is on a site you chose to go on to
+  // (and the problem is one that can be gone past).
+  const onCertificateError = (
+    event: Electron.Event,
+    contents: Electron.WebContents,
+    url: string,
+    error: string,
+    _certificate: Electron.Certificate,
+    callback: (isTrusted: boolean) => void,
+  ) => {
+    let host = '';
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      // Not an address: refused below.
+    }
+    const code = certErrorCode(error);
+    const allowed =
+      host !== '' &&
+      certAllowed.has(host) &&
+      code !== null &&
+      canProceed(code) &&
+      [...views.values()].some((view) => view.webContents === contents);
+    event.preventDefault();
+    callback(allowed);
+  };
+  app.on('certificate-error', onCertificateError);
+  // Reload a tab (from the warning page, the page it could not open).
+  const reloadTab = (tabId: number, contents: Electron.WebContents) => {
+    const failed = certErrors.get(tabId);
+    if (failed) void contents.loadURL(failed.url);
+    else contents.reload();
+  };
+
   const updateTab = (
     id: number,
     patch: { url?: string; title?: string; favicon?: string | null },
@@ -1066,6 +1127,47 @@ export async function createTabs(
     contents.on('did-navigate-in-page', () =>
       updateTab(tab.id, { url: contents.getURL() }),
     );
+    // A site whose certificate is wrong gets a warning page, not a blank one. The
+    // address bar keeps showing the address that failed.
+    contents.on('did-fail-load', (_event, code, _text, failedUrl, isMain) => {
+      if (!isMain || !isCertError(code) || !model.isWebUrl(failedUrl)) return;
+      let host = '';
+      try {
+        host = new URL(failedUrl).hostname;
+      } catch {
+        return;
+      }
+      certErrors.set(tab.id, { url: failedUrl, code, host });
+      void contents.loadURL(certErrorUrl(host, code));
+    });
+    contents.on('did-navigate', () => {
+      const failed = certErrors.get(tab.id);
+      if (failed && contents.getURL().startsWith('data:text/html')) {
+        updateTab(tab.id, { url: failed.url, favicon: null });
+      } else if (failed) {
+        certErrors.delete(tab.id);
+      }
+    });
+    // The warning page's two links.
+    contents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('aib:')) return;
+      event.preventDefault();
+      const link = parseCertLink(url);
+      const failed = certErrors.get(tab.id);
+      if (!link || !failed || !contents.getURL().startsWith('data:text/html')) {
+        return;
+      }
+      certErrors.delete(tab.id);
+      if (link === 'proceed') {
+        if (!canProceed(failed.code)) return;
+        certAllowed.add(failed.host);
+        void contents.loadURL(failed.url);
+      } else if (contents.navigationHistory.canGoBack()) {
+        contents.navigationHistory.goBack();
+      } else {
+        void contents.loadURL(NEW_TAB_URL);
+      }
+    });
 
     void contents.loadURL(tab.url);
     return view;
@@ -2375,7 +2477,7 @@ export async function createTabs(
         contents.navigationHistory.goForward();
         break;
       case 'reload':
-        contents.reload();
+        reloadTab(tabId, contents);
         break;
       case 'find':
         openFind();
@@ -2597,7 +2699,10 @@ export async function createTabs(
         );
         break;
       case 'reload':
-        views.get(tabId)?.webContents.reload();
+        {
+          const page = views.get(tabId)?.webContents;
+          if (page) reloadTab(tabId, page);
+        }
         break;
       case 'add-to-chat':
         linkToChat({ kind: 'tab', id: tabId, title: tab.title, url: tab.url });
@@ -2748,7 +2853,10 @@ export async function createTabs(
     } else if (key === 'r') {
       event.preventDefault();
       const id = activeTabId();
-      if (id !== null) views.get(id)?.webContents.reload();
+      if (id !== null) {
+        const page = views.get(id)?.webContents;
+        if (page) reloadTab(id, page);
+      }
     } else if (key === 'w') {
       event.preventDefault();
       const id = activeTabId();
@@ -2794,7 +2902,10 @@ export async function createTabs(
     },
     'tab:reload': () => {
       const id = activeTabId();
-      if (id !== null) views.get(id)?.webContents.reload();
+      if (id !== null) {
+        const page = views.get(id)?.webContents;
+        if (page) reloadTab(id, page);
+      }
     },
     'tab:stop': () => {
       const id = activeTabId();
@@ -3213,7 +3324,8 @@ export async function createTabs(
       const build = () =>
         siteMenuItems({
           host: info.host,
-          secure: info.secure,
+          secure: info.secure && !certBypassed(address),
+          problem: certBypassed(address),
           canAsk: key !== null,
           answers: key === null ? {} : (permissions.sites[key] ?? {}),
         });
@@ -3223,6 +3335,21 @@ export async function createTabs(
         y,
         (choice) => {
           const parsed = parseSiteChoice(choice);
+          if (parsed?.action === 'rewarn') {
+            // Warnings back on: forget the choice and load the page again, which
+            // shows the warning page.
+            try {
+              certAllowed.delete(new URL(address).hostname);
+            } catch {
+              // Not an address; nothing to forget.
+            }
+            closeMenu(true);
+            void contents.session
+              .closeAllConnections()
+              .then(() => reloadTab(id ?? -1, contents));
+            sendState();
+            return;
+          }
           if (!parsed || key === null) return;
           permissions =
             parsed.action === 'reset'
@@ -4103,6 +4230,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('popup:ready', onPopupReady);
     ipcMain.removeListener('popup:choose', onPopupChoose);
     ipcMain.removeListener('popup:close', onPopupClose);
+    app.removeListener('certificate-error', onCertificateError);
     downloadManager.dispose();
     ipcMain.removeHandler('downloads:list');
     ipcMain.removeHandler('download-settings:get');

@@ -1668,7 +1668,8 @@ export function parsePermissionChoice(id: string): PermissionChoice | null {
 
 export type SiteChoice =
   | { action: 'set'; kind: AskKind; answer: Answer | null }
-  | { action: 'reset' };
+  | { action: 'reset' }
+  | { action: 'rewarn' };
 
 const SITE_KINDS: { kind: AskKind; label: string; icon: IconName }[] = [
   { kind: 'camera', label: 'Camera', icon: 'camera' },
@@ -1681,18 +1682,34 @@ const SITE_KINDS: { kind: AskKind; label: string; icon: IconName }[] = [
 export function siteMenuItems(options: {
   host: string;
   secure: boolean;
+  // The certificate is wrong and you went on anyway.
+  problem?: boolean;
   // The site can ask for permissions (https, or this computer).
   canAsk: boolean;
   // What is remembered for the site, by kind (empty if nothing).
   answers: Partial<Record<AskKind, Answer>>;
 }): MenuItem[] {
+  // A site you went on to despite its certificate can have its warnings turned
+  // back on.
+  const warn: MenuItem[] = options.problem
+    ? [
+        {
+          type: 'item',
+          id: 'site.rewarn',
+          label: 'Turn on warnings for this site',
+          icon: 'shield',
+        },
+      ]
+    : [];
   const header: MenuItem = {
     type: 'header',
     label: options.host,
     icon: options.secure ? 'lock' : 'warn',
-    detail: options.secure
-      ? 'Connection is secure'
-      : 'Connection is not secure',
+    detail: options.problem
+      ? 'Certificate is not valid'
+      : options.secure
+        ? 'Connection is secure'
+        : 'Connection is not secure',
   };
   if (!options.canAsk) {
     return [
@@ -1703,6 +1720,7 @@ export function siteMenuItems(options: {
         label: 'A site that is not secure cannot ask for permissions',
         disabled: true,
       },
+      ...warn,
     ];
   }
   // Like Chrome, only what you have changed for this site is listed; the rest is
@@ -1718,6 +1736,7 @@ export function siteMenuItems(options: {
           'No saved permissions. This site asks before using your camera, location and so on.',
         disabled: true,
       },
+      ...warn,
     ];
   }
   return [
@@ -1745,11 +1764,13 @@ export function siteMenuItems(options: {
       label: 'Reset permissions for this site',
       icon: 'undo',
     },
+    ...warn,
   ];
 }
 
 export function parseSiteChoice(id: string): SiteChoice | null {
   if (id === 'site.reset') return { action: 'reset' };
+  if (id === 'site.rewarn') return { action: 'rewarn' };
   const m = /^site\.set:([a-z]+):(ask|allow|block)$/.exec(id);
   if (!m) return null;
   const kind = ASK_KINDS.find((k) => k === m[1]);

@@ -134,6 +134,7 @@ export function App() {
         zoom={state.zoom}
         bookmarked={state.bookmarked}
         downloads={state.downloads}
+        certBypassed={state.certBypassed}
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}

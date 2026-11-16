@@ -1154,3 +1154,28 @@ test("the site chip's menu shows each permission's state and reads choices back"
     assert.equal(parseSiteChoice(bad), null, bad);
   }
 });
+
+test('a site you went on to despite its certificate is never called secure', () => {
+  const items = siteMenuItems({
+    host: 'nas.local',
+    secure: false,
+    problem: true,
+    canAsk: false,
+    answers: {},
+  });
+  const header = items[0];
+  assert.equal(header.type, 'header');
+  assert.equal(
+    header.type === 'header' ? header.detail : '',
+    'Certificate is not valid',
+  );
+  assert.equal(header.type === 'header' ? header.icon : '', 'warn');
+  assert.ok(menuIds(items).includes('site.rewarn'));
+  assert.deepEqual(parseSiteChoice('site.rewarn'), { action: 'rewarn' });
+  // An ordinary site has no such row.
+  assert.ok(
+    !menuIds(
+      siteMenuItems({ host: 'a.com', secure: true, canAsk: true, answers: {} }),
+    ).includes('site.rewarn'),
+  );
+});
