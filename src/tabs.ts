@@ -94,6 +94,7 @@ import {
 import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup } from './popups';
+import { HINT_HEIGHT, HINT_MS, HINT_WIDTH, hintUrl } from './fullscreenHint';
 import {
   canProceed,
   certErrorCode,
@@ -871,9 +872,29 @@ export async function createTabs(
 
   // ---- Moving things into place, smoothly -----------------------------------
 
+  // A page that is full screen (a video, a slide show): it fills the whole window
+  // and everything else is hidden until it leaves (Esc, or you switch tabs).
+  let htmlFullscreen: number | null = null;
+  // The window went full screen because of the page (so it goes back when the page
+  // leaves), rather than because you pressed F11.
+  let windowFollowsPage = false;
+
   // Put the sidebar and the visible web page where the frame's sizes say.
   const render = () => {
     if (win.isDestroyed()) return;
+    if (exitFullscreenIfAway()) return;
+    if (htmlFullscreen !== null) {
+      const full = views.get(htmlFullscreen);
+      if (full && !full.webContents.isDestroyed()) {
+        sidebarView.setVisible(false);
+        full.setBorderRadius(0);
+        full.setBounds({ x: 0, y: 0, ...windowSize() });
+        full.setVisible(true);
+        syncFind();
+        hideSuggest();
+        return;
+      }
+    }
     sidebarView.setBounds({
       x: 0,
       y: 0,
@@ -1050,6 +1071,104 @@ export async function createTabs(
     if (giveBackKeyboard && !opener.isDestroyed()) opener.focus();
   };
 
+  // ---- Full screen ---------------------------------------------------------
+
+  // The "Press Esc to exit full screen" pill, shown for a moment.
+  let hintView: WebContentsView | null = null;
+  let hintTimer: ReturnType<typeof setTimeout> | null = null;
+  const showFullscreenHint = () => {
+    if (win.isDestroyed()) return;
+    if (!hintView) {
+      hintView = new WebContentsView({
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+        },
+      });
+      hintView.setBackgroundColor('#00000000');
+      hintView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      hintView.webContents.on('will-navigate', (event) =>
+        event.preventDefault(),
+      );
+      void hintView.webContents.loadURL(hintUrl());
+    }
+    const size = windowSize();
+    hintView.setBounds({
+      x: Math.round((size.width - HINT_WIDTH) / 2),
+      y: 28,
+      width: HINT_WIDTH,
+      height: HINT_HEIGHT,
+    });
+    win.contentView.addChildView(hintView);
+    hintView.setVisible(true);
+    if (hintTimer !== null) clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => {
+      hintTimer = null;
+      if (hintView && !win.isDestroyed()) {
+        hintView.setVisible(false);
+        win.contentView.removeChildView(hintView);
+      }
+    }, HINT_MS);
+  };
+
+  const enterHtmlFullscreen = (tabId: number) => {
+    if (htmlFullscreen === tabId) return;
+    htmlFullscreen = tabId;
+    if (!win.isFullScreen()) {
+      windowFollowsPage = true;
+      win.setFullScreen(true);
+    }
+    const view = views.get(tabId);
+    if (view) win.contentView.addChildView(view); // above everything
+    render();
+    showFullscreenHint();
+  };
+
+  const leaveHtmlFullscreen = () => {
+    if (htmlFullscreen === null) return;
+    htmlFullscreen = null;
+    sidebarView.setVisible(true);
+    for (const view of views.values()) view.setBorderRadius(PAGE_RADIUS);
+    if (windowFollowsPage && !win.isDestroyed()) {
+      windowFollowsPage = false;
+      win.setFullScreen(false);
+    }
+    if (hintView && !win.isDestroyed()) {
+      hintView.setVisible(false);
+      win.contentView.removeChildView(hintView);
+    }
+    restack();
+    applyLayout(false);
+  };
+
+  // Switching to another tab (or one that is not showing) ends full screen.
+  const exitFullscreenIfAway = (): boolean => {
+    if (htmlFullscreen === null || activeTabId() === htmlFullscreen)
+      return false;
+    pageContents(htmlFullscreen)
+      ?.executeJavaScript(
+        'document.fullscreenElement && document.exitFullscreen()',
+      )
+      .catch(() => undefined);
+    leaveHtmlFullscreen();
+    return true;
+  };
+
+  // The window itself full screen (F11, and "Full screen" in the "…" menu).
+  const toggleWindowFullscreen = () => {
+    if (htmlFullscreen !== null) {
+      // A full screen page: leaving it is the page's own business (Esc).
+      pageContents(htmlFullscreen)
+        ?.executeJavaScript(
+          'document.fullscreenElement && document.exitFullscreen()',
+        )
+        .catch(() => undefined);
+      return;
+    }
+    win.setFullScreen(!win.isFullScreen());
+  };
+
   // ---- Web page views ----------------------------------------------------
 
   // A certificate problem is refused, unless it is on a site you chose to go on to
@@ -1145,6 +1264,7 @@ export async function createTabs(
     // A page can close its own window (window.close()). Its page is then gone, so
     // the tab closes with it (and is kept in Recently closed, like any closed tab).
     contents.once('destroyed', () => {
+      if (htmlFullscreen === tab.id) leaveHtmlFullscreen();
       if (views.get(tab.id) !== view) return; // we closed it ourselves
       views.delete(tab.id);
       try {
@@ -1153,6 +1273,11 @@ export async function createTabs(
         // Already gone.
       }
       closeTab(tab.id);
+    });
+    // A video (or page) goes full screen, or stops being: it fills the window.
+    contents.on('enter-html-full-screen', () => enterHtmlFullscreen(tab.id));
+    contents.on('leave-html-full-screen', () => {
+      if (htmlFullscreen === tab.id) leaveHtmlFullscreen();
     });
     // A page starts or stops making sound: the speaker on its tab follows.
     contents.on('audio-state-changed', () => sendState());
@@ -1558,12 +1683,16 @@ export async function createTabs(
       case 'devtools':
         toggleDevTools();
         break;
+      case 'fullscreen':
+        toggleWindowFullscreen();
+        break;
     }
   };
 
   // Show whatever is selected: wake the active tab if needed, hide the other
   // views. A Lead tab has no web page: the toolbar window draws it instead.
   const showActive = () => {
+    exitFullscreenIfAway();
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
     if (tab) ensureView(tab);
@@ -2987,6 +3116,18 @@ export async function createTabs(
     event: { preventDefault: () => void },
     input: Electron.Input,
   ) => {
+    // F11: the whole window full screen.
+    if (
+      input.type === 'keyDown' &&
+      input.key === 'F11' &&
+      !input.control &&
+      !input.alt &&
+      !input.meta
+    ) {
+      event.preventDefault();
+      toggleWindowFullscreen();
+      return;
+    }
     // F12: developer tools for the page.
     if (
       input.type === 'keyDown' &&

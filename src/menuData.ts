@@ -1307,6 +1307,7 @@ export type ToolsChoice =
   | { action: 'zoom-out' }
   | { action: 'zoom-reset' }
   | { action: 'print' }
+  | { action: 'fullscreen' }
   | { action: 'devtools' };
 
 // The three zoom choices (in the "…" menu's Zoom submenu, the page's right-click
@@ -1368,6 +1369,13 @@ export function toolsMenuItems(options: {
       shortcut: 'Ctrl+P',
       disabled: off,
     },
+    {
+      type: 'item',
+      id: 'tools.fullscreen',
+      label: 'Full screen',
+      icon: 'page',
+      shortcut: 'F11',
+    },
     { type: 'separator' },
     {
       type: 'item',
@@ -1397,6 +1405,8 @@ export function parseToolsChoice(id: string): ToolsChoice | null {
       return { action: 'zoom-reset' };
     case 'tools.print':
       return { action: 'print' };
+    case 'tools.fullscreen':
+      return { action: 'fullscreen' };
     case 'tools.devtools':
       return { action: 'devtools' };
   }
