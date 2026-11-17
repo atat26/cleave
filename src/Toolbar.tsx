@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { PAGE_INSET, TOOLBAR_HEIGHT, WINDOW_CONTROLS_WIDTH } from './layout';
 import type { ViewMode } from './model';
+import { ExtensionActions } from './ExtensionActions';
 import { NameButton } from './NameButton';
 import { describeSite } from './site';
 import { zoomLabel } from './zoom';
@@ -455,6 +456,7 @@ export function Toolbar({
           </>
         )}
         <div className="tb-actions">
+          {!chatOnly && <ExtensionActions />}
           <ViewSwitch viewMode={viewMode} />
           <DownloadIndicator info={downloads} />
           <IconButton

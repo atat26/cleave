@@ -1,7 +1,18 @@
 // The preload script is the ONLY bridge between the UI page and the app.
 // Expose small, specific functions here -- never whole Electron modules.
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BrowserApi, ChatMessage, FrameLayout, UiState } from './types';
+import { injectBrowserAction } from 'electron-chrome-extensions/browser-action';
+import type {
+  BrowserApi,
+  ChatMessage,
+  ExtensionBox,
+  FrameLayout,
+  UiState,
+} from './types';
+
+// The toolbar page (not the menu, find or suggestion pages that share this
+// preload) gets the extension system's button API.
+if (!location.hash) injectBrowserAction();
 
 const browserApi: BrowserApi = {
   platform: process.platform,
@@ -47,6 +58,22 @@ const browserApi: BrowserApi = {
   extensionsSetEnabled: (key, enabled) =>
     ipcRenderer.invoke('extensions:set-enabled', key, enabled),
   extensionsRemove: (key) => ipcRenderer.invoke('extensions:remove', key),
+  showExtensionMenu: (key, x, y) =>
+    ipcRenderer.send('extensions:menu', key, x, y),
+  showExtensionsPuzzle: (x, y, box) =>
+    ipcRenderer.send('extensions:puzzle', x, y, box),
+  onExtensionPopup: (callback) => {
+    const listener = (_event: unknown, id: unknown) =>
+      callback(typeof id === 'string' ? id : null);
+    ipcRenderer.on('extensions:popup', listener);
+    return () => ipcRenderer.removeListener('extensions:popup', listener);
+  },
+  onExtensionActivate: (callback) => {
+    const listener = (_event: unknown, id: unknown, box: unknown) =>
+      callback(id as string, box as ExtensionBox);
+    ipcRenderer.on('extensions:activate', listener);
+    return () => ipcRenderer.removeListener('extensions:activate', listener);
+  },
   onExtensionsChanged: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('extensions:changed', listener);

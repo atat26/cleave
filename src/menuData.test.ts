@@ -23,6 +23,7 @@ import {
   parseToolsChoice,
   toolsMenuItems,
   downloadMenuItems,
+  extensionMenuItems,
   libraryMenuItems,
   parseDownloadChoice,
   parsePermissionChoice,
@@ -36,6 +37,9 @@ import {
   permissionPromptItems,
   parseStarChoice,
   starMenuItems,
+  parseExtensionChoice,
+  parsePuzzleChoice,
+  puzzleMenuItems,
   parseLibraryChoice,
   zoomChipMenuItems,
   parseLinkChoice,
@@ -1255,4 +1259,90 @@ test("a tab's menu can mute or unmute its page, and reads the choice back", () =
   assert.equal(entry(muted, 'tab.unmute').label, 'Unmute tab');
   assert.deepEqual(parseTabChoice('tab.mute'), { action: 'mute' });
   assert.deepEqual(parseTabChoice('tab.unmute'), { action: 'unmute' });
+});
+
+test('an extension menu: pin, turn off or on, and remove (marked dangerous)', () => {
+  const on = { enabled: true, pinned: true, hasAction: true };
+  assert.deepEqual(menuIds(extensionMenuItems(on)), [
+    'extension.pin',
+    'extension.toggle',
+    'extension.remove',
+  ]);
+  // No button, nothing to pin.
+  assert.deepEqual(menuIds(extensionMenuItems({ ...on, hasAction: false })), [
+    'extension.toggle',
+    'extension.remove',
+  ]);
+  assert.equal(
+    entry(extensionMenuItems(on), 'extension.pin').label,
+    'Unpin from toolbar',
+  );
+  assert.equal(
+    entry(extensionMenuItems({ ...on, pinned: false }), 'extension.pin').label,
+    'Pin to toolbar',
+  );
+  assert.equal(
+    entry(extensionMenuItems(on), 'extension.toggle').label,
+    'Turn off',
+  );
+  assert.equal(
+    entry(extensionMenuItems({ ...on, enabled: false }), 'extension.toggle')
+      .label,
+    'Turn on',
+  );
+  assert.equal(entry(extensionMenuItems(on), 'extension.remove').danger, true);
+  assert.deepEqual(parseExtensionChoice('extension.toggle'), {
+    action: 'toggle',
+  });
+  assert.deepEqual(parseExtensionChoice('extension.remove'), {
+    action: 'remove',
+  });
+  assert.deepEqual(parseExtensionChoice('extension.pin'), { action: 'pin' });
+  assert.equal(parseExtensionChoice('extension.other'), null);
+});
+
+test('the puzzle menu lists the extensions with a button; each opens or is pinned', () => {
+  const items = puzzleMenuItems([
+    {
+      key: 'ext-1',
+      name: 'Bitwarden',
+      pinned: true,
+      icon: 'data:image/png;base64,AA==',
+    },
+    { key: 'ext-2', name: 'Dark mode', pinned: false, icon: null },
+  ]);
+  assert.deepEqual(menuIds(items), [
+    'puzzle.open:ext-1',
+    'puzzle.pin:ext-1',
+    'puzzle.open:ext-2',
+    'puzzle.pin:ext-2',
+    'puzzle.manage',
+  ]);
+  assert.equal(
+    entry(entry(items, 'puzzle.open:ext-1').submenu ?? [], 'puzzle.pin:ext-1')
+      .label,
+    'Unpin from toolbar',
+  );
+  assert.equal(
+    entry(entry(items, 'puzzle.open:ext-2').submenu ?? [], 'puzzle.pin:ext-2')
+      .label,
+    'Pin to toolbar',
+  );
+  assert.equal(entry(items, 'puzzle.open:ext-1').choosable, true);
+  assert.deepEqual(menuIds(puzzleMenuItems([])), [
+    'puzzle.none',
+    'puzzle.manage',
+  ]);
+  assert.deepEqual(parsePuzzleChoice('puzzle.open:ext-1'), {
+    action: 'open',
+    key: 'ext-1',
+  });
+  assert.deepEqual(parsePuzzleChoice('puzzle.pin:ext-2'), {
+    action: 'pin',
+    key: 'ext-2',
+  });
+  assert.deepEqual(parsePuzzleChoice('puzzle.manage'), { action: 'manage' });
+  for (const bad of ['puzzle.open:../x', 'puzzle.open:', 'puzzle.none', 'x']) {
+    assert.equal(parsePuzzleChoice(bad), null, bad);
+  }
 });

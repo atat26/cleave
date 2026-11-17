@@ -36,6 +36,8 @@ export interface ExtensionManagerDeps {
   window: BrowserWindow;
   getList(): ExtensionsState;
   setList(next: ExtensionsState): void;
+  // A popup opened (its extension's id) or closed (null).
+  onPopup(extensionId: string | null): void;
   // Open a web page in a new tab and give back its page (null if it cannot).
   createTab(url: string): Promise<WebContents | null>;
   selectTab(contents: WebContents): void;
@@ -99,6 +101,14 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
   // expect, on top of what Electron has built in.
   const chrome = new ElectronChromeExtensions({
     session: deps.session,
+    // The library cannot find its own helper script once this app is bundled, so
+    // it is pointed at it. (A packaged app must carry that file along: noted for the
+    // packaging step.)
+    modulePath: path.join(
+      app.getAppPath(),
+      'node_modules',
+      'electron-chrome-extensions',
+    ),
     createTab: async (details) => {
       const url = typeof details.url === 'string' ? details.url : '';
       if (!/^https?:\/\//i.test(url)) {
@@ -116,6 +126,74 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     // An extension asking for more permissions later is refused for now.
     requestPermissions: async () => false,
   });
+
+  // Popups: the library resizes and places a popup every time the page reports a
+  // new size. At 125% screen scaling, resizing the window by a pixel makes the page
+  // report a size one pixel different, which resizes it again, and so on: the popup
+  // vibrates. So its size handler is replaced by one that ignores tiny changes, and
+  // places the popup once more a moment later, when Windows has applied the size.
+  chrome.on('browser-action-popup-created', (popup) => {
+    const inner = popup as unknown as {
+      updatePreferredSize: (event: unknown, size: unknown) => void;
+      updatePosition(): void;
+      show(): void;
+      hidden: boolean;
+    };
+    const contents = popup.browserWindow?.webContents;
+    if (!contents) return;
+    (contents as unknown as { off(e: string, f: unknown): void }).off(
+      'preferred-size-changed',
+      inner.updatePreferredSize,
+    );
+    let last = { width: 0, height: 0 };
+    (
+      contents as unknown as Electron.WebContents & {
+        on(
+          e: string,
+          f: (event: unknown, size: { width: number; height: number }) => void,
+        ): void;
+      }
+    ).on('preferred-size-changed', (_event, size) => {
+      if (popup.isDestroyed()) return;
+      if (
+        Math.abs(size.width - last.width) <= 4 &&
+        Math.abs(size.height - last.height) <= 4
+      ) {
+        return;
+      }
+      last = size;
+      popup.setSize(size);
+      inner.updatePosition();
+      if (inner.hidden) inner.show();
+      setTimeout(() => {
+        if (!popup.isDestroyed()) inner.updatePosition();
+      }, 80);
+    });
+    // When the page has loaded the library sets the popup to its smallest size, and
+    // if the page had already reported its real size by then (it often has, on a
+    // quick second open) nothing puts it right again: the popup stays a small
+    // box. So once loaded, the size the page reported is applied again.
+    void popup.whenReady().then(() => {
+      setTimeout(() => {
+        if (popup.isDestroyed()) return;
+        if (last.width > 0) {
+          popup.setSize(last);
+          inner.updatePosition();
+          if (inner.hidden) inner.show();
+        }
+      }, 60);
+    });
+    // The toolbar is told which popup is open (so a second click closes it).
+    deps.onPopup(popup.extensionId);
+    popup.browserWindow?.once('closed', () => deps.onPopup(null));
+  });
+
+  // Lets the toolbar draw an extension's button picture (crx:// addresses).
+  try {
+    ElectronChromeExtensions.handleCRXProtocol(deps.session);
+  } catch (error) {
+    console.error(`[extensions] pictures: ${(error as Error).message}`);
+  }
 
   // Where an extension is loaded from.
   const folderOf = (record: ExtensionRecord) => path.join(root, record.key);
@@ -267,7 +345,47 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     return { ok: true, name: seen.name };
   }
 
+  // The extension's own picture as a data address (the biggest PNG up to 128 px
+  // that its manifest lists), or null. Kept after the first read.
+  const icons = new Map<string, string | null>();
+  const iconOf = (record: ExtensionRecord): string | null => {
+    if (icons.has(record.key)) return icons.get(record.key) ?? null;
+    let found: string | null = null;
+    try {
+      const manifest = readJson(
+        path.join(folderOf(record), 'manifest.json'),
+      ) as {
+        icons?: Record<string, unknown>;
+      };
+      const sizes = Object.entries(manifest.icons ?? {})
+        .map(([size, file]) => [Number(size), file] as const)
+        .filter(
+          ([size, file]) =>
+            Number.isFinite(size) &&
+            size <= 128 &&
+            typeof file === 'string' &&
+            file.toLowerCase().endsWith('.png'),
+        )
+        .sort((a, b) => b[0] - a[0]);
+      if (sizes.length > 0) {
+        const file = path.resolve(folderOf(record), String(sizes[0][1]));
+        // Only a file inside the extension's own folder.
+        if (file.startsWith(folderOf(record) + path.sep)) {
+          const bytes = fs.readFileSync(file);
+          if (bytes.length <= 200_000) {
+            found = `data:image/png;base64,${bytes.toString('base64')}`;
+          }
+        }
+      }
+    } catch {
+      // No picture; the panel shows a plain one.
+    }
+    icons.set(record.key, found);
+    return found;
+  };
+
   return {
+    iconOf,
     // The tabs the library should know about.
     addTab: (contents: WebContents) => chrome.addTab(contents, deps.window),
     removeTab: (contents: WebContents) => chrome.removeTab(contents),
@@ -279,6 +397,11 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     async loadAll() {
       for (const record of deps.getList().items) {
         if (record.enabled) await load(record);
+      }
+    },
+    setPinned(key: string, pinned: boolean) {
+      if (deps.getList().items.some((e) => e.key === key)) {
+        deps.setList(updateExtension(deps.getList(), key, { pinned }));
       }
     },
     async setEnabled(key: string, enabled: boolean) {

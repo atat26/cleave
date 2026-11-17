@@ -1637,6 +1637,121 @@ export function downloadMenuItems(download: {
   return items;
 }
 
+export type ExtensionChoice =
+  | { action: 'toggle' }
+  | { action: 'remove' }
+  | { action: 'pin' };
+
+// The right-click menu of an extension (in the Extensions panel and on its
+// toolbar button).
+export function extensionMenuItems(extension: {
+  enabled: boolean;
+  pinned: boolean;
+  hasAction: boolean;
+}): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (extension.hasAction) {
+    items.push(
+      {
+        type: 'item',
+        id: 'extension.pin',
+        label: extension.pinned ? 'Unpin from toolbar' : 'Pin to toolbar',
+        icon: 'pin',
+      },
+      { type: 'separator' },
+    );
+  }
+  items.push(
+    {
+      type: 'item',
+      id: 'extension.toggle',
+      label: extension.enabled ? 'Turn off' : 'Turn on',
+      icon: extension.enabled ? 'stop' : 'play',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'extension.remove',
+      label: 'Remove extension…',
+      icon: 'trash',
+      danger: true,
+    },
+  );
+  return items;
+}
+
+export function parseExtensionChoice(id: string): ExtensionChoice | null {
+  switch (id) {
+    case 'extension.toggle':
+      return { action: 'toggle' };
+    case 'extension.remove':
+      return { action: 'remove' };
+    case 'extension.pin':
+      return { action: 'pin' };
+  }
+  return null;
+}
+
+export type PuzzleChoice =
+  | { action: 'open'; key: string }
+  | { action: 'pin'; key: string }
+  | { action: 'manage' };
+
+// The puzzle button's menu: the extensions that have a button. Choosing one opens
+// it; its submenu pins or unpins it.
+export function puzzleMenuItems(
+  extensions: {
+    key: string;
+    name: string;
+    pinned: boolean;
+    icon: string | null;
+  }[],
+): MenuItem[] {
+  const items: MenuItem[] = [{ type: 'header', label: 'Extensions' }];
+  if (extensions.length === 0) {
+    items.push({
+      type: 'item',
+      id: 'puzzle.none',
+      label: 'No extensions with a button',
+      disabled: true,
+    });
+  }
+  for (const e of extensions) {
+    items.push({
+      type: 'item',
+      id: `puzzle.open:${e.key}`,
+      label: e.name,
+      ...(e.icon ? { image: e.icon } : { icon: 'puzzle' as const }),
+      choosable: true,
+      submenu: [
+        {
+          type: 'item',
+          id: `puzzle.pin:${e.key}`,
+          label: e.pinned ? 'Unpin from toolbar' : 'Pin to toolbar',
+          icon: 'pin',
+        },
+      ],
+    });
+  }
+  items.push(
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'puzzle.manage',
+      label: 'Manage extensions',
+      icon: 'settings',
+    },
+  );
+  return items;
+}
+
+export function parsePuzzleChoice(id: string): PuzzleChoice | null {
+  if (id === 'puzzle.manage') return { action: 'manage' };
+  const m = /^puzzle\.(open|pin):(ext-\d{1,6})$/.exec(id);
+  if (!m) return null;
+  return { action: m[1] as 'open' | 'pin', key: m[2] };
+}
+
 export function parseDownloadChoice(id: string): DownloadChoice | null {
   switch (id) {
     case 'download.open':
