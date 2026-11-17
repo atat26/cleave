@@ -27,6 +27,7 @@ const GROUPS: ToolGroup[] = [
   'act',
   'tabs',
   'recall',
+  'skills',
   'artifacts',
   'chat',
 ];

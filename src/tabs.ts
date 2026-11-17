@@ -2901,6 +2901,47 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    skillStore: {
+      listSkills: () =>
+        skills.skills.map((s) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          enabled: s.enabled,
+        })),
+      readSkill: (id) => {
+        const skill = findSkill(skills, id);
+        return skill
+          ? {
+              name: skill.name,
+              description: skill.description,
+              instructions: skill.instructions,
+              enabled: skill.enabled,
+            }
+          : null;
+      },
+      makeSkill: (input) => {
+        const made = createSkill(skills, input, Date.now(), 'assistant');
+        if (!made.ok)
+          return { ok: false, problem: PROBLEM_WORDS[made.problem] };
+        commitSkills(made.state);
+        return { ok: true, id: made.skill.id, name: made.skill.name };
+      },
+      changeSkill: (id, changes) => {
+        const updated = updateSkill(skills, id, changes, Date.now());
+        if (!updated.ok) {
+          return {
+            ok: false,
+            problem:
+              updated.problem === 'not-found'
+                ? 'That skill no longer exists.'
+                : PROBLEM_WORDS[updated.problem],
+          };
+        }
+        commitSkills(updated.state);
+        return { ok: true, name: updated.skill.name };
+      },
+    },
     saveStore: {
       savePage: async (chatId, tabId, what, title, spaceId, signal) => {
         const ready = await prepareTab(tabId, signal);

@@ -34,6 +34,7 @@ export type ToolGroup =
   | 'act'
   | 'tabs'
   | 'recall'
+  | 'skills'
   | 'artifacts'
   | 'chat';
 
@@ -42,6 +43,7 @@ export const GROUP_TITLES: Record<ToolGroup, string> = {
   act: 'Acting in tabs',
   tabs: 'Your tabs and Spaces',
   recall: 'Your history and chats',
+  skills: 'Skills',
   artifacts: 'Artifacts',
   chat: 'Talking to you',
 };
@@ -336,6 +338,34 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
       'Open an HTML artifact, let it run in its preview, and see what went wrong, so it can fix its own tools.',
     defaultLevel: 'ask',
     changesThings: false,
+  },
+  {
+    name: 'use_skill',
+    group: 'skills',
+    title: 'Use a skill',
+    summary: 'Load the steps of one of your skills and follow them.',
+    defaultLevel: 'always',
+    changesThings: false,
+  },
+  {
+    name: 'create_skill',
+    group: 'skills',
+    title: 'Make a skill',
+    summary: 'Save a new skill. You approve the full text first.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to make skills on its own. A skill is a standing instruction, so it still asks first if it has read web content in the same reply.',
+  },
+  {
+    name: 'edit_skill',
+    group: 'skills',
+    title: 'Change a skill',
+    summary: 'Change a skill (its name, when to use it, or its steps).',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to rewrite your skills on its own. It still asks first if it has read web content in the same reply.',
   },
   {
     name: 'read_artifact',

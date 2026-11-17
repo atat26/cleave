@@ -7,6 +7,7 @@ import { Banner, Button, IconButton } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
+import type { SkillInfo } from './skills';
 import type {
   ArtifactInfo,
   ChatInfo,
@@ -30,10 +31,10 @@ const MAX_TAG = 60;
 
 // The pill for an item picked from the list.
 function makePill(item: PickerItem): HTMLSpanElement {
-  const tag = `@${item.label.replace(/\s+/g, ' ').trim().slice(0, MAX_TAG)}`;
+  const tag = `${item.skill ? '/' : '@'}${item.label.replace(/\s+/g, ' ').trim().slice(0, MAX_TAG)}`;
   const pill = document.createElement('span');
   pill.contentEditable = 'false';
-  pill.dataset.kind = item.kind;
+  pill.dataset.kind = item.skill ? 'skill' : item.kind;
   pill.dataset.id = String(item.id);
   pill.dataset.tag = tag;
   pill.title = 'Double-click to turn into plain text';
@@ -59,6 +60,33 @@ function makePill(item: PickerItem): HTMLSpanElement {
   return pill;
 }
 
+// What the "/" list offers: the skills that are on, narrowed by the words typed after
+// the "/" (in the name or the "when to use it" line).
+const SKILL_ROWS = 8;
+function skillItems(query: string, skills: SkillInfo[]): PickerItem[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return skills
+    .filter(
+      (s) =>
+        s.enabled &&
+        words.every((w) =>
+          `${s.name} ${s.description}`.toLowerCase().includes(w),
+        ),
+    )
+    .slice(0, SKILL_ROWS)
+    .map((s) => ({
+      key: `skill:${s.id}`,
+      kind: 'artifact' as const,
+      id: s.id,
+      label: s.name,
+      group: 'Skills' as const,
+      favicon: null,
+      color: null,
+      emoji: '✨',
+      skill: true,
+    }));
+}
+
 interface Typed {
   text: string;
   mentions: { kind: LinkKind; id: number; tag: string }[];
@@ -73,7 +101,10 @@ function readBox(root: HTMLElement): Typed {
         typed.text += (node as Text).data.replace(/ /g, ' ');
       } else if (node instanceof HTMLElement) {
         const { kind, id, tag } = node.dataset;
-        if (
+        if (tag && kind === 'skill') {
+          // A skill is named in the text ("/Name"); it is not a link.
+          typed.text += tag;
+        } else if (
           tag &&
           (kind === 'tab' || kind === 'space' || kind === 'artifact') &&
           id
@@ -109,6 +140,7 @@ export function ChatComposer({
   tabs,
   spaces,
   artifacts,
+  skills,
   activeTabId,
   compact,
   before,
@@ -123,6 +155,8 @@ export function ChatComposer({
   tabs: TabInfo[];
   spaces: SpaceInfo[];
   artifacts: ArtifactInfo[];
+  // The skills ("/" offers the ones that are on).
+  skills: SkillInfo[];
   // The tab you are looking at (offered first in the list).
   activeTabId: number | null;
   // The one-row look (a single line, no growing).
@@ -149,6 +183,8 @@ export function ChatComposer({
     start: number;
     // From the "+" menu: list only pages, only Spaces, or only artifacts.
     only?: 'page' | 'space' | 'artifact';
+    // From "/": the list is of skills.
+    mode?: 'skill';
   } | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
   // Where the text box is on screen, and how much room there is above it inside
@@ -166,16 +202,18 @@ export function ChatComposer({
   const empty = text.trim() === '';
 
   const items: PickerItem[] = picker
-    ? pickerItems(
-        picker.query,
-        refs,
-        tabs,
-        spaces,
-        artifacts,
-        activeTabId,
-        picker.node ? 8 : 30,
-        picker.only,
-      )
+    ? picker.mode === 'skill'
+      ? skillItems(picker.query, skills)
+      : pickerItems(
+          picker.query,
+          refs,
+          tabs,
+          spaces,
+          artifacts,
+          activeTabId,
+          picker.node ? 8 : 30,
+          picker.only,
+        )
     : [];
   const index = Math.min(pickerIndex, Math.max(0, items.length - 1));
 
@@ -227,14 +265,21 @@ export function ChatComposer({
     }
     const before = (node as Text).data.slice(0, sel.anchorOffset);
     const match = /(^|\s)@([^\s@]*)$/.exec(before);
-    if (!match) {
+    // "/" at the start of a word lists the skills that are on.
+    const slash =
+      match || !skills.some((s) => s.enabled)
+        ? null
+        : /(^|\s)\/([^\s/]*)$/.exec(before);
+    if (!match && !slash) {
       setPicker(null);
       return;
     }
+    const found = (match ?? slash) as RegExpExecArray;
     setPicker({
-      query: match[2],
+      query: found[2],
       node: node as Text,
-      start: sel.anchorOffset - match[2].length - 1,
+      start: sel.anchorOffset - found[2].length - 1,
+      mode: slash ? 'skill' : undefined,
     });
     setPickerIndex(0);
     // In the one-row bar there is no room above the box (the web page is there),
@@ -302,6 +347,12 @@ export function ChatComposer({
       syncText();
     }
     setPicker(null);
+    // A skill is named in the message; nothing is linked to the chat.
+    if (item.skill) {
+      setNotice('');
+      box.current?.focus();
+      return;
+    }
     if (refs.length >= MAX_LINKS) {
       setNotice(
         `You can link up to ${MAX_LINKS} Spaces, tabs and artifacts to a chat. Remove one first.`,
@@ -478,7 +529,9 @@ export function ChatComposer({
         >
           {empty && (
             <span aria-hidden="true" className="composer-hint">
-              Ask anything, or type @ to link a tab, Space or artifact
+              {skills.some((s) => s.enabled)
+                ? 'Ask anything. @ links a tab, Space or artifact; / uses a skill'
+                : 'Ask anything, or type @ to link a tab, Space or artifact'}
             </span>
           )}
           <div

@@ -57,6 +57,8 @@ export function buildMessages(options: {
   // The list of linked Spaces and tabs (see chatLinks.ts), if any. It goes after
   // the system prompt, in the same system message.
   linkedContext?: string | null;
+  // The skills that are on (their names and when to use them), if any.
+  skillsContext?: string | null;
   history: HistoryMessage[];
   maxMessages?: number;
   maxChars?: number;
@@ -95,6 +97,7 @@ export function buildMessages(options: {
   const system = [
     effectiveSystemPrompt(options.systemPrompt),
     options.linkedContext,
+    options.skillsContext,
     earlier,
   ]
     .filter((part): part is string => !!part)

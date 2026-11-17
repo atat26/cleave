@@ -30,6 +30,8 @@ import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import type { TabsEnv } from './tabTools';
 import type { RecallEnv } from './recallTools';
 import type { BookmarkResult, PreviewCheck, SaveResult } from './saveTools';
+import { skillsContext } from './skillTools';
+import type { SkillsEnv } from './skillTools';
 import {
   messageMenuItems,
   modelMenuItems,
@@ -91,6 +93,8 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // The skills (see skills.ts and skillTools.ts).
+  skillStore: SkillsEnv;
   // Saving a page, bookmarking it, and checking an HTML artifact (see saveTools.ts).
   // Saving also links the new artifact to the chat.
   saveStore: {
@@ -374,6 +378,10 @@ export function createChatService(options: {
             createSpace: (input) => options.spaceStore.create(chatId, input),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            listSkills: options.skillStore.listSkills,
+            readSkill: options.skillStore.readSkill,
+            makeSkill: options.skillStore.makeSkill,
+            changeSkill: options.skillStore.changeSkill,
             savePage: (tabId, what, title, spaceId, signal) =>
               options.saveStore.savePage(
                 chatId,
@@ -438,6 +446,8 @@ export function createChatService(options: {
         model,
         systemPrompt: settings.systemPrompt,
         linked: buildLinkedContext(refs, workspace, canRead),
+        // Skills are listed only when the model can use tools (it needs use_skill).
+        skills: canRead ? skillsContext(options.skillStore.listSkills()) : null,
         tools,
       },
     };

@@ -346,7 +346,9 @@ export interface PickerItem {
   kind: LinkKind;
   id: number;
   label: string;
-  group: 'This page' | 'Spaces' | 'Tabs' | 'Artifacts';
+  group: 'This page' | 'Spaces' | 'Tabs' | 'Artifacts' | 'Skills';
+  // A skill (from "/"): it is named in the message, not linked to the chat.
+  skill?: boolean;
   favicon: string | null;
   color: string | null;
   // The picture of a Space or artifact.

@@ -214,6 +214,7 @@ export function App() {
           tabs={state.tabs}
           spaces={state.spaces}
           artifacts={state.artifacts}
+          skills={state.skills}
           activeTabId={activeTab?.id ?? null}
           renameRequest={chatRenameRequest}
           onRenameHandled={clearChatRenameRequest}

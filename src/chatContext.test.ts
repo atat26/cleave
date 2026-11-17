@@ -236,3 +236,24 @@ test('only searches that worked, only the latest few, and only from the part of 
     DEFAULT_SYSTEM_PROMPT,
   );
 });
+
+test('the skills list goes in the system message after the linked items, and is left out when empty', () => {
+  const history = [
+    { role: 'user' as const, content: 'hi', status: 'done' as const },
+  ];
+  const withSkills = buildMessages({
+    systemPrompt: null,
+    linkedContext: 'LINKED',
+    skillsContext: 'SKILLS BLOCK',
+    history,
+  });
+  const system = withSkills[0].content;
+  assert.ok(system.indexOf('LINKED') < system.indexOf('SKILLS BLOCK'));
+  assert.ok(
+    !buildMessages({
+      systemPrompt: null,
+      history,
+      skillsContext: null,
+    })[0].content.includes('SKILLS'),
+  );
+});
