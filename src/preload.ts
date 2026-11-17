@@ -32,6 +32,15 @@ const browserApi: BrowserApi = {
   showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
   showSiteMenu: (x, y) => ipcRenderer.send('site:menu', x, y),
   newTabRun: (text, mode) => ipcRenderer.send('newtab:run', text, mode),
+  newTabResume: (kind, id) => ipcRenderer.send('newtab:resume', kind, id),
+  newTabHide: (key) => ipcRenderer.send('newtab:hide', key),
+  newTabPill: (space) => ipcRenderer.send('newtab:pill', space),
+  showNewTabSpacesMenu: (x, y) => ipcRenderer.send('newtab:more-menu', x, y),
+  newTabShowAll: (spaceId) => ipcRenderer.send('newtab:show-all', spaceId),
+  newTabSettingsGet: () => ipcRenderer.invoke('new-tab-settings:get'),
+  newTabSettingsSet: (changes) =>
+    ipcRenderer.invoke('new-tab-settings:set', changes),
+  newTabShowHidden: () => ipcRenderer.invoke('new-tab-settings:show-hidden'),
   onFocusAddress: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('toolbar:focus-address', listener);

@@ -3,6 +3,7 @@ import { onSectionRequested, takeRequestedSection } from './settingsNav';
 import { AppearanceSettings } from './AppearanceSettings';
 import { DownloadsSection } from './DownloadsSection';
 import { PrivacySection } from './PrivacySection';
+import { NewTabSection } from './NewTabSection';
 import { SearchEngineSection } from './SearchEngineSection';
 import { ShortcutsSection } from './ShortcutsSection';
 import { LibrarySection } from './LibrarySection';
@@ -78,6 +79,11 @@ const SECTIONS = [
     id: 'downloads',
     label: 'Downloads',
     about: 'Where files are saved',
+  },
+  {
+    id: 'new-tab',
+    label: 'New tab',
+    about: 'Auto mode and suggestions',
   },
   {
     id: 'search-engine',
@@ -626,6 +632,7 @@ export function SettingsPanel() {
       {section === 'downloads' && <DownloadsSection />}
       {section === 'privacy' && <PrivacySection />}
       {section === 'search-engine' && <SearchEngineSection />}
+      {section === 'new-tab' && <NewTabSection />}
       {section === 'shortcuts' && <ShortcutsSection />}
 
       {section === 'prompt' && (

@@ -150,11 +150,12 @@ export function App() {
         viewMode={state.viewMode}
         chats={state.chats}
       />
-      {onNewTab && activeTab && (
+      {onNewTab && activeTab && state.newTab && (
         <NewTabView
           key={activeTab.id}
           tab={activeTab}
           space={state.spaces.find((s) => s.id === activeTab.spaceId)}
+          info={state.newTab}
         />
       )}
       {activeArtifact && (

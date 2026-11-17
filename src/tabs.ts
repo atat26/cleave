@@ -95,6 +95,14 @@ import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
 import { parseTabSearchChoice, tabSearchItems } from './tabSearch';
+import {
+  clearHiddenPickUp,
+  defaultNewTabSettings,
+  hidePickUp,
+  parseNewTabSettings,
+  withNewTabSettings,
+} from './newTabSettings';
+import { pickUpRows, recentSpaceIds } from './pickUp';
 import { HINT_HEIGHT, HINT_MS, HINT_WIDTH, hintUrl } from './fullscreenHint';
 import {
   canProceed,
@@ -186,7 +194,13 @@ import {
   parseToolSettings,
   withLevel,
 } from './toolSettings';
-import type { FrameLayout, LibraryList, ResizeKind, UiState } from './types';
+import type {
+  FrameLayout,
+  LibraryList,
+  NewTabInfo,
+  ResizeKind,
+  UiState,
+} from './types';
 import { loadUi } from './ui';
 import { resolveInput, searchUrl } from './url';
 import {
@@ -215,6 +229,8 @@ import {
   zoomChipMenuItems,
   downloadMenuItems,
   libraryMenuItems,
+  newTabSpacesMenuItems,
+  parseNewTabSpaceChoice,
   parsePermissionChoice,
   parsePopupChoice,
   blockedPopupItems,
@@ -322,8 +338,11 @@ export async function createTabs(
   state = model.reconcileArtifactTabs(state, artifacts.artifacts);
 
   // The first time ever (or after a reset) there is nothing: start with one tab.
+  let launchTabId: number | null = null;
   if (state.active === null) {
-    state = model.addTab(state, { url: NEW_TAB_URL }).state;
+    const first = model.addTab(state, { url: NEW_TAB_URL });
+    state = first.state;
+    launchTabId = first.id;
   }
 
   const views = new Map<number, WebContentsView>();
@@ -402,6 +421,17 @@ export async function createTabs(
     defaultSearchEngineSettings,
   );
   const searchEngineSaver = createSaver(searchEngineFile, () => searchEngine);
+  // What you chose for the new-tab page (see newTabSettings.ts).
+  const newTabSettingsFile = path.join(app.getPath('userData'), 'new-tab.json');
+  let newTabSettings = await loadJson(
+    newTabSettingsFile,
+    parseNewTabSettings,
+    defaultNewTabSettings,
+  );
+  const newTabSettingsSaver = createSaver(
+    newTabSettingsFile,
+    () => newTabSettings,
+  );
   // A new tab shows the new-tab page (no web page behind it).
   const newTabUrl = () => model.NEW_TAB_PAGE;
   // What sites may do (camera, location...): see permissions.ts.
@@ -778,6 +808,54 @@ export async function createTabs(
     }
   };
 
+  // What the new-tab page shows, worked out from what is on this computer.
+  const newTabInfo = (tabId: number): NewTabInfo => {
+    const tab = model.findTab(state, tabId);
+    const spaceId = tab?.spaceId ?? null;
+    const from = {
+      tabs: state.tabs,
+      artifacts: artifacts.artifacts,
+      chats: chats.conversations,
+      history: history.entries,
+    };
+    const picked = pickUpRows(spaceId, from, newTabSettings.hidden);
+    const ordered = recentSpaceIds(
+      state.spaces.map((s) => s.id),
+      from,
+    );
+    // The current Space first, then the most recently used.
+    const ids = [
+      ...(spaceId === null ? [] : [spaceId]),
+      ...ordered.filter((id) => id !== spaceId),
+    ];
+    const info = (id: number) => state.spaces.find((s) => s.id === id);
+    return {
+      firstRun: state.spaces.length === 0,
+      welcomeBack: tabId === launchTabId && state.spaces.length > 0,
+      secondInRow: secondNewTabs.has(tabId),
+      autoMode: newTabSettings.autoMode,
+      suggestions: newTabSettings.suggestions,
+      pick: picked.rows,
+      pickTotal: picked.total,
+      spaces: ids.slice(0, 3).flatMap((id) => {
+        const s = info(id);
+        return s
+          ? [
+              {
+                id: s.id,
+                name: s.name,
+                emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
+                color: s.color,
+                collapsed: s.collapsed,
+              },
+            ]
+          : [];
+      }),
+      moreSpaces: Math.max(0, ids.length - 3),
+      now: Date.now(),
+    };
+  };
+
   const sendState = () => {
     if (win.isDestroyed()) return;
     const id = activeTabId();
@@ -833,6 +911,7 @@ export async function createTabs(
       certBypassed: certBypassed(activePage()?.getURL()),
       blockedPopups:
         (id === null ? undefined : blockedPopups.get(id))?.length ?? 0,
+      newTab: id !== null && onNewTabPage() ? newTabInfo(id) : null,
       downloads: downloadSummary(downloads, Date.now()),
       loading: id === null ? false : (pageContents(id)?.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
@@ -1858,8 +1937,14 @@ export async function createTabs(
 
   // ---- Actions -------------------------------------------------------------
 
-  const openTab = (url: string, spaceId: number | null) =>
-    commitAndShow(revealPage(model.addTab(state, { url, spaceId }).state));
+  // New tabs opened straight after another untouched new tab (they show less).
+  const secondNewTabs = new Set<number>();
+  const openTab = (url: string, spaceId: number | null) => {
+    const afterNewTab = model.isNewTabPage(url) && onNewTabPage();
+    const added = model.addTab(state, { url, spaceId });
+    if (afterNewTab) secondNewTabs.add(added.id);
+    commitAndShow(revealPage(added.state));
+  };
 
   // Open a page behind the one you are on, right after it, and start loading it
   // (middle-click and Ctrl+click on a link, or on a row in the Library).
@@ -3501,6 +3586,77 @@ export async function createTabs(
       chatNeed = need;
       applyLayout(true);
     },
+    // The new-tab page: open a Pick up item (and drop the empty new tab it came from).
+    'newtab:resume': (kind, id) => {
+      if (
+        (kind !== 'chat' && kind !== 'artifact' && kind !== 'page') ||
+        !isId(id)
+      ) {
+        return;
+      }
+      const from = activeTabId();
+      const wasNewTab = from !== null && onNewTabPage();
+      if (kind === 'chat') {
+        chatMenuActions.selectChat(id);
+        commitAndShow(model.setViewMode(state, 'chat'));
+        applyLayout(true);
+        return; // The new tab stays under the chat.
+      }
+      if (kind === 'artifact') openArtifact(id);
+      else if (model.findTab(state, id)?.closed) {
+        commitAndShow(revealPage(model.reopenTab(state, id)));
+      } else if (model.findTab(state, id)) select({ kind: 'tab', id });
+      if (wasNewTab && from !== null && model.findTab(state, from))
+        removeTab(from);
+    },
+    'newtab:hide': (key) => {
+      newTabSettings = hidePickUp(newTabSettings, key);
+      newTabSettingsSaver.schedule();
+      sendState();
+    },
+    // A Space pill: this new tab moves into that Space (or a new one).
+    'newtab:pill': (space) => {
+      const id = activeTabId();
+      if (id === null || !onNewTabPage()) return;
+      if (space === 'new') {
+        const created = model.addSpace(state);
+        commitAndShow(model.moveTab(created.state, id, created.id));
+      } else if (isId(space) && model.findSpace(state, space)) {
+        commitAndShow(model.moveTab(state, id, space));
+      }
+    },
+    'newtab:more-menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const tabId = activeTabId();
+      if (tabId === null || !onNewTabPage()) return;
+      const shown = new Set(newTabInfo(tabId).spaces.map((s) => s.id));
+      const rest = state.spaces
+        .filter((s) => !shown.has(s.id))
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
+        }));
+      showMenu(
+        newTabSpacesMenuItems(rest),
+        x,
+        y,
+        (choice) => {
+          const spaceId = parseNewTabSpaceChoice(choice);
+          const id = activeTabId();
+          if (spaceId === null || id === null || !onNewTabPage()) return;
+          if (model.findSpace(state, spaceId)) {
+            commitAndShow(model.moveTab(state, id, spaceId));
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    'newtab:show-all': (spaceId) => {
+      if (isId(spaceId) && model.findSpace(state, spaceId)) {
+        select({ kind: 'lead', spaceId });
+      }
+    },
     // Enter in the new-tab page's box, with what it will do.
     'newtab:run': (text, mode) => {
       if (
@@ -4545,6 +4701,24 @@ export async function createTabs(
       ...row,
       icon: faviconFor(favicons, row.host),
     }));
+  ipcMain.handle('new-tab-settings:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return newTabSettings;
+  });
+  ipcMain.handle('new-tab-settings:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    newTabSettings = withNewTabSettings(newTabSettings, changes);
+    newTabSettingsSaver.schedule();
+    sendState();
+    return newTabSettings;
+  });
+  ipcMain.handle('new-tab-settings:show-hidden', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    newTabSettings = clearHiddenPickUp(newTabSettings);
+    newTabSettingsSaver.schedule();
+    sendState();
+    return newTabSettings;
+  });
   ipcMain.handle('search-engine:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return searchEngine;
@@ -5037,6 +5211,7 @@ ${artifact.content.slice(0, 1500)}`;
     downloadsSaver.flushSync();
     permissionsSaver.flushSync();
     searchEngineSaver.flushSync();
+    newTabSettingsSaver.flushSync();
     faviconsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
@@ -5060,6 +5235,9 @@ ${artifact.content.slice(0, 1500)}`;
     app.removeListener('certificate-error', onCertificateError);
     downloadManager.dispose();
     ipcMain.removeHandler('downloads:list');
+    ipcMain.removeHandler('new-tab-settings:get');
+    ipcMain.removeHandler('new-tab-settings:set');
+    ipcMain.removeHandler('new-tab-settings:show-hidden');
     ipcMain.removeHandler('search-engine:get');
     ipcMain.removeHandler('search-engine:set');
     ipcMain.removeHandler('privacy:sites');
