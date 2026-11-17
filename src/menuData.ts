@@ -1308,6 +1308,7 @@ export type ToolsChoice =
   | { action: 'zoom-reset' }
   | { action: 'print' }
   | { action: 'fullscreen' }
+  | { action: 'tab-search' }
   | { action: 'devtools' };
 
 // The three zoom choices (in the "…" menu's Zoom submenu, the page's right-click
@@ -1344,6 +1345,13 @@ export function toolsMenuItems(options: {
 }): MenuItem[] {
   const off = !options.hasPage;
   return [
+    {
+      type: 'item',
+      id: 'tools.tab-search',
+      label: 'Search tabs',
+      icon: 'search',
+      shortcut: 'Ctrl+Shift+A',
+    },
     {
       type: 'item',
       id: 'tools.find',
@@ -1407,6 +1415,8 @@ export function parseToolsChoice(id: string): ToolsChoice | null {
       return { action: 'print' };
     case 'tools.fullscreen':
       return { action: 'fullscreen' };
+    case 'tools.tab-search':
+      return { action: 'tab-search' };
     case 'tools.devtools':
       return { action: 'devtools' };
   }

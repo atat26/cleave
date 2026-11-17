@@ -898,6 +898,7 @@ test('"Name with AI" is in the Space and artifact menus, and a closed page can b
 test('the toolbar "…" menu has Find, Zoom, Print and Developer tools, all greyed with no page', () => {
   const items = toolsMenuItems({ hasPage: true, zoomText: '125%' });
   assert.deepEqual(menuIds(items), [
+    'tools.tab-search',
     'tools.find',
     'tools.zoom',
     'tools.zoom-in',
@@ -907,6 +908,10 @@ test('the toolbar "…" menu has Find, Zoom, Print and Developer tools, all grey
     'tools.fullscreen',
     'tools.devtools',
   ]);
+  assert.equal(entry(items, 'tools.tab-search').shortcut, 'Ctrl+Shift+A');
+  assert.deepEqual(parseToolsChoice('tools.tab-search'), {
+    action: 'tab-search',
+  });
   // Full screen works with or without a page.
   assert.equal(entry(items, 'tools.fullscreen').shortcut, 'F11');
   assert.notEqual(

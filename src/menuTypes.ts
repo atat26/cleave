@@ -11,6 +11,10 @@ export interface MenuEntry {
   id: string;
   label: string;
   icon?: IconName;
+  // A second, smaller line under the label (tab search shows the site here).
+  detail?: string;
+  // A small picture (a site's icon, an ordinary web address) drawn before the label.
+  image?: string;
   // Shown on the right, e.g. "Ctrl+W". Only for shortcuts that really work.
   shortcut?: string;
   // A small square of this colour, drawn in place of an icon (for colour choices).
