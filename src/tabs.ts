@@ -666,16 +666,18 @@ export async function createTabs(
       sidebar: expanded() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH,
       left: fit.left,
       panel: fit.panel,
-      // The new-tab page has its own box, so there is no chat bar under it.
-      chat: onNewTabPage()
-        ? 0
-        : restingChatHeight(
-            s.viewMode,
-            s.chatExpanded,
-            s.chatHeight,
-            window,
-            chatNeed,
-          ),
+      // The new-tab page has its own box, so there is no chat bar under it (but with
+      // only the chat showing, the chat still gets the window).
+      chat:
+        onNewTabPage() && s.viewMode !== 'chat'
+          ? 0
+          : restingChatHeight(
+              s.viewMode,
+              s.chatExpanded,
+              s.chatHeight,
+              window,
+              chatNeed,
+            ),
     };
     // The part being dragged follows the mouse exactly.
     if (drag?.kind === 'sidebar') {
@@ -3436,6 +3438,47 @@ export async function createTabs(
     }
   };
 
+  // A new tab goes somewhere: it stops being the new-tab page and becomes a web
+  // tab (its page is made and loads the address). False if it is not a new tab.
+  const goFromNewTab = (tabId: number, url: string): boolean => {
+    const here = model.findTab(state, tabId);
+    if (!here || !model.isNewTabPage(here.url)) return false;
+    state = model.updateTab(state, tabId, { url });
+    saver.schedule();
+    commitAndShow(state);
+    return true;
+  };
+
+  // "Ask" on the new-tab page: start a chat, link the Space you are in, send the
+  // text, and show the chat. With no key (or no model) the text waits in the chat's
+  // box instead, with the usual notice.
+  const askFromNewTab = (text: string) => {
+    if (!chatService) return;
+    const created = chatsModel.newConversation(chats);
+    commitChats(created.state);
+    const spaceId = currentSpaceId();
+    if (spaceId !== null) {
+      const found = snapshotLookup(workspace())('space', spaceId);
+      if (found) {
+        commitChats(
+          chatsModel.addRef(chats, created.id, {
+            kind: 'space',
+            id: spaceId,
+            title: found.title,
+            url: found.url,
+          }),
+        );
+      }
+    }
+    // The page has no room for the chat bar, so the chat gets the window.
+    commitAndShow(model.setViewMode(state, 'chat'));
+    applyLayout(true);
+    const result = chatService.sendMessage(created.id, text);
+    if (!result.ok && !win.webContents.isDestroyed()) {
+      win.webContents.send('composer:insert', text.slice(0, 4000));
+    }
+  };
+
   // ---- Requests from the UI --------------------------------------------------
   // We only accept messages that come from our own two UI pages, and we check
   // the type of everything they send.
@@ -3445,14 +3488,7 @@ export async function createTabs(
       if (id === null || typeof input !== 'string') return;
       const url = resolveInput(input, activeEngine(searchEngine).template);
       if (url === '') return;
-      const here = model.findTab(state, id);
-      if (here && model.isNewTabPage(here.url)) {
-        // The new tab becomes a web tab: its page is made and loads the address.
-        state = model.updateTab(state, id, { url });
-        saver.schedule();
-        commitAndShow(state);
-        return;
-      }
+      if (goFromNewTab(id, url)) return;
       void pageContents(id)?.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
       commitAndShow(revealPage(state));
@@ -3464,6 +3500,28 @@ export async function createTabs(
       if (need === chatNeed) return;
       chatNeed = need;
       applyLayout(true);
+    },
+    // Enter in the new-tab page's box, with what it will do.
+    'newtab:run': (text, mode) => {
+      if (
+        typeof text !== 'string' ||
+        (mode !== 'go' && mode !== 'search' && mode !== 'ask')
+      ) {
+        return;
+      }
+      const typed = text.trim().slice(0, 4000);
+      const id = activeTabId();
+      if (typed === '' || id === null || !onNewTabPage()) return;
+      if (mode === 'ask') {
+        askFromNewTab(typed);
+        return;
+      }
+      const template = activeEngine(searchEngine).template;
+      const url =
+        mode === 'search'
+          ? searchUrl(typed, template)
+          : resolveInput(typed, template);
+      if (url !== '') goFromNewTab(id, url);
     },
     'tab:reload': () => {
       const id = activeTabId();

@@ -1922,3 +1922,118 @@ button {
 .nt-box input::placeholder {
   color: var(--c-text-3);
 }
+
+/* The new-tab page's box: chip, send button, hint, suggestions (NewTabView.tsx). */
+.nt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  flex: none;
+}
+.nt-send {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  border: 0;
+  cursor: pointer;
+  flex: none;
+}
+.nt-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.nt-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
+.nt-seg {
+  display: inline-flex;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--c-surface);
+}
+.nt-seg button {
+  padding: 5px 12px;
+  border: 0;
+  border-left: 1px solid var(--c-border);
+  background: none;
+  color: var(--c-text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.nt-seg button:first-child {
+  border-left: 0;
+}
+.nt-seg button[aria-pressed='true'] {
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+  font-weight: var(--fw-bold);
+}
+.nt-keys {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nt-sug {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-popup);
+  padding: 6px;
+  margin-top: -6px;
+}
+.nt-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 44px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+}
+.nt-item.is-picked {
+  background: var(--c-accent-tint);
+}
+.nt-item-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nt-item-detail {
+  flex: none;
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+.nt-ctx {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
