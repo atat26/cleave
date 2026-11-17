@@ -629,6 +629,8 @@ export interface BrowserApi {
   // Allow (or stop allowing) the internet in an HTML page's preview. Allowing asks
   // first; the answer is whether it is allowed afterwards.
   artifactSetInternet: (id: number, on: boolean) => Promise<boolean>;
+  // "New" in the Artifacts panel: a menu of kinds (made in the Space you are in).
+  showNewArtifactMenu: (x: number, y: number) => void;
   // The setting changed (from the menu): its artifact's id.
   onArtifactInternet: (callback: (id: number) => void) => () => void;
   // `revision` is the version the text was based on.

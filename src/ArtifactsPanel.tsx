@@ -1,35 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { ARTIFACT_KINDS } from './artifacts';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import type { ArtifactInfo, SpaceInfo } from './types';
-import { ItemEmoji } from './ui/controls';
-
-const muted: CSSProperties = {
-  color: 'var(--c-text-2)',
-  fontSize: 12,
-  lineHeight: 1.45,
-};
-
-const field: CSSProperties = {
-  border: '1px solid var(--c-border-strong)',
-  borderRadius: 8,
-  fontSize: 13,
-  padding: '5px 8px',
-  background: 'var(--c-surface)',
-  minWidth: 0,
-};
-
-const smallButton: CSSProperties = {
-  border: '1px solid var(--c-border-strong)',
-  background: 'var(--c-surface)',
-  borderRadius: 14,
-  fontSize: 12,
-  padding: '3px 10px',
-  cursor: 'pointer',
-  color: 'var(--c-text)',
-};
+import { Button, IconButton, Input, ItemEmoji } from './ui/controls';
 
 const KIND_WORDS: Record<ArtifactKind, string> = {
   markdown: 'Markdown',
@@ -41,121 +14,152 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
 const sizeWords = (chars: number) =>
   chars < 1000 ? `${chars} chars` : `${(chars / 1000).toFixed(1)}k chars`;
 
-// A title that shows a small pencil beside it while the mouse is over it (or the
-// pencil has the keyboard), and turns into a text box when the pencil is used.
-function EditableTitle({
+// A name being typed: Enter keeps it, Escape (or clicking away) leaves it as it was.
+function RenameBox({
   text,
-  label,
-  editing,
-  onEdit,
   onSave,
   onCancel,
-  onOpen,
-  style,
 }: {
   text: string;
-  label: string;
-  editing: boolean;
-  onEdit: () => void;
   onSave: (name: string) => void;
   onCancel: () => void;
-  // When given, the title itself is a button that opens the artifact.
-  onOpen?: () => void;
-  style?: CSSProperties;
 }) {
-  const [hover, setHover] = useState(false);
   const [draft, setDraft] = useState(text);
-  if (editing) {
-    return (
-      <input
-        aria-label={label}
-        autoFocus
-        value={draft}
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={onCancel}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onSave(draft);
-          else if (e.key === 'Escape') onCancel();
-        }}
-        style={{ ...field, width: '100%', boxSizing: 'border-box' }}
-      />
-    );
-  }
+  return (
+    <Input
+      aria-label="Artifact name"
+      autoFocus
+      value={draft}
+      maxLength={80}
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={onCancel}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onSave(draft);
+        else if (event.key === 'Escape') onCancel();
+      }}
+      style={{ flex: 1, minWidth: 0 }}
+    />
+  );
+}
+
+// One artifact: its picture, name, and a line about it. Click it (or press Enter) to
+// open it. Rename and delete show when the pointer or the keyboard is on the row;
+// F2 renames, Delete deletes (it goes to Recently deleted), and the right-click menu
+// has the rest.
+function Row({
+  item,
+  open,
+  renaming,
+  onRename,
+  onRenamed,
+  onCancelRename,
+}: {
+  item: ArtifactInfo;
+  open: boolean;
+  renaming: boolean;
+  onRename: () => void;
+  onRenamed: (name: string) => void;
+  onCancelRename: () => void;
+}) {
+  const openIt = () => window.browserApi.artifactOpen(item.id);
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, ...style }}
+      className={
+        open ? 'lrow reveal-host lib-row is-active' : 'lrow reveal-host lib-row'
+      }
+      role="button"
+      tabIndex={0}
+      title={open ? 'Open in a tab' : 'Open'}
+      onClick={() => {
+        if (!renaming) openIt();
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openIt();
+        } else if (event.key === 'F2') {
+          event.preventDefault();
+          onRename();
+        } else if (event.key === 'Delete') {
+          event.preventDefault();
+          window.browserApi.artifactDelete(item.id);
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.browserApi.showArtifactMenu(
+          item.id,
+          event.clientX,
+          event.clientY,
+        );
+      }}
     >
-      {onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          title="Open"
-          style={{
-            border: 'none',
-            background: 'transparent',
-            padding: 0,
-            font: 'inherit',
-            color: 'inherit',
-            cursor: 'pointer',
-            textAlign: 'left',
-            wordBreak: 'break-word',
-          }}
-        >
-          {text}
-        </button>
+      <ItemEmoji emoji={item.emoji} />
+      {renaming ? (
+        <RenameBox
+          text={item.title}
+          onSave={onRenamed}
+          onCancel={onCancelRename}
+        />
       ) : (
-        <span style={{ wordBreak: 'break-word' }}>{text}</span>
+        <>
+          <span className="grow" style={{ minWidth: 0 }}>
+            <span className="truncate" style={{ display: 'block' }}>
+              {item.title}
+            </span>
+            <span
+              className="truncate muted"
+              style={{ display: 'block', fontSize: 'var(--fs-xs)' }}
+            >
+              {KIND_WORDS[item.kind]} · {sizeWords(item.size)}
+            </span>
+          </span>
+          <IconButton
+            icon="pencil"
+            size="sm"
+            className="reveal"
+            label={`Rename ${item.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRename();
+            }}
+          />
+          <IconButton
+            icon="x"
+            size="sm"
+            className="reveal"
+            label={`Delete ${item.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              window.browserApi.artifactDelete(item.id);
+            }}
+          />
+        </>
       )}
-      <button
-        type="button"
-        aria-label={label}
-        title="Rename"
-        onClick={() => {
-          setDraft(text);
-          onEdit();
-        }}
-        onFocus={() => setHover(true)}
-        onBlur={() => setHover(false)}
-        style={{
-          border: 'none',
-          background: 'transparent',
-          cursor: 'pointer',
-          fontSize: 12,
-          padding: 0,
-          color: 'var(--c-text-2)',
-          opacity: hover ? 1 : 0,
-        }}
-      >
-        ✎
-      </button>
     </div>
   );
 }
 
-// The Artifacts panel: make documents inside the browser, and rename, move or
-// delete the ones you have. (Opening one in a tab comes in the next update.)
+// The Artifacts panel: documents made inside the browser, grouped by Space. "New"
+// asks what kind to make; it is made in the Space you are in and named right away.
 export function ArtifactsPanel({
   artifacts,
+  openIds,
   spaces,
   renameRequest,
   onRenameHandled,
 }: {
   artifacts: ArtifactInfo[];
+  // The artifacts that are open as tabs.
+  openIds: number[];
   spaces: SpaceInfo[];
-  // Set when "Rename" was chosen from an artifact's menu.
+  // Set when "Rename" was chosen from an artifact's menu (or one was just made).
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
-  // The "+" opens a small chooser for the kind and where it goes.
-  const [choosing, setChoosing] = useState(false);
-  const [kind, setKind] = useState<ArtifactKind>('markdown');
-  // '' = outside every Space, otherwise a Space's id.
-  const [where, setWhere] = useState('');
   const [renaming, setRenaming] = useState<number | null>(null);
-  const [renamingSpace, setRenamingSpace] = useState<number | null>(null);
 
   useEffect(() => {
     if (renameRequest !== null) {
@@ -163,17 +167,6 @@ export function ArtifactsPanel({
       onRenameHandled();
     }
   }, [renameRequest, onRenameHandled]);
-
-  // Make it, then let you name it right away.
-  const create = async () => {
-    const id = await window.browserApi.artifactCreate(
-      kind,
-      '',
-      where === '' ? null : Number(where),
-    );
-    setChoosing(false);
-    if (id !== null) setRenaming(id);
-  };
 
   const groups: {
     key: string;
@@ -192,218 +185,75 @@ export function ArtifactsPanel({
     })),
   ];
 
-  const row = (a: ArtifactInfo) => (
-    <li
-      key={a.id}
-      className="reveal-host"
-      onContextMenu={(event) => {
-        event.preventDefault();
-        window.browserApi.showArtifactMenu(a.id, event.clientX, event.clientY);
-      }}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '8px 0',
-        borderTop: '1px solid var(--c-border)',
-      }}
-    >
-      <ItemEmoji emoji={a.emoji} />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <EditableTitle
-            text={a.title}
-            label={`Rename ${a.title}`}
-            editing={renaming === a.id}
-            onEdit={() => setRenaming(a.id)}
-            onSave={(name) => {
-              window.browserApi.artifactRename(a.id, name);
-              setRenaming(null);
-            }}
-            onCancel={() => setRenaming(null)}
-            onOpen={() => window.browserApi.artifactOpen(a.id)}
-            style={{ fontSize: 13, fontWeight: 500 }}
-          />
-        </div>
-        <div
-          style={{
-            ...muted,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span>
-            {KIND_WORDS[a.kind]} · {sizeWords(a.size)}
-          </span>
-        </div>
-      </div>
-      <button
-        type="button"
-        className="reveal"
-        aria-label={`Delete ${a.title}`}
-        title="Delete"
-        onClick={() => window.browserApi.artifactDelete(a.id)}
-        style={{
-          border: 'none',
-          background: 'transparent',
-          cursor: 'pointer',
-          fontSize: 18,
-          lineHeight: 1,
-          padding: '0 4px',
-          color: 'var(--c-text-2)',
-        }}
-      >
-        ×
-      </button>
-    </li>
-  );
-
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          type="button"
-          aria-label="New artifact"
-          aria-expanded={choosing}
-          title="New artifact"
-          onClick={() => setChoosing(!choosing)}
-          style={{ ...smallButton, padding: '2px 12px', fontWeight: 600 }}
-        >
-          +
-        </button>
-        <span style={muted}>
-          Documents made in the browser. Click a name to open it.
+      <div
+        className="row-flex"
+        style={{ gap: 'var(--s-2)', margin: '0 0 var(--s-3)' }}
+      >
+        <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
+          Documents made in the browser.
         </span>
-      </div>
-      {choosing && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            margin: '10px 0 4px',
-            padding: 10,
-            background: 'var(--c-surface-2)',
-            borderRadius: 10,
+        <Button
+          size="sm"
+          icon="plus"
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            window.browserApi.showNewArtifactMenu(
+              box.right - 200,
+              box.bottom + 4,
+            );
           }}
         >
-          <label style={muted}>
-            Type
-            <select
-              aria-label="Type"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as ArtifactKind)}
-              style={{ ...field, display: 'block', width: '100%' }}
-            >
-              {ARTIFACT_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {KIND_WORDS[k]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={muted}>
-            Space
-            <select
-              aria-label="Space"
-              value={where}
-              onChange={(e) => setWhere(e.target.value)}
-              style={{ ...field, display: 'block', width: '100%' }}
-            >
-              <option value="">No space</option>
-              {spaces.map((s) => (
-                <option key={s.id} value={String(s.id)}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              style={smallButton}
-              onClick={() => setChoosing(false)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => void create()}
-              style={{
-                ...smallButton,
-                background: 'var(--c-accent)',
-                color: 'var(--c-on-accent)',
-                borderColor: 'var(--c-accent)',
-              }}
-            >
-              Create
-            </button>
-          </div>
-        </div>
-      )}
+          New
+        </Button>
+      </div>
       {artifacts.length === 0 && (
-        <p style={{ ...muted, marginTop: 14 }}>
-          No artifacts yet. Use the + to make one.
+        <p className="muted" style={{ margin: 0 }}>
+          No artifacts yet. Choose “New” to make one.
         </p>
       )}
-      <div style={{ marginTop: 14 }}>
-        {groups
-          .filter((g) => g.items.length > 0)
-          .map((g) => (
-            <section key={g.key} style={{ marginBottom: 14 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: 'var(--c-text-2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
+      {groups
+        .filter((g) => g.items.length > 0)
+        .map((g) => (
+          <section
+            key={g.key}
+            aria-label={g.space === null ? 'No Space' : g.space.name}
+          >
+            <h3 className="sect-title row-flex" style={{ gap: 'var(--s-2)' }}>
+              {g.space !== null && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    background: SPACE_COLOR_HEX[g.space.color],
+                    flex: 'none',
+                  }}
+                />
+              )}
+              <span className="truncate">
+                {g.space === null ? 'No Space' : g.space.name}
+              </span>
+            </h3>
+            {g.items.map((item) => (
+              <Row
+                key={item.id}
+                item={item}
+                open={openIds.includes(item.id)}
+                renaming={renaming === item.id}
+                onRename={() => setRenaming(item.id)}
+                onRenamed={(name) => {
+                  window.browserApi.artifactRename(item.id, name);
+                  setRenaming(null);
                 }}
-              >
-                {g.space && (
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      background: SPACE_COLOR_HEX[g.space.color],
-                      flex: 'none',
-                    }}
-                  />
-                )}
-                {g.space === null ? (
-                  'No space'
-                ) : (
-                  <EditableTitle
-                    text={g.space.name}
-                    label={`Rename Space ${g.space.name}`}
-                    editing={renamingSpace === g.space.id}
-                    onEdit={() => setRenamingSpace(g.space!.id)}
-                    onSave={(name) => {
-                      window.browserApi.renameSpace(g.space!.id, name);
-                      setRenamingSpace(null);
-                    }}
-                    onCancel={() => setRenamingSpace(null)}
-                  />
-                )}
-              </div>
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                {g.items.map(row)}
-              </ul>
-            </section>
-          ))}
-      </div>
+                onCancelRename={() => setRenaming(null)}
+              />
+            ))}
+          </section>
+        ))}
     </div>
   );
 }
