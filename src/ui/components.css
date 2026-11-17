@@ -1742,3 +1742,96 @@ button {
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
+
+/* Tab search (Ctrl+Shift+A): see ui/TabSearch.tsx. */
+.tab-search {
+  position: absolute;
+  top: 72px;
+  box-sizing: border-box;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-popup);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  animation: pop var(--dur-med) var(--ease-out);
+}
+.ts-input {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-4);
+  height: 48px;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text-2);
+}
+.ts-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.ts-list {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: var(--s-1) var(--s-2) var(--s-2);
+}
+.ts-head {
+  padding: var(--s-2) var(--s-2) var(--s-1);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+.ts-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 40px;
+  padding: 0 var(--s-2);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.ts-row.is-selected {
+  background: var(--c-accent-tint);
+}
+.ts-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+.ts-globe {
+  display: grid;
+  place-items: center;
+  color: var(--c-text-2);
+}
+.ts-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ts-title,
+.ts-detail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ts-detail {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.ts-here {
+  flex: none;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.ts-empty {
+  margin: var(--s-4) var(--s-2);
+  color: var(--c-text-2);
+}

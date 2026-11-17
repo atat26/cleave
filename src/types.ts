@@ -500,7 +500,7 @@ export interface BrowserApi {
       y: number;
       alignCenter?: number;
       // Draw a card for a site instead of a menu.
-      panel?: 'prompt' | 'site';
+      panel?: 'prompt' | 'site' | 'search';
       // Draw the emoji picker instead of a menu.
       picker?: boolean;
     }) => void,

@@ -94,6 +94,7 @@ import {
 import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
+import { parseTabSearchChoice, tabSearchItems } from './tabSearch';
 import { HINT_HEIGHT, HINT_MS, HINT_WIDTH, hintUrl } from './fullscreenHint';
 import {
   canProceed,
@@ -617,7 +618,7 @@ export async function createTabs(
       items: MenuItem[];
       x: number;
       y: number;
-      panel?: 'prompt' | 'site';
+      panel?: 'prompt' | 'site' | 'search';
     };
   } | null = null;
 
@@ -1036,7 +1037,7 @@ export async function createTabs(
     alignCenter?: number,
     picker = false,
     dismissed?: () => void,
-    panel?: 'prompt' | 'site',
+    panel?: 'prompt' | 'site' | 'search',
   ) => {
     if (openMenu) closeMenu(false);
     openMenu = {
@@ -1204,6 +1205,42 @@ export async function createTabs(
     send();
     // A panel that was not open yet is still starting: say it again once it is.
     setTimeout(send, 300);
+  };
+
+  // Reopen a tab from the recently closed list by its number there.
+  const reopenClosedById = (id: number) => {
+    const taken = takeClosedById(closedTabs, id);
+    if (!taken) return;
+    closedTabs = taken.state;
+    closedSaver.schedule();
+    libraryChanged();
+    reopenClosedTab(taken.tab);
+  };
+
+  // Ctrl+Shift+A: a box over the page that lists your tabs (open, then recently
+  // closed) and goes to the one you pick.
+  const openTabSearch = () => {
+    showMenu(
+      tabSearchItems(state, closedTabs.tabs),
+      0,
+      0,
+      (choice) => {
+        const parsed = parseTabSearchChoice(choice);
+        if (!parsed) return;
+        if (parsed.kind === 'open') {
+          if (model.findTab(state, parsed.id)) {
+            select({ kind: 'tab', id: parsed.id });
+          }
+        } else {
+          reopenClosedById(parsed.id);
+        }
+      },
+      win.webContents,
+      undefined,
+      false,
+      undefined,
+      'search',
+    );
   };
 
   // The window itself full screen (F11, and "Full screen" in the "…" menu).
@@ -1756,6 +1793,9 @@ export async function createTabs(
         break;
       case 'fullscreen':
         toggleWindowFullscreen();
+        break;
+      case 'tab-search':
+        openTabSearch();
         break;
     }
   };
@@ -3323,6 +3363,9 @@ export async function createTabs(
     } else if (key === 't') {
       event.preventDefault();
       openTab(newTabUrl(), currentSpaceId());
+    } else if (key === 'a' && input.shift) {
+      event.preventDefault();
+      openTabSearch();
     } else if (key === 'l') {
       event.preventDefault();
       focusAddress();
@@ -3739,13 +3782,7 @@ export async function createTabs(
       libraryChanged();
     },
     'library:reopen-closed': (id) => {
-      if (!isId(id)) return;
-      const taken = takeClosedById(closedTabs, id);
-      if (!taken) return;
-      closedTabs = taken.state;
-      closedSaver.schedule();
-      libraryChanged();
-      reopenClosedTab(taken.tab);
+      if (isId(id)) reopenClosedById(id);
     },
     'library:menu': (list, x, y) => {
       if (
