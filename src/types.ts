@@ -152,6 +152,8 @@ export interface ArtifactDocument {
   content: string;
   // Which version of the text this is (see artifacts.ts).
   revision: number;
+  // An HTML page you allowed to use the internet in its preview (for this text).
+  internet: boolean;
 }
 
 // How saving the editor's text went. A conflict means the text was changed (by
@@ -624,6 +626,11 @@ export interface BrowserApi {
   artifactClose: (id: number) => void;
   // The editor: load an artifact's text, and save changes to it.
   artifactRead: (id: number) => Promise<ArtifactDocument | null>;
+  // Allow (or stop allowing) the internet in an HTML page's preview. Allowing asks
+  // first; the answer is whether it is allowed afterwards.
+  artifactSetInternet: (id: number, on: boolean) => Promise<boolean>;
+  // The setting changed (from the menu): its artifact's id.
+  onArtifactInternet: (callback: (id: number) => void) => () => void;
   // `revision` is the version the text was based on.
   artifactWrite: (
     id: number,

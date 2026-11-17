@@ -28,7 +28,18 @@ export interface Artifact {
   // was based on an older text is refused, so a stale editor can never overwrite
   // a newer text.
   revision: number;
+  // The version of the text (a `revision`) that you allowed to use the internet
+  // in its preview, or null. It only counts while it equals the current revision,
+  // so the moment the text changes any way but by your own typing (the assistant
+  // edited it), the permission is gone. See `hasInternet`.
+  internetFor: number | null;
 }
+
+// May this artifact's preview use the internet? Only the exact text you allowed.
+export const hasInternet = (artifact: {
+  revision: number;
+  internetFor: number | null;
+}): boolean => artifact.internetFor === artifact.revision;
 
 // A deleted artifact, kept for a while so it can be brought back.
 export interface TrashedArtifact extends Artifact {
@@ -120,6 +131,7 @@ function parseArtifact(item: unknown): Artifact | null {
     createdAt: isCount(item.createdAt) ? item.createdAt : 0,
     updatedAt: isCount(item.updatedAt) ? item.updatedAt : 0,
     revision: isCount(item.revision) ? item.revision : 0,
+    internetFor: isCount(item.internetFor) ? item.internetFor : null,
   };
 }
 
@@ -186,6 +198,7 @@ export function createArtifact(
     createdAt: now,
     updatedAt: now,
     revision: 0,
+    internetFor: null,
   };
   return {
     ok: true,
@@ -210,6 +223,10 @@ export interface ArtifactChanges {
   spaceId?: number | null;
   // A new emoji (null = back to the default). Not a single emoji: ignored.
   emoji?: string | null;
+  // Set only for your own typing in the editor: if the internet was allowed for
+  // the text before, it stays allowed for the text you changed it to. Every other
+  // change of the text (the assistant's edits) leaves the permission behind.
+  keepInternet?: boolean;
 }
 
 export function updateArtifact(
@@ -226,8 +243,18 @@ export function updateArtifact(
   ) {
     return { ok: false, reason: 'too-long' };
   }
+  const revision =
+    changes.content !== undefined && changes.content !== old.content
+      ? old.revision + 1
+      : old.revision;
   const artifact: Artifact = {
     ...old,
+    internetFor:
+      changes.keepInternet === true &&
+      hasInternet(old) &&
+      revision !== old.revision
+        ? revision
+        : old.internetFor,
     title: changes.title === undefined ? old.title : cleanTitle(changes.title),
     content: changes.content ?? old.content,
     emoji:
@@ -238,11 +265,29 @@ export function updateArtifact(
           : (cleanEmoji(changes.emoji) ?? old.emoji),
     spaceId: changes.spaceId === undefined ? old.spaceId : changes.spaceId,
     updatedAt: now,
-    revision:
-      changes.content !== undefined && changes.content !== old.content
-        ? old.revision + 1
-        : old.revision,
+    revision,
   };
+  return {
+    ok: true,
+    artifact,
+    state: {
+      ...state,
+      artifacts: state.artifacts.map((a) => (a.id === id ? artifact : a)),
+    },
+  };
+}
+
+// Allow (or stop allowing) the internet in an artifact's preview, for the text it
+// has right now. Nothing else about it changes.
+export function setArtifactInternet(
+  state: ArtifactsState,
+  id: number,
+  on: boolean,
+): ArtifactResult {
+  const old = findArtifact(state, id);
+  if (!old) return { ok: false, reason: 'not-found' };
+  if (hasInternet(old) === on) return { ok: true, artifact: old, state };
+  const artifact: Artifact = { ...old, internetFor: on ? old.revision : null };
   return {
     ok: true,
     artifact,

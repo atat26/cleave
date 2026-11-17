@@ -44,6 +44,7 @@ import {
   SIDEBAR_SNAP_WIDTH,
 } from './layout';
 import * as artifactsModel from './artifacts';
+import { setPreviewInternetCheck } from './previewGuard';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
 import type { ChatRef, ChatsState, LinkKind } from './chats';
@@ -2132,6 +2133,49 @@ export async function createTabs(
     }
   };
 
+  // Allow (or stop allowing) the internet in an HTML artifact's preview. Allowing it
+  // asks first, in a native window: such a page can send out whatever is written in
+  // it. The permission is for the text as it is now (see artifacts.ts). Returns
+  // whether it is allowed afterwards.
+  const askArtifactInternet = async (
+    id: number,
+    on: boolean,
+  ): Promise<boolean> => {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found || found.kind !== 'html') return false;
+    if (on && !artifactsModel.hasInternet(found)) {
+      const yes = await confirm({
+        title: 'Allow the internet for this page?',
+        message: `Let “${found.title}” use the internet?`,
+        detail:
+          'The page will be able to load files from websites (like fonts and libraries) and to send information out, including anything written in the page. It still cannot reach your own computer or network.\n\nThis is only for the page as it is now: if the assistant changes it, you will be asked again. Only allow pages you trust.',
+        button: 'Allow internet',
+      });
+      const again = artifactsModel.findArtifact(artifacts, id);
+      if (!yes || !again)
+        return again ? artifactsModel.hasInternet(again) : false;
+    }
+    const result = artifactsModel.setArtifactInternet(artifacts, id, on);
+    if (!result.ok) return false;
+    commitArtifacts(result.state);
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('artifact:internet', id);
+    }
+    return artifactsModel.hasInternet(result.artifact);
+  };
+  // The app refuses what a preview asks of the network unless this says yes: the
+  // artifact on screen is an HTML one you allowed.
+  setPreviewInternetCheck(() => {
+    const active = state.active;
+    if (!active || active.kind !== 'artifact') return false;
+    const found = artifactsModel.findArtifact(artifacts, active.id);
+    return (
+      found !== undefined &&
+      found.kind === 'html' &&
+      artifactsModel.hasInternet(found)
+    );
+  });
+
   // Open an artifact as a tab and show it (editing takes over the page area).
   const openArtifact = (id: number) => {
     const found = artifactsModel.findArtifact(artifacts, id);
@@ -2907,6 +2951,9 @@ export async function createTabs(
         break;
       case 'name-ai':
         nameFromMenu('artifact', id);
+        break;
+      case 'internet':
+        void askArtifactInternet(id, !artifactsModel.hasInternet(artifact));
         break;
       case 'icon':
         pickEmoji(artifact.emoji, (picked) => {
@@ -5402,8 +5449,15 @@ ${artifact.content.slice(0, 1500)}`;
           kind: found.kind,
           content: found.content,
           revision: found.revision,
+          internet: found.kind === 'html' && artifactsModel.hasInternet(found),
         }
       : null;
+  });
+  // The switch in the preview's header. Allowing it asks first.
+  ipcMain.handle('artifact:set-internet', (event, id: unknown, on: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!isId(id) || typeof on !== 'boolean') return false;
+    return askArtifactInternet(id, on);
   });
   ipcMain.handle(
     'artifact:write',
@@ -5422,7 +5476,9 @@ ${artifact.content.slice(0, 1500)}`;
       const result = artifactsModel.updateArtifact(
         artifacts,
         id,
-        { content },
+        // Your own typing keeps a permission you gave this page; the assistant's
+        // edits (another route) never do.
+        { content, keepInternet: true },
         Date.now(),
       );
       if (!result.ok) return { ok: false, reason: 'failed' };
@@ -5612,6 +5668,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('artifact:create');
     ipcMain.removeHandler('artifact:copy');
     ipcMain.removeHandler('artifact:read');
+    ipcMain.removeHandler('artifact:set-internet');
     ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
     clearInterval(trashTimer);

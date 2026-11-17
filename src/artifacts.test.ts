@@ -5,6 +5,8 @@ import {
   createArtifact,
   defaultArtifacts,
   deleteArtifact,
+  hasInternet,
+  setArtifactInternet,
   kindFromName,
   MAX_ARTIFACT_CHARS,
   MAX_ARTIFACTS,
@@ -217,5 +219,86 @@ test('the revision goes up only when the text changes, so a stale save can be to
     parseArtifacts({ artifacts: [{ id: 1, kind: 'text', content: '' }] })
       .artifacts[0].revision,
     0,
+  );
+});
+
+test('the internet in a preview is allowed for one exact text, and lapses when anything else changes it', () => {
+  const made = make(defaultArtifacts(), {
+    kind: 'html',
+    title: 'Page',
+    content: '<p>a</p>',
+  });
+  const id = made.artifact.id;
+  // Off to begin with.
+  assert.equal(hasInternet(made.artifact), false);
+  assert.equal(made.artifact.internetFor, null);
+  // Allowed for the text as it is now.
+  const on = setArtifactInternet(made.state, id, true);
+  assert.ok(on.ok);
+  assert.equal(hasInternet(on.artifact), true);
+  // A rename, a move or a new emoji do not change the text: still allowed.
+  const renamed = updateArtifact(
+    on.state,
+    id,
+    { title: 'New', spaceId: 3, emoji: '🧮' },
+    5,
+  );
+  assert.ok(renamed.ok);
+  assert.equal(hasInternet(renamed.artifact), true);
+  // The assistant edits the text (no keepInternet): the permission is gone.
+  const edited = updateArtifact(on.state, id, { content: '<p>b</p>' }, 6);
+  assert.ok(edited.ok);
+  assert.equal(edited.artifact.revision, made.artifact.revision + 1);
+  assert.equal(hasInternet(edited.artifact), false);
+  // And it does not come back by itself later, whatever happens after.
+  const later = updateArtifact(edited.state, id, { title: 'Again' }, 7);
+  assert.ok(later.ok);
+  assert.equal(hasInternet(later.artifact), false);
+  // Your own typing keeps it, for the text you typed.
+  const typed = updateArtifact(
+    on.state,
+    id,
+    { content: '<p>c</p>', keepInternet: true },
+    8,
+  );
+  assert.ok(typed.ok);
+  assert.equal(hasInternet(typed.artifact), true);
+  assert.equal(typed.artifact.internetFor, typed.artifact.revision);
+  // keepInternet cannot grant it where it was not allowed before.
+  const none = updateArtifact(
+    made.state,
+    id,
+    { content: '<p>d</p>', keepInternet: true },
+    9,
+  );
+  assert.ok(none.ok);
+  assert.equal(hasInternet(none.artifact), false);
+  // Switching it off.
+  const off = setArtifactInternet(typed.state, id, false);
+  assert.ok(off.ok);
+  assert.equal(hasInternet(off.artifact), false);
+  assert.equal(setArtifactInternet(typed.state, 999, true).ok, false);
+});
+
+test('the permission survives a restart, and a tampered file cannot invent one', () => {
+  const made = make(defaultArtifacts(), {
+    kind: 'html',
+    title: 'P',
+    content: 'x',
+  });
+  const on = setArtifactInternet(made.state, made.artifact.id, true);
+  assert.ok(on.ok);
+  const back = parseArtifacts(JSON.parse(JSON.stringify(on.state)));
+  assert.equal(hasInternet(back.artifacts[0]), true);
+  const tampered = parseArtifacts({
+    artifacts: [
+      { id: 1, kind: 'html', content: 'x', revision: 4, internetFor: 'yes' },
+      { id: 2, kind: 'html', content: 'x', revision: 4, internetFor: 3 },
+      { id: 3, kind: 'html', content: 'x', revision: 4 },
+    ],
+  });
+  assert.deepEqual(
+    tampered.artifacts.map((a) => hasInternet(a)),
+    [false, false, false],
   );
 });

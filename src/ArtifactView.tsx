@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { MAX_ARTIFACT_CHARS } from './artifacts';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import type { ArtifactDocument, ArtifactTabInfo } from './types';
-import { HTML_SANDBOX, htmlDocument } from './artifactRender';
+import {
+  HTML_SANDBOX,
+  htmlDocument,
+  parsePreviewMessage,
+  previewNote,
+} from './artifactRender';
+import type { PreviewMessage } from './artifactRender';
 import { NameButton } from './NameButton';
 import { Markdown } from './MarkdownView';
 import { Badge, Banner, Button, ItemEmoji, Segmented } from './ui/controls';
@@ -63,6 +69,15 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   // which version to keep.
   const [conflict, setConflict] = useState(false);
   const held = useRef(false);
+  // An HTML page you allowed to use the internet in its preview.
+  const [internet, setInternet] = useState(false);
+  const refreshInternet = () =>
+    void window.browserApi.artifactRead(tab.id).then((loaded) => {
+      if (loaded) setInternet(loaded.internet);
+    });
+  // Allowing asks first, in a native window.
+  const chooseInternet = (on: boolean) =>
+    void window.browserApi.artifactSetInternet(tab.id, on).then(setInternet);
 
   const hold = () => {
     held.current = true;
@@ -114,6 +129,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           base.current = loaded.revision;
           setDoc(loaded);
           setText(loaded.content);
+          setInternet(loaded.internet);
         }
       });
     };
@@ -124,10 +140,17 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       if (id !== tab.id) return;
       if (pending.current === null && !inFlight.current) void load();
       else hold();
+      // An edit by the assistant ends a permission you gave: look again.
+      refreshInternet();
+    });
+    // The setting was changed from the menu.
+    const stopInternet = window.browserApi.onArtifactInternet((id) => {
+      if (id === tab.id) refreshInternet();
     });
     return () => {
       cancelled = true;
       stopListening();
+      stopInternet();
       if (timer.current !== null) clearTimeout(timer.current);
       // Leaving: send anything not saved yet (unless you have not chosen between
       // your text and the assistant's; a refused save is simply dropped, so the
@@ -204,6 +227,32 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
     }
   };
   const showPreview = canRender && view === 'preview';
+
+  // What the page in the preview says went wrong (a refused load, an error). Only
+  // messages that come from that frame, in our own shape, are taken.
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [heard, setHeard] = useState<PreviewMessage[]>([]);
+  useEffect(() => {
+    setHeard([]);
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.source === null ||
+        event.source !== frame.current?.contentWindow
+      ) {
+        return;
+      }
+      const message = parsePreviewMessage(event.data);
+      if (message) setHeard((now) => [...now, message].slice(-20));
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [text, showPreview, tab.id, internet]);
+  const isHtml = tab.kind === 'html';
+  const note = showPreview && isHtml ? previewNote(heard) : null;
+  // Something was refused for lack of the internet (not just an error in the page).
+  const refused = heard.some(
+    (m) => m.kind === 'blocked' && /^(https?|wss?):/i.test(m.text),
+  );
 
   return (
     <main
@@ -293,6 +342,29 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             ]}
           />
         )}
+        {showPreview && isHtml && internet && (
+          // Always visible while it is on: this page can reach the internet.
+          <Button
+            size="sm"
+            icon="globe"
+            title="This page can use the internet. Click to turn it off."
+            onClick={() => chooseInternet(false)}
+          >
+            Internet on
+          </Button>
+        )}
+        {showPreview && isHtml && !internet && (
+          // Quiet until the pointer or keyboard is on the header.
+          <Button
+            size="sm"
+            icon="globe"
+            className="reveal"
+            title="Let this page load fonts and libraries from the internet"
+            onClick={() => chooseInternet(true)}
+          >
+            Allow internet
+          </Button>
+        )}
         <Badge>{KIND_WORDS[tab.kind]}</Badge>
         <span
           role="status"
@@ -358,20 +430,42 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           <Markdown text={text} />
         </div>
       ) : showPreview ? (
-        // The assistant may have written this after reading a web page, so it is
-        // shown with no permissions and no way to reach the internet.
-        <iframe
-          title={`${tab.title} (preview)`}
-          sandbox={HTML_SANDBOX}
-          srcDoc={htmlDocument(text)}
-          style={{
-            flex: 1,
-            minHeight: 0,
-            border: 'none',
-            borderTop: '1px solid var(--c-border)',
-            background: '#ffffff', // pages assume a white sheet, even in dark mode
-          }}
-        />
+        // The assistant may have written this after reading a web page, so its
+        // scripts run sealed in: no reach into the app, no internet, no windows.
+        <>
+          {note !== null && (
+            <div
+              role="status"
+              className="muted row-flex"
+              style={{
+                gap: 'var(--s-3)',
+                padding: 'var(--s-2) var(--s-5)',
+                fontSize: 'var(--fs-sm)',
+                borderTop: '1px solid var(--c-border)',
+              }}
+            >
+              <span className="grow">{note}</span>
+              {refused && !internet && (
+                <Button size="sm" onClick={() => chooseInternet(true)}>
+                  Allow internet…
+                </Button>
+              )}
+            </div>
+          )}
+          <iframe
+            ref={frame}
+            title={`${tab.title} (preview)`}
+            sandbox={HTML_SANDBOX}
+            srcDoc={htmlDocument(text, internet)}
+            style={{
+              flex: 1,
+              minHeight: 0,
+              border: 'none',
+              borderTop: '1px solid var(--c-border)',
+              background: '#ffffff', // pages assume a white sheet, even in dark mode
+            }}
+          />
+        </>
       ) : (
         <textarea
           aria-label={`Edit ${tab.title}`}
