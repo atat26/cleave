@@ -28,6 +28,7 @@ import type { ArtifactKind } from './artifacts';
 import type { FileReading } from './artifactTools';
 import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import type { TabsEnv } from './tabTools';
+import type { RecallEnv } from './recallTools';
 import {
   messageMenuItems,
   modelMenuItems,
@@ -89,6 +90,9 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // What the assistant can look up: your history, bookmarks and earlier chats (see
+  // recallTools.ts).
+  recallStore: Omit<RecallEnv, 'currentChatId'>;
   // The assistant's tab and Space tools (see tabTools.ts).
   tabStore: Omit<TabsEnv, 'linkedSpaces'>;
   // More ways to look at a tab (read-only; see pageEyes.ts).
@@ -352,6 +356,12 @@ export function createChatService(options: {
             createSpace: (input) => options.spaceStore.create(chatId, input),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            currentChatId: () => chatId,
+            now: options.recallStore.now,
+            searchHistory: options.recallStore.searchHistory,
+            searchBookmarks: options.recallStore.searchBookmarks,
+            searchChats: options.recallStore.searchChats,
+            readChat: options.recallStore.readChat,
             allTabs: options.tabStore.allTabs,
             allSpaces: options.tabStore.allSpaces,
             moveTab: options.tabStore.moveTab,

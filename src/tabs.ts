@@ -2826,6 +2826,51 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    recallStore: {
+      now: () => Date.now(),
+      searchHistory: (query, limit) =>
+        searchHistory(history, query, limit).map((e) => ({
+          title: e.title,
+          url: e.url,
+          at: e.visitedAt,
+        })),
+      searchBookmarks: (query, limit) =>
+        searchBookmarks(bookmarks, query, limit).map((b) => ({
+          title: b.title,
+          url: b.url,
+          at: b.addedAt,
+        })),
+      searchChats: (query, limit) =>
+        chatsModel
+          .searchChats(chats, query)
+          .slice(0, limit)
+          .flatMap((match) => {
+            const chat = chatsModel.findConversation(chats, match.id);
+            return chat
+              ? [
+                  {
+                    id: chat.id,
+                    title: chat.title,
+                    at: chat.updatedAt,
+                    snippet: match.snippet,
+                  },
+                ]
+              : [];
+          }),
+      readChat: (id) => {
+        const chat = chatsModel.findConversation(chats, id);
+        if (!chat) return null;
+        return {
+          title: chat.title,
+          at: chat.updatedAt,
+          messages: chat.messages.flatMap((m) =>
+            (m.role === 'user' || m.role === 'assistant') && m.content !== ''
+              ? [{ role: m.role, text: m.content }]
+              : [],
+          ),
+        };
+      },
+    },
     tabStore: {
       allTabs: () =>
         state.tabs.map((t) => ({

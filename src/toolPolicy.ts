@@ -29,12 +29,19 @@ export const LEVEL_WORDS: Record<ApprovalLevel, string> = {
   never: 'Never allow',
 };
 
-export type ToolGroup = 'look' | 'act' | 'tabs' | 'artifacts' | 'chat';
+export type ToolGroup =
+  | 'look'
+  | 'act'
+  | 'tabs'
+  | 'recall'
+  | 'artifacts'
+  | 'chat';
 
 export const GROUP_TITLES: Record<ToolGroup, string> = {
   look: 'Looking and reading',
   act: 'Acting in tabs',
   tabs: 'Your tabs and Spaces',
+  recall: 'Your history and chats',
   artifacts: 'Artifacts',
   chat: 'Talking to you',
 };
@@ -259,6 +266,47 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     changesThings: true,
     warning:
       'The assistant will be able to write in your Space notes on its own. Notes are read in later chats, so a malicious page could try to plant something there. It still asks first if it has read web content in the same reply.',
+  },
+  {
+    name: 'search_history',
+    group: 'recall',
+    title: 'Search your history',
+    summary:
+      'Find pages you visited in the last 90 days ("that page I was on").',
+    defaultLevel: 'ask',
+    changesThings: false,
+    warning:
+      'The assistant will be able to look through your browsing history whenever it likes. What it finds goes to your chosen model.',
+  },
+  {
+    name: 'search_bookmarks',
+    group: 'recall',
+    title: 'Search your bookmarks',
+    summary: 'Find a page you bookmarked.',
+    defaultLevel: 'ask',
+    changesThings: false,
+    warning:
+      'The assistant will be able to look through your bookmarks whenever it likes. What it finds goes to your chosen model.',
+  },
+  {
+    name: 'search_chats',
+    group: 'recall',
+    title: 'Search your earlier chats',
+    summary: 'Find an earlier chat by name or by what was said.',
+    defaultLevel: 'ask',
+    changesThings: false,
+    warning:
+      'The assistant will be able to look through your earlier chats whenever it likes. What it finds goes to your chosen model.',
+  },
+  {
+    name: 'read_chat',
+    group: 'recall',
+    title: 'Read an earlier chat',
+    summary: 'Read what was said in one of your earlier chats.',
+    defaultLevel: 'ask',
+    changesThings: false,
+    warning:
+      'The assistant will be able to read your earlier chats whenever it likes. What it reads goes to your chosen model.',
   },
   {
     name: 'read_artifact',

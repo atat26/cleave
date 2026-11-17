@@ -279,6 +279,13 @@ function setup(
       };
     },
     linkedTabs: () => tabs,
+    // (The recall tools have their own tests in recallTools.test.ts.)
+    currentChatId: () => 1,
+    now: () => 1_700_000_000_000,
+    searchHistory: () => [],
+    searchBookmarks: () => [],
+    searchChats: () => [],
+    readChat: () => null,
     // (The tab and Space tools have their own tests in tabTools.test.ts.)
     allTabs: () => [],
     allSpaces: () => [],
@@ -1551,6 +1558,28 @@ test('the tab and Space tools are offered, are in the Tools panel, and listing t
     tool === 'create_artifact' ? 'always' : 'always',
   );
   await tools.run(call('list_all_tabs', {}), ABORT);
+  const write = tools.plan(
+    call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
+  );
+  assert.equal(write.kind, 'ask');
+});
+
+test('the recall tools are offered and in the Tools panel, ask by default, and count as having read web content', async () => {
+  const everything = createAgentTools(
+    setup().env,
+    () => 'always',
+  ).definitions.map((d) => d.name);
+  for (const name of [
+    'search_history',
+    'search_bookmarks',
+    'search_chats',
+    'read_chat',
+  ]) {
+    assert.ok(everything.includes(name), name);
+    assert.equal(defaultLevel(name), 'ask', name);
+  }
+  const { tools } = setup(undefined, () => 'always');
+  await tools.run(call('search_history', { query: 'goldfish' }), ABORT);
   const write = tools.plan(
     call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
   );
