@@ -6,6 +6,7 @@ import { PrivacySection } from './PrivacySection';
 import { NewTabSection } from './NewTabSection';
 import { SearchEngineSection } from './SearchEngineSection';
 import { ShortcutsSection } from './ShortcutsSection';
+import { ExtensionsSection } from './ExtensionsSection';
 import { LibrarySection } from './LibrarySection';
 import { NamingSection } from './NamingSection';
 import { WebSearchSettings } from './WebSearchSettings';
@@ -99,6 +100,11 @@ const SECTIONS = [
     id: 'privacy',
     label: 'Privacy and security',
     about: 'Site permissions and clearing data',
+  },
+  {
+    id: 'extensions',
+    label: 'Extensions',
+    about: 'Updates for extensions from the Chrome Web Store',
   },
   {
     id: 'library',
@@ -628,6 +634,7 @@ export function SettingsPanel() {
       {section === 'web-search' && <WebSearchSettings />}
       {section === 'appearance' && <AppearanceSettings />}
       {section === 'naming' && <NamingSection />}
+      {section === 'extensions' && <ExtensionsSection />}
       {section === 'library' && <LibrarySection />}
       {section === 'downloads' && <DownloadsSection />}
       {section === 'privacy' && <PrivacySection />}

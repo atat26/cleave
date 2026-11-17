@@ -54,7 +54,17 @@ const browserApi: BrowserApi = {
     ipcRenderer.invoke('new-tab-settings:set', changes),
   newTabShowHidden: () => ipcRenderer.invoke('new-tab-settings:show-hidden'),
   extensionsList: () => ipcRenderer.invoke('extensions:list'),
-  extensionsAddFolder: () => ipcRenderer.invoke('extensions:add-folder'),
+  showExtensionsAddMenu: (x, y) =>
+    ipcRenderer.send('extensions:add-menu', x, y),
+  onExtensionsMessage: (callback) => {
+    const listener = (_event: unknown, message: unknown) =>
+      callback(typeof message === 'string' ? message : null);
+    ipcRenderer.on('extensions:message', listener);
+    return () => ipcRenderer.removeListener('extensions:message', listener);
+  },
+  extensionSettingsGet: () => ipcRenderer.invoke('extension-settings:get'),
+  extensionSettingsSet: (changes) =>
+    ipcRenderer.invoke('extension-settings:set', changes),
   extensionsSetEnabled: (key, enabled) =>
     ipcRenderer.invoke('extensions:set-enabled', key, enabled),
   extensionsRemove: (key) => ipcRenderer.invoke('extensions:remove', key),

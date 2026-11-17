@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   addExtension,
+  grewPermissions,
+  latestVersionDir,
+  upsertStoreExtension,
   cleanOptionsPath,
   defaultExtensions,
   describePermissions,
@@ -260,4 +263,84 @@ test('an options page is a plain path inside the extension, never an address or 
     }).items[0].optionsPage,
     null,
   );
+});
+
+test("the newest version folder is found among the store library's folders", () => {
+  assert.equal(
+    latestVersionDir(['1.2.3_0', '1.10.0_0', '1.9.9_0']),
+    '1.10.0_0',
+  );
+  assert.equal(latestVersionDir(['2_0', '10_0']), '10_0');
+  assert.equal(latestVersionDir(['1.0_0', '1.0.1_1', '1.0.1_0']), '1.0.1_1');
+  assert.equal(latestVersionDir(['notes.txt', '..', '1.2.3', 'v1_0']), null);
+  assert.equal(latestVersionDir([]), null);
+});
+
+test('an update that asks for more access is noticed', () => {
+  const a = { permissions: ['storage'], hostPermissions: ['https://a.com/*'] };
+  assert.equal(grewPermissions(a, { ...a }), false);
+  assert.equal(
+    grewPermissions(a, { permissions: [], hostPermissions: [] }),
+    false,
+  );
+  assert.equal(
+    grewPermissions(a, { ...a, permissions: ['storage', 'tabs'] }),
+    true,
+  );
+  assert.equal(
+    grewPermissions(a, { ...a, hostPermissions: ['<all_urls>'] }),
+    true,
+  );
+});
+
+test('store extensions: added once, brought up to date, and held back if they ask for more', () => {
+  const id = 'a'.repeat(32);
+  const m1 = parseManifest({
+    manifest_version: 3,
+    name: 'Dark',
+    version: '1.0',
+    permissions: ['storage'],
+  })!;
+  const first = upsertStoreExtension(defaultExtensions(), id, m1, 5)!;
+  assert.equal(first.added, true);
+  assert.equal(first.state.items[0].source, 'store');
+  assert.equal(first.state.items[0].id, id);
+  assert.equal(first.state.items[0].enabled, true);
+  // The same extension again does not add another.
+  const same = upsertStoreExtension(first.state, id, m1, 6)!;
+  assert.equal(same.added, false);
+  assert.equal(same.state.items.length, 1);
+  // A newer version with the same access: updated, still on.
+  const m2 = parseManifest({
+    manifest_version: 3,
+    name: 'Dark mode',
+    version: '1.1',
+    permissions: ['storage'],
+  })!;
+  const same2 = upsertStoreExtension(first.state, id, m2, 7)!;
+  assert.equal(same2.state.items[0].version, '1.1');
+  assert.equal(same2.state.items[0].name, 'Dark mode');
+  assert.equal(same2.needsReview, false);
+  assert.equal(same2.state.items[0].enabled, true);
+  // A newer version asking for more: switched off with a note.
+  const m3 = parseManifest({
+    manifest_version: 3,
+    name: 'Dark mode',
+    version: '2.0',
+    permissions: ['storage', 'tabs'],
+  })!;
+  const grew = upsertStoreExtension(same2.state, id, m3, 8)!;
+  assert.equal(grew.needsReview, true);
+  assert.equal(grew.state.items[0].enabled, false);
+  assert.match(grew.state.items[0].review ?? '', /more access/);
+  // A switched-off one stays off (and keeps its note) when seen again.
+  const again = upsertStoreExtension(grew.state, id, m3, 9)!;
+  assert.equal(again.state.items[0].enabled, false);
+  assert.ok(again.state.items[0].review);
+  // The saved note survives a restart; junk ids are refused.
+  assert.equal(
+    parseExtensions(JSON.parse(JSON.stringify(grew.state))).items[0].source,
+    'store',
+  );
+  assert.equal(upsertStoreExtension(defaultExtensions(), 'nope', m1, 1), null);
 });

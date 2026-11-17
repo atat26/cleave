@@ -23,6 +23,7 @@ import {
   parseToolsChoice,
   toolsMenuItems,
   downloadMenuItems,
+  addExtensionMenuItems,
   extensionMenuItems,
   libraryMenuItems,
   parseDownloadChoice,
@@ -37,6 +38,7 @@ import {
   permissionPromptItems,
   parseStarChoice,
   starMenuItems,
+  parseAddExtensionChoice,
   parseExtensionChoice,
   parsePuzzleChoice,
   puzzleMenuItems,
@@ -1374,4 +1376,18 @@ test('an extension with a settings page gets an Options row, greyed while it is 
   assert.deepEqual(parseExtensionChoice('extension.options'), {
     action: 'options',
   });
+});
+
+test('the Add extension menu offers the Chrome Web Store and a folder', () => {
+  assert.deepEqual(menuIds(addExtensionMenuItems()), [
+    'add-extension.store',
+    'add-extension.folder',
+  ]);
+  assert.deepEqual(parseAddExtensionChoice('add-extension.store'), {
+    action: 'store',
+  });
+  assert.deepEqual(parseAddExtensionChoice('add-extension.folder'), {
+    action: 'folder',
+  });
+  assert.equal(parseAddExtensionChoice('add-extension.zip'), null);
 });

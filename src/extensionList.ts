@@ -17,6 +17,12 @@ export interface ExtensionRecord {
   hasAction: boolean;
   // Its settings page inside the extension's folder ("options.html"), or null.
   optionsPage: string | null;
+  // Where it came from: a folder you picked (copied into the app's data), or the
+  // Chrome Web Store (kept up to date, in the store library's own folder).
+  source: 'folder' | 'store';
+  // A note shown on its row: it was updated and now asks for more access, so it
+  // was switched off until you say yes.
+  review: string | null;
   addedAt: number;
   manifestVersion: 2 | 3;
   // What its manifest asks for.
@@ -232,6 +238,11 @@ export function parseExtensions(raw: unknown): ExtensionsState {
       pinned: i.pinned !== false,
       hasAction: i.hasAction === true,
       optionsPage: cleanOptionsPath(i.optionsPage),
+      source: i.source === 'store' ? 'store' : 'folder',
+      review:
+        typeof i.review === 'string' && i.review.trim() !== ''
+          ? i.review.trim().slice(0, 300)
+          : null,
       addedAt:
         typeof i.addedAt === 'number' && Number.isFinite(i.addedAt)
           ? i.addedAt
@@ -281,12 +292,110 @@ export function addExtension(
           pinned: true,
           hasAction: manifest.hasAction,
           optionsPage: manifest.optionsPage,
+          source: 'folder',
+          review: null,
           addedAt: now,
           manifestVersion: manifest.manifestVersion,
           permissions: manifest.permissions,
           hostPermissions: manifest.hostPermissions,
         },
       ],
+    },
+  };
+}
+
+// ---- Extensions from the Chrome Web Store ----------------------------------------
+
+// The store library keeps each version in a folder named like "1.2.3_0". Of the
+// names in an extension's folder, the newest version (or null if none fits).
+export function latestVersionDir(names: string[]): string | null {
+  let best: { name: string; parts: number[] } | null = null;
+  for (const name of names) {
+    const m = /^(\d{1,9}(?:\.\d{1,9}){0,3})_\d{1,4}$/.exec(name);
+    if (!m) continue;
+    const parts = m[1].split('.').map(Number);
+    if (best === null || compareParts(parts, best.parts) > 0) {
+      best = { name, parts };
+    }
+  }
+  return best?.name ?? null;
+}
+
+const compareParts = (a: number[], b: number[]): number => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+};
+
+// Does the newer manifest ask for something the older one did not?
+export function grewPermissions(
+  before: Pick<ExtensionRecord, 'permissions' | 'hostPermissions'>,
+  after: Pick<ExtensionRecord, 'permissions' | 'hostPermissions'>,
+): boolean {
+  const had = new Set([...before.permissions, ...before.hostPermissions]);
+  return [...after.permissions, ...after.hostPermissions].some(
+    (p) => !had.has(p),
+  );
+}
+
+// An extension the store library has installed or updated (it is loaded now, with
+// this id). A new one is added; one we know has its version and wishes brought up
+// to date, and if it now asks for more access it is switched off with a note until
+// you agree. Returns what happened.
+export function upsertStoreExtension(
+  state: ExtensionsState,
+  id: string,
+  manifest: ParsedManifest,
+  now: number,
+): {
+  state: ExtensionsState;
+  key: string;
+  added: boolean;
+  needsReview: boolean;
+} | null {
+  if (!/^[a-p]{32}$/.test(id)) return null;
+  const existing = state.items.find((e) => e.id === id && e.source === 'store');
+  if (!existing) {
+    const added = addExtension(state, manifest, now);
+    if (!added) return null;
+    return {
+      key: added.key,
+      added: true,
+      needsReview: false,
+      state: {
+        ...added.state,
+        items: added.state.items.map((e) =>
+          e.key === added.key ? { ...e, id, source: 'store' } : e,
+        ),
+      },
+    };
+  }
+  const grew =
+    existing.version !== manifest.version &&
+    grewPermissions(existing, manifest);
+  const updated: ExtensionRecord = {
+    ...existing,
+    name: manifest.name,
+    version: manifest.version,
+    hasAction: manifest.hasAction,
+    optionsPage: manifest.optionsPage,
+    manifestVersion: manifest.manifestVersion,
+    permissions: manifest.permissions,
+    hostPermissions: manifest.hostPermissions,
+    enabled: grew ? false : existing.enabled,
+    review: grew
+      ? 'Updated, and it now asks for more access. Turn it on to review and accept.'
+      : existing.review,
+  };
+  return {
+    key: existing.key,
+    added: false,
+    needsReview: grew,
+    state: {
+      ...state,
+      items: state.items.map((e) => (e.key === existing.key ? updated : e)),
     },
   };
 }
@@ -302,7 +411,9 @@ export const removeExtension = (
 export function updateExtension(
   state: ExtensionsState,
   key: string,
-  changes: Partial<Pick<ExtensionRecord, 'enabled' | 'id' | 'pinned'>>,
+  changes: Partial<
+    Pick<ExtensionRecord, 'enabled' | 'id' | 'pinned' | 'review'>
+  >,
 ): ExtensionsState {
   if (!state.items.some((e) => e.key === key)) return state;
   return {

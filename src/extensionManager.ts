@@ -1,13 +1,17 @@
 // Browser extensions, in the main process: the part that talks to Electron. The rules
 // (the list, reading a manifest, the permission words) are pure code in
 // extensionList.ts. This file adds an extension from a folder (copying it into the
-// app's own data folder), loads the enabled ones at every start (Electron forgets
-// them between runs), and lets the helper library (electron-chrome-extensions) know
-// about the tabs, so extensions that use the tabs API work.
+// app's own data folder) or from the Chrome Web Store (through
+// electron-chrome-web-store), loads the enabled ones at every start (Electron
+// forgets them between runs), keeps store extensions up to date, and lets the
+// helper library (electron-chrome-extensions) know about the tabs, so extensions
+// that use the tabs API work.
 //
 // Safety:
-//   - An extension only ever comes from a folder you pick, and you are shown what it
-//     asks for and must say yes first.
+//   - An extension only comes from a folder you pick or from the Chrome Web Store,
+//     and you are shown what it asks for and must say yes first.
+//   - A store extension that updates and now asks for more access is switched off
+//     until you say yes to the new access.
 //   - The folder is copied (not linked), links inside it are skipped, and its size
 //     and number of files are limited.
 //   - Extensions only run in the app's normal browsing session (never in the
@@ -22,14 +26,26 @@ import type { ExtensionMenuNode } from './extensionMenus';
 import { isExtensionUrl } from './model';
 import type { MenuItem } from './menuTypes';
 import {
+  installChromeWebStore,
+  installExtension,
+  uninstallExtension,
+  updateExtensions,
+} from 'electron-chrome-web-store';
+import {
   addExtension,
   describePermissions,
+  latestVersionDir,
   parseManifest,
   removeExtension,
   resolveMessage,
   updateExtension,
+  upsertStoreExtension,
 } from './extensionList';
 import type { ExtensionRecord, ExtensionsState } from './extensionList';
+import type { ExtensionSettings } from './extensionSettings';
+
+// How often extensions from the store are checked for updates.
+const UPDATE_EVERY_MS = 5 * 60 * 60 * 1000;
 
 const MAX_MANIFEST_BYTES = 1_000_000;
 const MAX_FILES = 20_000;
@@ -40,6 +56,8 @@ export interface ExtensionManagerDeps {
   window: BrowserWindow;
   getList(): ExtensionsState;
   setList(next: ExtensionsState): void;
+  // Whether extensions from the Chrome Web Store update by themselves.
+  getSettings(): ExtensionSettings;
   // A popup opened (its extension's id) or closed (null).
   onPopup(extensionId: string | null): void;
   // Open a web page in a new tab and give back its page (null if it cannot).
@@ -99,20 +117,14 @@ function folderSize(folder: string): { files: number; bytes: number } | null {
 }
 
 export function registerExtensions(deps: ExtensionManagerDeps) {
+  // Extensions added from a folder are copied here. An unpacked extension's id comes
+  // from where its folder is, so this place must never change.
   const root = path.join(app.getPath('userData'), 'extensions');
 
   // The helper library: it adds the tabs, windows, menus... that Chrome extensions
   // expect, on top of what Electron has built in.
   const chrome = new ElectronChromeExtensions({
     session: deps.session,
-    // The library cannot find its own helper script once this app is bundled, so
-    // it is pointed at it. (A packaged app must carry that file along: noted for the
-    // packaging step.)
-    modulePath: path.join(
-      app.getAppPath(),
-      'node_modules',
-      'electron-chrome-extensions',
-    ),
     createTab: async (details) => {
       const url = typeof details.url === 'string' ? details.url : '';
       if (!/^https?:\/\//i.test(url) && !isOwnPage(url)) {
@@ -211,14 +223,48 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
       .items.some((e) => e.enabled && e.id !== null && e.id === id);
   };
 
-  // Where an extension is loaded from.
+  // Where an extension is loaded from. One from a folder is our own copy; one from
+  // the Chrome Web Store is in the store library's folder, in a folder per version
+  // (the newest is used).
   const folderOf = (record: ExtensionRecord) => path.join(root, record.key);
+  // (Not "Extensions", the store library's usual place: Windows does not tell that
+  // from "extensions" above, and the two kinds would share one folder.)
+  const storeRoot = path.join(app.getPath('userData'), 'extension-store');
+  // The first store install went into the shared folder. A store extension carries
+  // its own key, so its id does not depend on where it is, and it can move.
+  const migrateStoreRoot = () => {
+    try {
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !/^[a-p]{32}$/.test(entry.name)) continue;
+        fs.mkdirSync(storeRoot, { recursive: true });
+        const to = path.join(storeRoot, entry.name);
+        if (!fs.existsSync(to)) fs.renameSync(path.join(root, entry.name), to);
+      }
+    } catch {
+      // Nothing there to move.
+    }
+  };
+  const storeDir = (record: ExtensionRecord): string | null => {
+    if (record.id === null || !/^[a-p]{32}$/.test(record.id)) return null;
+    const base = path.join(storeRoot, record.id);
+    try {
+      const newest = latestVersionDir(fs.readdirSync(base));
+      return newest === null ? null : path.join(base, newest);
+    } catch {
+      return null;
+    }
+  };
+  const sourceOf = (record: ExtensionRecord): string | null =>
+    record.source === 'store' ? storeDir(record) : folderOf(record);
 
   const load = async (record: ExtensionRecord): Promise<boolean> => {
+    const from = sourceOf(record);
+    if (from === null) {
+      console.error(`[extensions] ${record.name}: its files are missing`);
+      return false;
+    }
     try {
-      const extension = await deps.session.extensions.loadExtension(
-        folderOf(record),
-      );
+      const extension = await deps.session.extensions.loadExtension(from);
       if (record.id !== extension.id) {
         deps.setList(
           updateExtension(deps.getList(), record.key, { id: extension.id }),
@@ -398,16 +444,129 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     }
   };
 
+  // ---- The Chrome Web Store ------------------------------------------------------
+  // The store library makes the store's "Add to Chrome" button work, downloads and
+  // unpacks the extension, and loads it. Before it downloads anything it asks us,
+  // and we show what the extension asks for. Our list then follows what it loaded.
+  const sessionExtensions = deps.session.extensions;
+  const inStoreFolder = (extensionPath: string): boolean =>
+    path.resolve(extensionPath).startsWith(storeRoot + path.sep);
+  // Extensions we are switching off ourselves (not the store page removing them).
+  const unloadingOurselves = new Set<string>();
+
+  // Everything the extension would be able to do, as the question shows it.
+  const permissionQuestion = (words: string[]): string =>
+    `${
+      words.length > 0
+        ? `It will be able to:\n\n${words.map((w) => `• ${w}`).join('\n')}`
+        : 'It does not ask for any special access.'
+    }\n\nOnly add extensions you trust.`;
+
+  // The library loaded (or updated) a store extension: keep our list in step. An
+  // update that asks for more access switches the extension off until you agree.
+  const onStoreLoaded = (extension: Electron.Extension) => {
+    const parsed = parseManifest(extension.manifest);
+    if (!parsed) return;
+    const before = deps.getList();
+    const result = upsertStoreExtension(
+      before,
+      extension.id,
+      { ...parsed, name: extension.name, version: extension.version },
+      Date.now(),
+    );
+    if (result === null) {
+      // Too many extensions, or an odd id: do not keep it.
+      unloadingOurselves.add(extension.id);
+      try {
+        sessionExtensions.removeExtension(extension.id);
+      } catch {
+        // Not loaded.
+      }
+      return;
+    }
+    if (JSON.stringify(result.state.items) !== JSON.stringify(before.items)) {
+      deps.setList(result.state);
+    }
+    if (result.needsReview) {
+      unloadingOurselves.add(extension.id);
+      try {
+        sessionExtensions.removeExtension(extension.id);
+      } catch {
+        // Not loaded.
+      }
+    }
+  };
+  sessionExtensions.on('extension-loaded', (_event, extension) => {
+    if (inStoreFolder(extension.path)) onStoreLoaded(extension);
+  });
+  // The store page's own "Remove" button uninstalls through the library, which
+  // deletes the files. Seen from here that looks like an update (unloaded, then
+  // loaded again), so a moment later it is checked whether the files are really gone.
+  sessionExtensions.on('extension-unloaded', (_event, extension) => {
+    if (unloadingOurselves.delete(extension.id)) return;
+    const record = deps
+      .getList()
+      .items.find((e) => e.id === extension.id && e.source === 'store');
+    if (!record) return;
+    setTimeout(() => {
+      const still = deps
+        .getList()
+        .items.find((e) => e.id === extension.id && e.source === 'store');
+      if (!still || storeDir(still) !== null) return;
+      if (sessionExtensions.getExtension(extension.id)) return;
+      deps.setList(removeExtension(deps.getList(), still.key));
+      void wipeData(extension.id);
+    }, 2000);
+  });
+
+  void installChromeWebStore({
+    session: deps.session,
+    extensionsPath: storeRoot,
+    // We load them ourselves (at start, honouring your on/off switch) and run the
+    // updates ourselves (honouring the setting).
+    loadExtensions: false,
+    autoUpdate: false,
+    beforeInstall: async (details) => {
+      const parsed = parseManifest(details.manifest);
+      if (!parsed) return { action: 'deny' };
+      const yes = await deps.confirm({
+        title: 'Add this extension?',
+        message: `Add “${details.localizedName}” from the Chrome Web Store?`,
+        detail: permissionQuestion(describePermissions(parsed)),
+        button: 'Add extension',
+      });
+      return { action: yes ? 'allow' : 'deny' };
+    },
+  }).catch((error: Error) => {
+    console.error(`[extensions] web store: ${error.message}`);
+  });
+
+  // Updates for extensions from the store: at start and every few hours, if the
+  // setting is on. (Only extensions that are on are updated.)
+  const checkForUpdates = async (): Promise<void> => {
+    if (!deps.getSettings().autoUpdate) return;
+    try {
+      await updateExtensions(deps.session);
+    } catch (error) {
+      console.error(`[extensions] updates: ${(error as Error).message}`);
+    }
+  };
+  const updateTimer = setInterval(
+    () => void checkForUpdates(),
+    UPDATE_EVERY_MS,
+  );
+  app.on('before-quit', () => clearInterval(updateTimer));
+
   // The extension's own picture as a data address (the biggest PNG up to 128 px
   // that its manifest lists), or null. Kept after the first read.
   const icons = new Map<string, string | null>();
   const iconOf = (record: ExtensionRecord): string | null => {
     if (icons.has(record.key)) return icons.get(record.key) ?? null;
     let found: string | null = null;
+    const dir = sourceOf(record);
+    if (dir === null) return null;
     try {
-      const manifest = readJson(
-        path.join(folderOf(record), 'manifest.json'),
-      ) as {
+      const manifest = readJson(path.join(dir, 'manifest.json')) as {
         icons?: Record<string, unknown>;
       };
       const sizes = Object.entries(manifest.icons ?? {})
@@ -421,9 +580,9 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
         )
         .sort((a, b) => b[0] - a[0]);
       if (sizes.length > 0) {
-        const file = path.resolve(folderOf(record), String(sizes[0][1]));
+        const file = path.resolve(dir, String(sizes[0][1]));
         // Only a file inside the extension's own folder.
-        if (file.startsWith(folderOf(record) + path.sep)) {
+        if (file.startsWith(dir + path.sep)) {
           const bytes = fs.readFileSync(file);
           if (bytes.length <= 200_000) {
             found = `data:image/png;base64,${bytes.toString('base64')}`;
@@ -484,10 +643,13 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     // Load every extension that is switched on (at start: Electron does not
     // remember them).
     async loadAll() {
+      migrateStoreRoot();
       await sweepLeftovers();
       for (const record of deps.getList().items) {
         if (record.enabled) await load(record);
       }
+      // A first look for updates, a little after start-up.
+      setTimeout(() => void checkForUpdates(), 30_000);
     },
     setPinned(key: string, pinned: boolean) {
       if (deps.getList().items.some((e) => e.key === key)) {
@@ -497,19 +659,62 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     async setEnabled(key: string, enabled: boolean) {
       const record = deps.getList().items.find((e) => e.key === key);
       if (!record || record.enabled === enabled) return;
-      deps.setList(updateExtension(deps.getList(), key, { enabled }));
+      if (enabled && record.review !== null) {
+        // It was updated and asked for more access: it only comes back if you say
+        // yes to what it asks for now.
+        const yes = await deps.confirm({
+          title: 'Turn this extension back on?',
+          message: `“${record.name}” was updated and now asks for more access.`,
+          detail: permissionQuestion(describePermissions(record)),
+          button: 'Turn on',
+        });
+        if (!yes) return;
+      }
+      deps.setList(
+        updateExtension(deps.getList(), key, {
+          enabled,
+          ...(enabled ? { review: null } : {}),
+        }),
+      );
       if (enabled) await load(record);
       else unload(record);
     },
-    remove(key: string) {
+    async remove(key: string) {
       const record = deps.getList().items.find((e) => e.key === key);
       if (!record) return;
+      unloadingOurselves.add(record.id ?? '');
       unload(record);
       deps.setList(removeExtension(deps.getList(), key));
-      fs.rmSync(folderOf(record), { recursive: true, force: true });
+      if (record.source === 'store' && record.id !== null) {
+        try {
+          await uninstallExtension(record.id, {
+            session: deps.session,
+            extensionsPath: storeRoot,
+          });
+        } catch (error) {
+          console.error(`[extensions] remove: ${(error as Error).message}`);
+        }
+        fs.rmSync(path.join(storeRoot, record.id), {
+          recursive: true,
+          force: true,
+        });
+      } else {
+        fs.rmSync(folderOf(record), { recursive: true, force: true });
+      }
       // What the extension saved goes with it.
       if (record.id !== null) void wipeData(record.id);
     },
+    // For testing only: install a store extension by its id without the question
+    // (a test cannot click a native window). Never used in a packaged app.
+    installStoreForTest: async (id: string) => {
+      await installExtension(id, {
+        session: deps.session,
+        extensionsPath: storeRoot,
+      });
+    },
+    // Check the store extensions for updates now (the Settings switch decides
+    // whether this also happens by itself).
+    checkForUpdates,
     // Is it loaded and running now?
     isLoaded: (record: ExtensionRecord) =>
       record.id !== null &&
