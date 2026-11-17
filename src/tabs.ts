@@ -3035,17 +3035,28 @@ export async function createTabs(
     const y = bounds.y + params.y;
     const selection = params.selectionText;
 
+    // The extensions' own items go at the end of whichever menu this is.
+    const ext = extensions?.contextMenuFor(contents, params);
+    const withExtensions = (own: MenuItem[]): MenuItem[] =>
+      ext && ext.items.length > 0
+        ? [...own, { type: 'separator' }, ...ext.items]
+        : own;
+
     if (params.isEditable) {
       void clipboard.readText().then((copied) =>
         showMenu(
-          editMenuItems({
-            hasSelection: params.editFlags.canCopy || selection !== '',
-            canPaste: params.editFlags.canPaste && copied.length > 0,
-            pasteAndGo: false,
-          }),
+          withExtensions(
+            editMenuItems({
+              hasSelection: params.editFlags.canCopy || selection !== '',
+              canPaste: params.editFlags.canPaste && copied.length > 0,
+              pasteAndGo: false,
+            }),
+          ),
           x,
           y,
-          (choice) => runEditChoice(contents, choice),
+          (choice) => {
+            if (!ext?.run(choice)) runEditChoice(contents, choice);
+          },
           contents,
         ),
       );
@@ -3070,10 +3081,12 @@ export async function createTabs(
       });
 
     showMenu(
-      items,
+      withExtensions(items),
       x,
       y,
-      (choice) => runPageChoice(tabId, contents, params, choice),
+      (choice) => {
+        if (!ext?.run(choice)) runPageChoice(tabId, contents, params, choice);
+      },
       contents,
     );
   };
@@ -4095,6 +4108,14 @@ export async function createTabs(
           const parsed = parseExtensionChoice(choice);
           if (parsed?.action === 'pin') {
             extensions?.setPinned(key, !found.pinned);
+          } else if (parsed?.action === 'options') {
+            // Its settings page opens in a tab, like any page.
+            if (found.id !== null && found.optionsPage && found.enabled) {
+              openTab(
+                `chrome-extension://${found.id}/${found.optionsPage}`,
+                model.findTab(state, activeTabId() ?? -1)?.spaceId ?? null,
+              );
+            }
           } else if (parsed?.action === 'toggle') {
             void extensions?.setEnabled(key, !found.enabled);
           } else if (parsed?.action === 'remove') {

@@ -15,6 +15,8 @@ export interface ExtensionRecord {
   pinned: boolean;
   // It has a button at all (an "action" in its manifest).
   hasAction: boolean;
+  // Its settings page inside the extension's folder ("options.html"), or null.
+  optionsPage: string | null;
   addedAt: number;
   manifestVersion: 2 | 3;
   // What its manifest asks for.
@@ -64,6 +66,7 @@ export interface ParsedManifest {
   defaultLocale: string | null;
   // Does it have a toolbar button (an "action" or "browser_action")?
   hasAction: boolean;
+  optionsPage: string | null;
 }
 
 // Read an extension's manifest.json (already parsed from text). Only manifest
@@ -85,6 +88,7 @@ export function parseManifest(raw: unknown): ParsedManifest | null {
     manifestVersion: m.manifest_version,
     permissions: all.filter((p) => !isHostPattern(p)),
     hostPermissions: [...new Set(hosts)],
+    optionsPage: optionsPageOf(m),
     hasAction:
       (typeof m.action === 'object' && m.action !== null) ||
       (typeof m.browser_action === 'object' && m.browser_action !== null),
@@ -95,6 +99,31 @@ export function parseManifest(raw: unknown): ParsedManifest | null {
         : null,
   };
 }
+
+// The settings page from a manifest (options_page, or options_ui.page): a plain
+// path inside the extension's folder, never a web address or a path going up.
+export function cleanOptionsPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const path = value.replace(/^\.?\//, '');
+  if (path === '' || path.length > 200) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('/')) return null;
+  if (path.includes('\\') || path.split('/').some((part) => part === '..')) {
+    return null;
+  }
+  if (/[\u0000-\u001f?#]/.test(path)) return null;
+  return path;
+}
+const optionsPageOf = (m: Record<string, unknown>): string | null => {
+  const ui = m.options_ui;
+  return (
+    cleanOptionsPath(m.options_page) ??
+    cleanOptionsPath(
+      typeof ui === 'object' && ui !== null
+        ? (ui as { page?: unknown }).page
+        : undefined,
+    )
+  );
+};
 
 const isHostPattern = (p: string): boolean =>
   p === '<all_urls>' || /^(\*|https?|file|ftp|wss?):\/\//.test(p);
@@ -202,6 +231,7 @@ export function parseExtensions(raw: unknown): ExtensionsState {
       enabled: i.enabled !== false,
       pinned: i.pinned !== false,
       hasAction: i.hasAction === true,
+      optionsPage: cleanOptionsPath(i.optionsPage),
       addedAt:
         typeof i.addedAt === 'number' && Number.isFinite(i.addedAt)
           ? i.addedAt
@@ -250,6 +280,7 @@ export function addExtension(
           // New extensions start in the toolbar, so they are easy to find.
           pinned: true,
           hasAction: manifest.hasAction,
+          optionsPage: manifest.optionsPage,
           addedAt: now,
           manifestVersion: manifest.manifestVersion,
           permissions: manifest.permissions,
