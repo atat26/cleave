@@ -299,16 +299,17 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(labels.slice(0, 7), [
+  assert.deepEqual(labels.slice(0, 8), [
     'New chat',
     'Rename',
     'Change icon…',
     'Name with AI',
+    'Make a skill from this chat…',
     'Export as Markdown…',
     'Search chats…',
     'Delete chat',
   ]);
-  assert.deepEqual(labels.slice(7), ['Second', 'First']);
+  assert.deepEqual(labels.slice(8), ['Second', 'First']);
   const activeId = chats.activeId;
   assert.equal(entry(items, `chat.select:${activeId}`).checked, true);
   assert.equal(entry(items, `chat.select:${firstId}`).checked, false);
@@ -329,9 +330,16 @@ test('the chat row menu and chat ids', () => {
     `chat.rename:${id}`,
     `chat.icon:${id}`,
     `chat.name-ai:${id}`,
+    `chat.make-skill:${id}`,
     `chat.export:${id}`,
     `chat.delete:${id}`,
   ]);
+  // An empty chat has nothing to make a skill from.
+  assert.equal(entry(items, `chat.make-skill:${id}`).disabled, true);
+  assert.deepEqual(parseChatChoice('chat.make-skill:7'), {
+    action: 'make-skill',
+    chatId: 7,
+  });
   assert.deepEqual(parseChatChoice('chat.export:7'), {
     action: 'export',
     chatId: 7,

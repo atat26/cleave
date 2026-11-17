@@ -513,6 +513,14 @@ export function parseSkillMarkdown(
   return checkInput({ name, description, instructions: body });
 }
 
+// ---- "Make a skill from this chat" ----------------------------------------------------
+
+// What is sent to the assistant when you choose "Make a skill from this chat…" in a chat's
+// menu. It writes the skill with create_skill, so you see the whole text on the approval
+// card and can say no.
+export const MAKE_SKILL_REQUEST =
+  'Make a skill from this conversation. Look back at what we did together and turn the steps that worked into a reusable skill. Call create_skill once, with: a short name; a description that starts with "Use when" and says what kind of task it is for; and numbered instructions written in general terms (not about this one example), with no private details and nothing copied from web pages. Do not use any other tool first.';
+
 // ---- What the screen and the assistant see ------------------------------------------
 
 // A skill as a list shows it (without the steps, which can be long).

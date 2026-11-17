@@ -393,6 +393,7 @@ export type ChatChoice =
   | { action: 'rename'; chatId: number }
   | { action: 'icon'; chatId: number }
   | { action: 'name-ai'; chatId: number }
+  | { action: 'make-skill'; chatId: number }
   | { action: 'export'; chatId: number }
   | { action: 'search' }
   | { action: 'delete'; chatId: number };
@@ -425,6 +426,15 @@ export function chatRowMenuItems(
       id: `chat.name-ai:${chatId}`,
       label: 'Name with AI',
       icon: 'sparkle',
+    },
+    {
+      type: 'item',
+      id: `chat.make-skill:${chatId}`,
+      label: 'Make a skill from this chat…',
+      icon: 'sparkle',
+      // Nothing to learn from an empty chat.
+      disabled:
+        chats.conversations.find((c) => c.id === chatId)?.messages.length === 0,
     },
     {
       type: 'item',
@@ -470,6 +480,14 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     {
       type: 'item',
+      id: `chat.make-skill:${active}`,
+      label: 'Make a skill from this chat…',
+      icon: 'sparkle',
+      disabled:
+        chats.conversations.find((c) => c.id === active)?.messages.length === 0,
+    },
+    {
+      type: 'item',
       id: `chat.export:${active}`,
       label: 'Export as Markdown…',
       icon: 'upload',
@@ -500,7 +518,10 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
 export function parseChatChoice(id: string): ChatChoice | null {
   if (id === 'chat.new') return { action: 'new' };
   if (id === 'chat.search') return { action: 'search' };
-  const m = /^chat\.(select|rename|icon|name-ai|export|delete):(\d+)$/.exec(id);
+  const m =
+    /^chat\.(select|rename|icon|name-ai|make-skill|export|delete):(\d+)$/.exec(
+      id,
+    );
   if (!m) return null;
   return {
     action: m[1] as
@@ -508,6 +529,7 @@ export function parseChatChoice(id: string): ChatChoice | null {
       | 'rename'
       | 'icon'
       | 'name-ai'
+      | 'make-skill'
       | 'export'
       | 'delete',
     chatId: Number(m[2]),

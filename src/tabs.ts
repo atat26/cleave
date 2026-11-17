@@ -50,6 +50,7 @@ import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { chatMarkdown } from './chatExport';
 import {
+  MAKE_SKILL_REQUEST,
   createSkill,
   defaultSkills,
   deleteSkill,
@@ -3527,6 +3528,25 @@ export async function createTabs(
     }
   };
 
+  // "Make a skill from this chat…": go to that chat and ask the assistant to write the
+  // skill with create_skill (so the whole text is on the approval card).
+  const makeSkillFromChat = (chatId: number) => {
+    const chat = chatsModel.findConversation(chats, chatId);
+    if (!chat || chat.messages.length === 0 || !chatService) return;
+    chatMenuActions.selectChat(chatId);
+    if (state.settings.viewMode === 'page') {
+      commitAndShow(model.setViewMode(state, 'both'));
+    }
+    const result = chatService.sendMessage(chatId, MAKE_SKILL_REQUEST, []);
+    if (!result.ok) {
+      void dialog.showMessageBox(win, {
+        type: 'info',
+        message: 'The skill could not be started.',
+        detail: result.error,
+      });
+    }
+  };
+
   // "Search chats…": show only the chat (whose list is in the sidebar) and put the
   // keyboard in the list's search box.
   const openChatSearch = () => {
@@ -4292,6 +4312,9 @@ export async function createTabs(
         break;
       case 'export':
         void exportChat(choice.chatId);
+        break;
+      case 'make-skill':
+        makeSkillFromChat(choice.chatId);
         break;
       case 'search':
         openChatSearch();

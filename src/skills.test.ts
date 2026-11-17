@@ -10,6 +10,7 @@ import {
   duplicateSkill,
   emptySkills,
   enabledSkills,
+  MAKE_SKILL_REQUEST,
   MAX_DESCRIPTION_CHARS,
   MAX_INSTRUCTION_CHARS,
   MAX_NAME_CHARS,
@@ -312,4 +313,12 @@ test('file names come from the skill name and never contain a path', () => {
     ok: true,
     value: { name: 'x', description: '', instructions: 'y' },
   });
+});
+
+test('the "make a skill from this chat" request asks for ONE create_skill call, in general terms, with nothing private', () => {
+  assert.match(MAKE_SKILL_REQUEST, /create_skill/);
+  assert.match(MAKE_SKILL_REQUEST, /starts with "Use when"/);
+  assert.match(MAKE_SKILL_REQUEST, /general terms/);
+  assert.match(MAKE_SKILL_REQUEST, /no private details/);
+  assert.match(MAKE_SKILL_REQUEST, /Do not use any other tool first/);
 });
