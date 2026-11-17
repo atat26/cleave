@@ -2826,6 +2826,68 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    tabStore: {
+      allTabs: () =>
+        state.tabs.map((t) => ({
+          id: t.id,
+          title: t.title,
+          url: t.url,
+          spaceId: t.spaceId,
+          closed: t.closed,
+          asleep: !t.closed && !views.has(t.id),
+          active: state.active?.kind === 'tab' && state.active.id === t.id,
+        })),
+      allSpaces: () =>
+        state.spaces.map((s) => ({
+          id: s.id,
+          name: s.name,
+          emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
+          hasNote: s.about.trim() !== '',
+        })),
+      moveTab: (tabId, spaceId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (spaceId !== null && !model.findSpace(state, spaceId)) {
+          return { ok: false, reason: 'no-space' };
+        }
+        if (model.isNewTabPage(tab.url))
+          return { ok: false, reason: 'new-tab' };
+        commit(model.moveTab(state, tabId, spaceId));
+        return { ok: true };
+      },
+      closeTab: (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (tab.closed) return { ok: false, reason: 'closed' };
+        closeTab(tabId);
+        return { ok: true };
+      },
+      sleepTab: (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (tab.closed) return { ok: false, reason: 'closed' };
+        if (state.active?.kind === 'tab' && state.active.id === tabId) {
+          return { ok: false, reason: 'active' };
+        }
+        if (!views.has(tabId)) return { ok: false, reason: 'asleep' };
+        putToSleep([tabId]);
+        return { ok: true };
+      },
+      reopenTab: (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (!tab.closed) return { ok: false, reason: 'open' };
+        // Opened where it is, without switching to it.
+        commit({ ...model.reopenTab(state, tabId), active: state.active });
+        return { ok: true };
+      },
+      spaceNote: (spaceId) => model.findSpace(state, spaceId)?.about ?? null,
+      setSpaceNote: (spaceId, text) => {
+        if (!model.findSpace(state, spaceId)) return { ok: false };
+        commit(model.setSpaceAbout(state, spaceId, text));
+        return { ok: true };
+      },
+    },
     screenshotPage: screenshotTab,
     findInPage: findInTab,
     readTables: tablesInTab,

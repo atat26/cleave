@@ -29,11 +29,12 @@ export const LEVEL_WORDS: Record<ApprovalLevel, string> = {
   never: 'Never allow',
 };
 
-export type ToolGroup = 'look' | 'act' | 'artifacts' | 'chat';
+export type ToolGroup = 'look' | 'act' | 'tabs' | 'artifacts' | 'chat';
 
 export const GROUP_TITLES: Record<ToolGroup, string> = {
   look: 'Looking and reading',
   act: 'Acting in tabs',
+  tabs: 'Your tabs and Spaces',
   artifacts: 'Artifacts',
   chat: 'Talking to you',
 };
@@ -191,6 +192,73 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     warning:
       'The assistant will be able to search the web on its own. What it searches for is sent to your search provider, and a malicious web page could try to make it put something private into a search.',
     setup: 'web-search',
+  },
+  {
+    name: 'list_all_tabs',
+    group: 'tabs',
+    title: 'List all your tabs',
+    summary:
+      'See the titles, addresses and Spaces of ALL your tabs, not only the linked ones (never their contents).',
+    defaultLevel: 'ask',
+    changesThings: false,
+    warning:
+      'The assistant will be able to see the title and address of every tab you have open, whenever it likes. It still cannot read pages that are not linked.',
+  },
+  {
+    name: 'move_tabs',
+    group: 'tabs',
+    title: 'Move tabs between Spaces',
+    summary: 'Move one or more tabs into a Space, on one approval card.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to rearrange your tabs and Spaces on its own. Moving a tab into a Space that is linked to the chat also lets it read that tab.',
+  },
+  {
+    name: 'close_tab',
+    group: 'tabs',
+    title: 'Close a tab',
+    summary: 'Close a tab (it can be opened again).',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to close your tabs on its own. Anything not saved in the page is lost.',
+  },
+  {
+    name: 'sleep_tab',
+    group: 'tabs',
+    title: 'Put a tab to sleep',
+    summary: 'Unload a tab to save memory (not the one on screen).',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to put your tabs to sleep on its own. Anything typed into a page and not saved is lost.',
+  },
+  {
+    name: 'reopen_tab',
+    group: 'tabs',
+    title: 'Open a closed tab again',
+    summary: 'Open a closed link in a Space again.',
+    defaultLevel: 'ask',
+    changesThings: true,
+  },
+  {
+    name: 'read_space_note',
+    group: 'tabs',
+    title: "Read a Space's note",
+    summary: 'Read the "About this Space" note of a linked Space.',
+    defaultLevel: 'if-safe',
+    changesThings: false,
+  },
+  {
+    name: 'edit_space_note',
+    group: 'tabs',
+    title: "Add to a Space's note",
+    summary: 'Add to, or rewrite, the note of a linked Space (its memory).',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to write in your Space notes on its own. Notes are read in later chats, so a malicious page could try to plant something there. It still asks first if it has read web content in the same reply.',
   },
   {
     name: 'read_artifact',

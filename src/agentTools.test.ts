@@ -279,6 +279,15 @@ function setup(
       };
     },
     linkedTabs: () => tabs,
+    // (The tab and Space tools have their own tests in tabTools.test.ts.)
+    allTabs: () => [],
+    allSpaces: () => [],
+    moveTab: () => ({ ok: true as const }),
+    closeTab: () => ({ ok: true as const }),
+    sleepTab: () => ({ ok: true as const }),
+    reopenTab: () => ({ ok: true as const }),
+    spaceNote: () => null,
+    setSpaceNote: () => ({ ok: true }),
     screenshotPage: async (id) =>
       shots.get(id) ?? { ok: false, reason: 'closed' },
     findInPage: async (id, text) =>
@@ -1507,4 +1516,43 @@ test('the Tools panel knows the eyes tools, and turning one off removes it', () 
       'read_tables',
     ),
   );
+});
+
+test('the tab and Space tools are offered, are in the Tools panel, and listing tabs counts as having read web content', async () => {
+  const everything = createAgentTools(
+    setup().env,
+    () => 'always',
+  ).definitions.map((d) => d.name);
+  for (const name of [
+    'list_all_tabs',
+    'move_tabs',
+    'close_tab',
+    'sleep_tab',
+    'reopen_tab',
+    'read_space_note',
+    'edit_space_note',
+  ]) {
+    assert.ok(everything.includes(name), name);
+    assert.ok(defaultLevel(name) !== undefined, name);
+  }
+  // Every one that changes something asks by default.
+  for (const name of [
+    'move_tabs',
+    'close_tab',
+    'sleep_tab',
+    'edit_space_note',
+  ]) {
+    assert.equal(defaultLevel(name), 'ask', name);
+  }
+  assert.equal(defaultLevel('list_all_tabs'), 'ask');
+  // After listing the tabs (titles are written by web pages), writing an artifact
+  // always asks, like after reading a page.
+  const { tools } = setup(undefined, (tool) =>
+    tool === 'create_artifact' ? 'always' : 'always',
+  );
+  await tools.run(call('list_all_tabs', {}), ABORT);
+  const write = tools.plan(
+    call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
+  );
+  assert.equal(write.kind, 'ask');
 });
