@@ -185,7 +185,7 @@ import {
   parseToolSettings,
   withLevel,
 } from './toolSettings';
-import type { FrameLayout, ResizeKind, UiState } from './types';
+import type { FrameLayout, LibraryList, ResizeKind, UiState } from './types';
 import { loadUi } from './ui';
 import { resolveInput, searchUrl } from './url';
 import {
@@ -1155,6 +1155,57 @@ export async function createTabs(
     return true;
   };
 
+  // Ctrl+L (or Alt+D): the keyboard goes to the address bar.
+  const focusAddress = () => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.focus();
+    win.webContents.send('toolbar:focus-address');
+  };
+
+  // Reload without using saved copies (Ctrl+Shift+R, Ctrl+F5).
+  const hardReload = () => {
+    const id = activeTabId();
+    const page = id === null ? undefined : pageContents(id);
+    if (id === null || !page) return;
+    if (failedPages.has(id)) reloadTab(id, page);
+    else page.reloadIgnoringCache();
+  };
+
+  // Back and forward in the page you are on (Alt+Left / Alt+Right, and the mouse's
+  // back and forward buttons).
+  const goBackOrForward = (direction: 'back' | 'forward') => {
+    const id = activeTabId();
+    const history =
+      id === null ? undefined : pageContents(id)?.navigationHistory;
+    if (!history) return;
+    if (direction === 'back' && history.canGoBack()) history.goBack();
+    if (direction === 'forward' && history.canGoForward()) history.goForward();
+  };
+
+  // Ctrl+1 to Ctrl+8: that tab, counting from the top of the sidebar; Ctrl+9: the
+  // last one.
+  const goToTabNumber = (number: number) => {
+    const order = model.navOrder(state);
+    const target = number === 9 ? order[order.length - 1] : order[number - 1];
+    if (target) select(target);
+  };
+
+  // Open the Library on a list (History for Ctrl+H, Downloads from the indicator).
+  const showLibraryList = (list: LibraryList) => {
+    state = model.setRightPanel(state, 'library');
+    saver.schedule();
+    applyLayout(true);
+    sendState();
+    const send = () => {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('library:select-list', list);
+      }
+    };
+    send();
+    // A panel that was not open yet is still starting: say it again once it is.
+    setTimeout(send, 300);
+  };
+
   // The window itself full screen (F11, and "Full screen" in the "…" menu).
   const toggleWindowFullscreen = () => {
     if (htmlFullscreen !== null) {
@@ -1273,6 +1324,20 @@ export async function createTabs(
         // Already gone.
       }
       closeTab(tab.id);
+    });
+    // Esc stops a page that is still loading (the key still reaches the page).
+    contents.on('before-input-event', (_event, input) => {
+      if (
+        input.type === 'keyDown' &&
+        input.key === 'Escape' &&
+        !input.control &&
+        !input.alt &&
+        !input.meta &&
+        !input.shift &&
+        contents.isLoading()
+      ) {
+        contents.stop();
+      }
     });
     // A video (or page) goes full screen, or stops being: it fills the window.
     contents.on('enter-html-full-screen', () => enterHtmlFullscreen(tab.id));
@@ -3167,6 +3232,40 @@ export async function createTabs(
       else win.webContents.focus();
       return;
     }
+    // F5: reload.
+    if (
+      input.type === 'keyDown' &&
+      input.key === 'F5' &&
+      !input.control &&
+      !input.alt &&
+      !input.meta
+    ) {
+      event.preventDefault();
+      const id = activeTabId();
+      const page = id === null ? undefined : pageContents(id);
+      if (id !== null && page) reloadTab(id, page);
+      return;
+    }
+    // Alt+D: the address bar. Alt+Left / Alt+Right: back and forward.
+    if (
+      input.type === 'keyDown' &&
+      input.alt &&
+      !input.control &&
+      !input.meta &&
+      !input.shift
+    ) {
+      if (input.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        focusAddress();
+      } else if (input.key === 'ArrowLeft') {
+        event.preventDefault();
+        goBackOrForward('back');
+      } else if (input.key === 'ArrowRight') {
+        event.preventDefault();
+        goBackOrForward('forward');
+      }
+      return;
+    }
     if (input.type !== 'keyDown' || !input.control || input.alt || input.meta)
       return;
     const key = input.key.toLowerCase();
@@ -3200,6 +3299,24 @@ export async function createTabs(
     } else if (key === 't') {
       event.preventDefault();
       openTab(newTabUrl(), currentSpaceId());
+    } else if (key === 'l') {
+      event.preventDefault();
+      focusAddress();
+    } else if (key === 'h') {
+      event.preventDefault();
+      showLibraryList('history');
+    } else if (key === 'delete' && input.shift) {
+      event.preventDefault();
+      openSettings();
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send('settings:section', 'privacy');
+      }
+    } else if ((key === 'r' && input.shift) || key === 'f5') {
+      event.preventDefault();
+      hardReload();
+    } else if (/^[1-9]$/.test(key) && !input.shift) {
+      event.preventDefault();
+      goToTabNumber(Number(key));
     } else if (key === 'r') {
       event.preventDefault();
       const id = activeTabId();
@@ -3573,13 +3690,7 @@ export async function createTabs(
         list !== 'deleted'
       )
         return;
-      state = model.setRightPanel(state, 'library');
-      saver.schedule();
-      applyLayout(true);
-      sendState();
-      if (!win.webContents.isDestroyed()) {
-        win.webContents.send('library:select-list', list);
-      }
+      showLibraryList(list);
     },
     'library:remove-bookmark': (id) => {
       if (!isId(id)) return;
@@ -4689,6 +4800,11 @@ ${artifact.content.slice(0, 1500)}`;
     if (!win.isDestroyed()) applyLayout(false);
   };
   win.on('show', relayout);
+  // The mouse's back and forward buttons.
+  win.on('app-command', (_event, command) => {
+    if (command === 'browser-backward') goBackOrForward('back');
+    else if (command === 'browser-forward') goBackOrForward('forward');
+  });
   win.on('maximize', relayout);
   win.on('unmaximize', relayout);
   win.on('restore', relayout);
