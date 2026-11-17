@@ -459,15 +459,26 @@ export function LeadView({
                 title="Open pages"
                 count={shown.open.length}
                 actions={
-                  <Button
-                    size="sm"
-                    className="reveal"
-                    onClick={() =>
-                      window.browserApi.spaceBulk(space.id, 'close-all')
-                    }
-                  >
-                    Close all
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      className="reveal"
+                      onClick={() =>
+                        window.browserApi.spaceBulk(space.id, 'sleep')
+                      }
+                    >
+                      Put to sleep
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="reveal"
+                      onClick={() =>
+                        window.browserApi.spaceBulk(space.id, 'close-all')
+                      }
+                    >
+                      Close all
+                    </Button>
+                  </>
                 }
               >
                 <div className="ov-grid">

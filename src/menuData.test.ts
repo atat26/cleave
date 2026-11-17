@@ -1453,3 +1453,18 @@ test('the Space switcher lists every Space in order, ticks the current one and s
     assert.equal(parseSwitchSpaceChoice(bad), null, bad);
   }
 });
+
+test('the Space menu can put its pages to sleep, greyed when none can', async () => {
+  const { spaceMenuItems, parseSpaceChoice } = await import('./menuData.ts');
+  const { addSpace, defaultState } = await import('./model.ts');
+  const made = addSpace(defaultState(), 'Work');
+  assert.equal(
+    entry(spaceMenuItems(made.state, made.id)!, 'space.sleep').disabled,
+    true,
+  );
+  assert.equal(
+    entry(spaceMenuItems(made.state, made.id, 3)!, 'space.sleep').disabled,
+    false,
+  );
+  assert.deepEqual(parseSpaceChoice('space.sleep'), { action: 'sleep' });
+});

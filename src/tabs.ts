@@ -49,6 +49,14 @@ import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { exportFileName, spaceMarkdown } from './spaceExport';
 import {
+  defaultSleepSettings,
+  idleSleepers,
+  parseSleepSettings,
+  spaceSleepers,
+  withSleepSettings,
+} from './sleep';
+import type { SleepTab } from './sleep';
+import {
   defaultSpaceTrash,
   emptySpaceTrash,
   parseSpaceTrash,
@@ -536,6 +544,20 @@ export async function createTabs(
     defaultSpaceTrash,
   );
   const spaceTrashSaver = createSaver(deletedSpacesFile, () => spaceTrash);
+  // Whether unused pages go to sleep by themselves (see sleep.ts).
+  const sleepSettingsFile = path.join(
+    app.getPath('userData'),
+    'sleep-settings.json',
+  );
+  let sleepSettings = await loadJson(
+    sleepSettingsFile,
+    parseSleepSettings,
+    defaultSleepSettings,
+  );
+  const sleepSettingsSaver = createSaver(
+    sleepSettingsFile,
+    () => sleepSettings,
+  );
   // The browser extensions you added (see extensionList.ts).
   const extensionsFile = path.join(app.getPath('userData'), 'extensions.json');
   let extensionList = await loadJson(
@@ -1996,6 +2018,7 @@ export async function createTabs(
     if (tab && tab.spaceId !== null && !tab.closed) {
       lastInSpace.set(tab.spaceId, tab.id);
     }
+    if (tab) lastUsed.set(tab.id, Date.now());
     for (const [tabId, view] of views) {
       // Hidden pages are not resized while the layout slides, so catch up now.
       if (tabId === id) view.setBounds(pageBounds());
@@ -3513,6 +3536,9 @@ export async function createTabs(
       case 'ungroup':
         menuActions.ungroupSpace(spaceId);
         break;
+      case 'sleep':
+        putToSleep(spaceSleepers(sleepTabs(), spaceId, activeTabId()));
+        break;
       case 'duplicate':
         duplicateSpace(spaceId);
         break;
@@ -3654,6 +3680,27 @@ export async function createTabs(
   const select = (ref: ActiveRef) =>
     commitAndShow(revealPage(model.setActive(state, ref)));
 
+  // When each page was last shown (for putting unused pages to sleep).
+  const lastUsed = new Map<number, number>();
+  // What the sleep rules need to know about each page right now.
+  const sleepTabs = (): SleepTab[] =>
+    state.tabs.map((t) => ({
+      id: t.id,
+      spaceId: t.spaceId,
+      loaded: views.has(t.id),
+      closed: t.closed,
+      audible: pageContents(t.id)?.isCurrentlyAudible() ?? false,
+      working: working.has(t.id),
+    }));
+  // Put pages to sleep: their live web page goes (no memory used) and they load
+  // again when opened.
+  const putToSleep = (ids: number[]) => {
+    for (const id of ids) {
+      destroyView(id);
+      lastUsed.delete(id);
+    }
+    if (ids.length > 0) sendState();
+  };
   // The page you were last on in each Space (so going to a Space lands there).
   const lastInSpace = new Map<number, number>();
   // Go to a Space: the page you were last on there, else its first open page, else
@@ -5025,13 +5072,21 @@ export async function createTabs(
     },
     'space:bulk': (id, action) => {
       if (!isId(id) || !model.findSpace(state, id)) return;
-      if (action === 'close-all' || action === 'reopen-all') {
+      if (
+        action === 'close-all' ||
+        action === 'reopen-all' ||
+        action === 'sleep'
+      ) {
         runSpaceChoice(id, `space.${action}`);
       }
     },
     'space:menu': (id, x, y) => {
       if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
-      const items = spaceMenuItems(state, id);
+      const items = spaceMenuItems(
+        state,
+        id,
+        spaceSleepers(sleepTabs(), id, activeTabId()).length,
+      );
       if (!items) return;
       showMenu(
         items,
@@ -5362,6 +5417,28 @@ export async function createTabs(
       );
     }
   };
+  ipcMain.handle('sleep-settings:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return sleepSettings;
+  });
+  ipcMain.handle('sleep-settings:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    sleepSettings = withSleepSettings(sleepSettings, changes);
+    sleepSettingsSaver.schedule();
+    return sleepSettings;
+  });
+  // Every minute: pages that have gone unused for the time you chose go to sleep.
+  const sleepTimer = setInterval(() => {
+    putToSleep(
+      idleSleepers(
+        sleepTabs(),
+        lastUsed,
+        Date.now(),
+        sleepSettings.afterMinutes,
+        activeTabId(),
+      ),
+    );
+  }, 60_000);
   ipcMain.handle('extension-settings:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return extensionSettings;
@@ -5946,6 +6023,7 @@ ${artifact.content.slice(0, 1500)}`;
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
     spaceTrashSaver.flushSync();
+    sleepSettingsSaver.flushSync();
     extensionsSaver.flushSync();
     extensionSettingsSaver.flushSync();
   });
@@ -6003,6 +6081,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
     clearInterval(trashTimer);
+    clearInterval(sleepTimer);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);
   });

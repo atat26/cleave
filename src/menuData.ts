@@ -229,6 +229,7 @@ export type SpaceChoice =
   | { action: 'reopen-all' }
   | { action: 'duplicate' }
   | { action: 'export' }
+  | { action: 'sleep' }
   | { action: 'delete' };
 
 const capitalize = (text: string) =>
@@ -238,6 +239,8 @@ const capitalize = (text: string) =>
 export function spaceMenuItems(
   state: SavedState,
   spaceId: number,
+  // How many of its pages could be put to sleep now (the menu item is greyed if none).
+  sleepable = 0,
 ): MenuItem[] | null {
   const space = model.findSpace(state, spaceId);
   if (!space) return null;
@@ -304,6 +307,13 @@ export function spaceMenuItems(
     },
     {
       type: 'item',
+      id: 'space.sleep',
+      label: 'Put pages to sleep',
+      icon: 'moon',
+      disabled: sleepable === 0,
+    },
+    {
+      type: 'item',
       id: 'space.duplicate',
       label: 'Duplicate Space',
       icon: 'copy',
@@ -359,6 +369,8 @@ export function parseSpaceChoice(id: string): SpaceChoice | null {
       return { action: 'reopen-all' };
     case 'space.duplicate':
       return { action: 'duplicate' };
+    case 'space.sleep':
+      return { action: 'sleep' };
     case 'space.export':
       return { action: 'export' };
     case 'space.delete':

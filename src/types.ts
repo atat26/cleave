@@ -8,6 +8,7 @@ import type { SearchEngineSettings } from './searchEngine';
 import type { NewTabSettings } from './newTabSettings';
 import type { ExtensionRecord } from './extensionList';
 import type { ExtensionSettings } from './extensionSettings';
+import type { SleepSettings } from './sleep';
 
 // A button's box on the window.
 export interface ExtensionBox {
@@ -639,7 +640,12 @@ export interface BrowserApi {
   // "New" in the Artifacts panel: a menu of kinds (made in the Space you are in).
   showNewArtifactMenu: (x: number, y: number) => void;
   // Close all of a Space's open pages, or reopen all its closed ones.
-  spaceBulk: (id: number, action: 'close-all' | 'reopen-all') => void;
+  spaceBulk: (id: number, action: 'close-all' | 'reopen-all' | 'sleep') => void;
+  // Settings > Pages and memory.
+  sleepSettingsGet: () => Promise<SleepSettings>;
+  sleepSettingsSet: (changes: {
+    afterMinutes?: number;
+  }) => Promise<SleepSettings>;
   // The Space switcher menu, at a place in the window.
   showSpaceSwitcher: (x: number, y: number) => void;
   // Save the note on a Space's overview.
