@@ -5,6 +5,8 @@ import { ArtifactView } from './ArtifactView';
 import { pushInsert } from './composerBus';
 import { requestSettingsSection } from './settingsNav';
 import { LeadView } from './LeadView';
+import { isNewTabPage } from './model';
+import { NewTabView } from './NewTabView';
 import type { RightPanel as RightPanelName } from './model';
 import { Rail } from './Rail';
 import { RightPanel } from './RightPanel';
@@ -118,6 +120,8 @@ export function App() {
     active?.kind === 'tab'
       ? state.tabs.find((tab) => tab.id === active.id)
       : undefined;
+  // A new tab: the window draws the new-tab page, and the address bar stays empty.
+  const onNewTab = activeTab !== undefined && isNewTabPage(activeTab.url);
   const activeArtifact =
     active?.kind === 'artifact'
       ? state.artifactTabs.find((a) => a.id === active.id)
@@ -133,7 +137,7 @@ export function App() {
   return (
     <>
       <Toolbar
-        url={activeTab?.url ?? ''}
+        url={onNewTab ? '' : (activeTab?.url ?? '')}
         canGoBack={state.canGoBack}
         canGoForward={state.canGoForward}
         loading={state.loading}
@@ -146,6 +150,13 @@ export function App() {
         viewMode={state.viewMode}
         chats={state.chats}
       />
+      {onNewTab && activeTab && (
+        <NewTabView
+          key={activeTab.id}
+          tab={activeTab}
+          space={state.spaces.find((s) => s.id === activeTab.spaceId)}
+        />
+      )}
       {activeArtifact && (
         <ArtifactView key={activeArtifact.id} tab={activeArtifact} />
       )}
