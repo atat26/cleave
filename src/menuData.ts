@@ -227,6 +227,8 @@ export type SpaceChoice =
   | { action: 'ungroup' }
   | { action: 'close-all' }
   | { action: 'reopen-all' }
+  | { action: 'duplicate' }
+  | { action: 'export' }
   | { action: 'delete' };
 
 const capitalize = (text: string) =>
@@ -302,6 +304,18 @@ export function spaceMenuItems(
     },
     {
       type: 'item',
+      id: 'space.duplicate',
+      label: 'Duplicate Space',
+      icon: 'copy',
+    },
+    {
+      type: 'item',
+      id: 'space.export',
+      label: 'Export as Markdown…',
+      icon: 'download',
+    },
+    {
+      type: 'item',
       id: 'space.reopen-all',
       label: 'Reopen closed pages',
       icon: 'undo',
@@ -343,6 +357,10 @@ export function parseSpaceChoice(id: string): SpaceChoice | null {
       return { action: 'close-all' };
     case 'space.reopen-all':
       return { action: 'reopen-all' };
+    case 'space.duplicate':
+      return { action: 'duplicate' };
+    case 'space.export':
+      return { action: 'export' };
     case 'space.delete':
       return { action: 'delete' };
   }

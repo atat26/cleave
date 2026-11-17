@@ -273,7 +273,7 @@ export type LibraryList =
 
 // A deleted chat or artifact, as the Library lists it.
 export interface DeletedItemInfo {
-  kind: 'chat' | 'artifact';
+  kind: 'chat' | 'artifact' | 'space';
   id: number;
   title: string;
   emoji: string;
@@ -525,8 +525,11 @@ export interface BrowserApi {
   libraryClosed: () => Promise<ClosedTabInfo[]>;
   // Chats and artifacts deleted lately, newest first, and what to do with them.
   libraryDeleted: () => Promise<DeletedItemInfo[]>;
-  libraryRestore: (kind: 'chat' | 'artifact', id: number) => void;
-  libraryDeleteForever: (kind: 'chat' | 'artifact', id: number) => void;
+  libraryRestore: (kind: 'chat' | 'artifact' | 'space', id: number) => void;
+  libraryDeleteForever: (
+    kind: 'chat' | 'artifact' | 'space',
+    id: number,
+  ) => void;
   // Settings > Library (history and Recently deleted).
   librarySettingsGet: () => Promise<LibrarySettings>;
   librarySettingsSet: (

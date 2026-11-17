@@ -10,6 +10,7 @@ import {
   shell,
   WebContentsView,
 } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   blendSizes,
@@ -46,6 +47,16 @@ import {
 } from './layout';
 import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
+import { exportFileName, spaceMarkdown } from './spaceExport';
+import {
+  defaultSpaceTrash,
+  emptySpaceTrash,
+  parseSpaceTrash,
+  purgeOldTrashedSpaces,
+  purgeTrashedSpace,
+  takeTrashedSpace,
+  trashSpace,
+} from './spaceTrash';
 import { setPreviewInternetCheck } from './previewGuard';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
@@ -514,6 +525,17 @@ export async function createTabs(
   const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
   let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
   const closedSaver = createSaver(closedFile, () => closedTabs);
+  // Deleted Spaces, kept for a while so they can be brought back (see spaceTrash.ts).
+  const deletedSpacesFile = path.join(
+    app.getPath('userData'),
+    'deleted-spaces.json',
+  );
+  let spaceTrash = await loadJson(
+    deletedSpacesFile,
+    parseSpaceTrash,
+    defaultSpaceTrash,
+  );
+  const spaceTrashSaver = createSaver(deletedSpacesFile, () => spaceTrash);
   // The browser extensions you added (see extensionList.ts).
   const extensionsFile = path.join(app.getPath('userData'), 'extensions.json');
   let extensionList = await loadJson(
@@ -2220,7 +2242,7 @@ export async function createTabs(
       !(await confirm({
         title: 'Delete Space',
         message: `Delete “${space.name}”?`,
-        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
+        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It waits in Recently deleted in the Library, where you can bring it back.`,
         button: 'Delete Space and close tabs',
       }))
     ) {
@@ -2228,6 +2250,30 @@ export async function createTabs(
     }
     // The Space may have changed while the dialog was open.
     syncLinkSnapshots(); // Chats' links to this Space and its tabs remember them.
+    // It waits in Recently deleted (its pages as links, and which artifacts it held),
+    // unless there was nothing in it.
+    const pages = state.tabs
+      .filter((t) => t.spaceId === id && model.isWebUrl(t.url))
+      .map((t) => ({ title: t.title, url: t.url }));
+    const artifactIds = artifacts.artifacts
+      .filter((a) => a.spaceId === id)
+      .map((a) => a.id);
+    if (pages.length > 0 || artifactIds.length > 0 || space.about !== '') {
+      spaceTrash = trashSpace(
+        spaceTrash,
+        {
+          name: space.name,
+          color: space.color,
+          emoji: space.emoji,
+          about: space.about,
+          pages,
+          artifactIds,
+        },
+        Date.now(),
+      );
+      spaceTrashSaver.schedule();
+      libraryChanged();
+    }
     const result = model.deleteSpace(state, id);
     // Its artifacts are kept, just no longer in a Space.
     commitArtifacts(artifactsModel.releaseSpace(artifacts, id));
@@ -2818,6 +2864,131 @@ export async function createTabs(
         librarySettings.trashDays,
       ),
     );
+    const keptSpaces = purgeOldTrashedSpaces(
+      spaceTrash,
+      now,
+      librarySettings.trashDays,
+    );
+    if (keptSpaces !== spaceTrash) {
+      spaceTrash = keptSpaces;
+      spaceTrashSaver.schedule();
+    }
+  };
+
+  // Make a Space with a name, colour, picture and note, and its pages as links
+  // (closed ones stay closed; the rest are sleeping tabs). Returns its id.
+  const buildSpace = (input: {
+    name: string;
+    color: string;
+    emoji: string | null;
+    about: string;
+    pages: { title: string; url: string; closed: boolean }[];
+  }): number | null => {
+    if (state.spaces.length >= model.MAX_SPACES) return null;
+    const created = model.addSpace(state, input.name);
+    let next = created.state;
+    const color = model.SPACE_COLORS.find((c) => c === input.color);
+    if (color) next = model.setSpaceColor(next, created.id, color);
+    if (input.emoji !== null) {
+      next = model.setSpaceEmoji(next, created.id, input.emoji);
+    }
+    next = model.setSpaceAbout(next, created.id, input.about);
+    for (const page of input.pages) {
+      if (!model.isWebUrl(page.url)) continue;
+      const added = model.addTab(next, {
+        url: page.url,
+        spaceId: created.id,
+        activate: false,
+      });
+      next = model.updateTab(added.state, added.id, { title: page.title });
+      if (page.closed) next = model.closeTab(next, added.id);
+    }
+    commit(next);
+    return created.id;
+  };
+
+  // Bring a deleted Space back from Recently deleted: its pages come back as closed
+  // links, and its artifacts that are still around and in no Space move back in.
+  const restoreDeletedSpace = (trashId: number) => {
+    const taken = takeTrashedSpace(spaceTrash, trashId);
+    if (!taken) return;
+    const id = buildSpace({
+      ...taken.item,
+      pages: taken.item.pages.map((p) => ({ ...p, closed: true })),
+    });
+    if (id === null) return;
+    spaceTrash = taken.trash;
+    spaceTrashSaver.schedule();
+    let kept = artifacts;
+    for (const artifactId of taken.item.artifactIds) {
+      const found = artifactsModel.findArtifact(kept, artifactId);
+      if (!found || found.spaceId !== null) continue;
+      const moved = artifactsModel.updateArtifact(
+        kept,
+        artifactId,
+        { spaceId: id },
+        Date.now(),
+      );
+      if (moved.ok) kept = moved.state;
+    }
+    commitArtifacts(kept);
+    libraryChanged();
+    select({ kind: 'lead', spaceId: id });
+  };
+
+  // A copy of a Space: same colour, picture and note, its pages as sleeping tabs
+  // (the closed ones stay closed), and copies of its artifacts. Chats are not copied.
+  const duplicateSpace = (spaceId: number) => {
+    const source = model.findSpace(state, spaceId);
+    if (!source) return;
+    const id = buildSpace({
+      name: `${source.name} copy`,
+      color: source.color,
+      emoji: source.emoji,
+      about: source.about,
+      pages: state.tabs
+        .filter((t) => t.spaceId === spaceId)
+        .map((t) => ({ title: t.title, url: t.url, closed: t.closed })),
+    });
+    if (id === null) return;
+    for (const a of artifacts.artifacts.filter((x) => x.spaceId === spaceId)) {
+      copyArtifact(a.id, id);
+    }
+    select({ kind: 'lead', spaceId: id });
+  };
+
+  // Save a Space as a Markdown file (its pages and artifact titles, not their text).
+  const exportSpace = async (spaceId: number) => {
+    const space = model.findSpace(state, spaceId);
+    if (!space) return;
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export Space',
+      defaultPath: path.join(
+        app.getPath('documents'),
+        exportFileName(space.name),
+      ),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (picked.canceled || !picked.filePath) return;
+    const text = spaceMarkdown({
+      name: space.name,
+      about: space.about,
+      pages: state.tabs
+        .filter((t) => t.spaceId === spaceId)
+        .map((t) => ({ title: t.title, url: t.url, closed: t.closed })),
+      artifacts: artifacts.artifacts
+        .filter((a) => a.spaceId === spaceId)
+        .map((a) => ({ title: a.title, kind: a.kind })),
+    });
+    try {
+      fs.writeFileSync(picked.filePath, text, 'utf8');
+    } catch (error) {
+      void dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'The Space could not be saved.',
+        detail: (error as Error).message,
+      });
+    }
   };
 
   const deleteChat = (id: number) => {
@@ -3341,6 +3512,12 @@ export async function createTabs(
         break;
       case 'ungroup':
         menuActions.ungroupSpace(spaceId);
+        break;
+      case 'duplicate':
+        duplicateSpace(spaceId);
+        break;
+      case 'export':
+        void exportSpace(spaceId);
         break;
       case 'reopen-all': {
         // Every closed page of the Space comes back as a tab.
@@ -4139,6 +4316,10 @@ export async function createTabs(
     // "…" menu that clears a list.
     'library:restore': (kind, id) => {
       if (!isId(id)) return;
+      if (kind === 'space') {
+        restoreDeletedSpace(id);
+        return;
+      }
       if (kind === 'chat') {
         commitChats(chatsModel.restoreConversation(chats, id));
       } else if (kind === 'artifact') {
@@ -4153,11 +4334,17 @@ export async function createTabs(
       libraryChanged();
     },
     'library:delete-forever': (kind, id) => {
-      if (!isId(id) || (kind !== 'chat' && kind !== 'artifact')) return;
+      if (
+        !isId(id) ||
+        (kind !== 'chat' && kind !== 'artifact' && kind !== 'space')
+      )
+        return;
       const title =
         kind === 'chat'
           ? chats.trash.find((c) => c.id === id)?.title
-          : artifacts.trash.find((a) => a.id === id)?.title;
+          : kind === 'space'
+            ? spaceTrash.items.find((s) => s.id === id)?.name
+            : artifacts.trash.find((a) => a.id === id)?.title;
       if (title === undefined) return;
       void confirm({
         title: 'Delete for good',
@@ -4167,7 +4354,10 @@ export async function createTabs(
         button: 'Delete for good',
       }).then((yes) => {
         if (!yes) return;
-        if (kind === 'chat') {
+        if (kind === 'space') {
+          spaceTrash = purgeTrashedSpace(spaceTrash, id);
+          spaceTrashSaver.schedule();
+        } else if (kind === 'chat') {
           commitChats(chatsModel.purgeConversation(chats, id));
         } else {
           commitArtifacts(artifactsModel.purgeArtifact(artifacts, id));
@@ -4404,12 +4594,15 @@ export async function createTabs(
             void confirm({
               title: 'Empty Recently deleted',
               message: 'Delete everything in Recently deleted for good?',
-              detail: 'These chats and artifacts cannot be brought back.',
+              detail:
+                'These chats, artifacts and Spaces cannot be brought back.',
               button: 'Empty',
             }).then((yes) => {
               if (!yes) return;
               commitChats(chatsModel.emptyChatTrash(chats));
               commitArtifacts(artifactsModel.emptyArtifactTrash(artifacts));
+              spaceTrash = emptySpaceTrash(spaceTrash);
+              spaceTrashSaver.schedule();
               libraryChanged();
             });
           } else if (parsed.range !== 'all') {
@@ -5392,6 +5585,15 @@ export async function createTabs(
         deletedAt: c.deletedAt,
         daysLeft: daysLeft(c.deletedAt),
       })),
+      ...spaceTrash.items.map((s) => ({
+        kind: 'space' as const,
+        id: s.id,
+        title: s.name,
+        emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
+        detail: `Space · ${s.pages.length} page${s.pages.length === 1 ? '' : 's'}`,
+        deletedAt: s.deletedAt,
+        daysLeft: daysLeft(s.deletedAt),
+      })),
       ...artifacts.trash.map((a) => ({
         kind: 'artifact' as const,
         id: a.id,
@@ -5743,6 +5945,7 @@ ${artifact.content.slice(0, 1500)}`;
     faviconsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
+    spaceTrashSaver.flushSync();
     extensionsSaver.flushSync();
     extensionSettingsSaver.flushSync();
   });
