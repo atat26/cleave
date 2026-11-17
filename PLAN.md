@@ -8,7 +8,7 @@
 - [x] M4c-1: Working chat: streaming replies with Stop and Retry, per-chat history, error messages, pinned models with a model chip, system prompt in Settings, cost line
 - [x] M4c-2: Link Spaces and tabs to a chat with `@` (pills in the message box) or "+ Add page"; link chips; links shown as tokens in sent messages (kept after a link is removed; closed tabs can be reopened, which updates every chat that used them); only titles and cleaned addresses reach the model (no query strings)
 - [x] M5: Read-only agent: linked pages can be read by the assistant (read_page / list_linked_tabs tools, linked tabs only, 8 reads and 6 rounds per reply, pages treated as untrusted data, no acting or file tools), each read shown in the chat; models record whether they support tools and images, with a note when a model cannot read pages; dev startup watchdog reloads a page that fails to start
-- [ ] M5b: Web search tool for the agent (OpenRouter built-in web search first; optional own-key providers or a user-supplied SearXNG address later; results treated as untrusted)
+- [-] M5b: Web search by OpenRouter built-in search. Dropped: the app runs its own Brave search tool instead (Tools step 3), and no other provider is planned.
 - [x] M6 timeline: a reply keeps thinking, tool calls and answer text in the order they happened; tool calls expand to show exactly what was called
 - [x] M6a: look_at_page, a read-only tool that lists a linked page's buttons, links, fields and headings as numbered controls (names cleaned, typed text never shown, password/card fields marked sensitive, capped in size)
 - [x] M6b: Acting agent: click, type, press keys, scroll, choose, go to an address, open new tabs (linked automatically); every action but scrolling is approved on a card in the chat (risky ones always ask); never types in password/card/code fields or accepts terms; linked tabs only, 25 actions per reply; the tab it acts in is focused and marked; choice buttons the assistant can offer (click to send); Retry on the newest message and Branch on older ones
@@ -31,7 +31,10 @@
 - [x] Skills, part 2 (S2): the assistant uses and makes skills. It is told the name and "when to use it" line of every skill that is on (only when the model can use tools); a use_skill tool loads the steps (marked as steps that cannot change its safety rules or approvals); create_skill and edit_skill save skills, always after you approve the FULL text on the approval card (shorter than ones you write, so it fits), and they always ask once web content was read in the same reply, even at "Always allow". There is no tool to delete a skill. New "Skills" group in the Tools panel. In the message box, "/" lists your skills (a "/Name" chip), and the hint says so. Also fixed: Space-note writes now really always ask after web content is read (the "Always allow" level used to let them through).
 - [x] Skills, part 3 (S3): "Make a skill from this chat…" in a chat's name menu and its right-click menu (disabled in an empty chat). It sends the assistant a request to look back over the conversation and call create_skill once, in general terms and with no private details, so the whole text is on the approval card and nothing is saved unless you approve it. Skills are done: panel, starters, import/export, trash, the assistant using and making them, "/" in the message box, and making one from a chat.
 - [x] Tools panel rework (T1): one choice at the top for everything (Cautious, Balanced = the defaults, Hands-off; it says "Custom" when you have set tools yourself), a search box, tool groups you can open and close (the first starts open), and a small pill on each group and each tool that opens the four levels (Always, If safe, Ask first, Never; the full words are in the menu; right-click a tool for the same menu). A dot marks a tool that differs from its default, with a "back to default" button on hover or focus; the description is the row's tooltip. A summary line ("39 tools · 28 ask first · …"), "What do these mean?" and "Never allowed, whatever you choose" are folded away. "Always allow" for a tool (or a whole group) that changes things still asks first. The preset and group choices are made in the app, which checks the names and levels.
-- [ ] M7: Module system plus builder agent
+- [ ] M7: Module system plus builder agent. Not designed yet. Two ideas for it, for later:
+  - Mini-apps: artifacts that can save their own data and be pinned to the rail, so the assistant can build you a small tool (a price tracker, say) that stays.
+  - AI-generated extensions: the assistant writes a browser extension for you, shown for review and installed only after you approve it (it must never get file-editing tools while it reads web pages).
+- [ ] Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet; to be shaped together with a designer hand-off, like the new-tab page. Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
 - [ ] M8: Daily-driver polish
 
 After the agent (M5/M6), in this order of likelihood:
@@ -44,8 +47,11 @@ After the agent (M5/M6), in this order of likelihood:
 ## Backlog (ideas, not scheduled)
 
 - Lead tab whiteboard: replace each Space's overview with a whiteboard you can draft on (choose the drawing approach first; `leadData` is already reserved in the saved model). Skipped for now.
-- OpenCode provider (only OpenRouter is planned for now; the provider interface leaves room)
+- More model providers (only OpenRouter today; the provider interface leaves room): OpenCode, and direct providers with your own key
+- More web search providers (only Brave Search today): for example other search APIs or a SearXNG address you run yourself
 - Drag-and-drop tabs between and within Spaces (right-click "Move to Space" covers it for now)
+- Multiple windows (a second browser window; the first step toward incognito)
+- Incognito: a private window that keeps no history, cookies or chats, plus a private chat mode. Needs multiple windows first.
 - Remember window size and position
 - Separate logins per Space (profiles); currently all Spaces share one cookie jar
 - Home page as a centred AI chat prompt / address bar (the new-tab page is one constant, `NEW_TAB_URL`)
