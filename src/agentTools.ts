@@ -55,6 +55,8 @@ import {
   RECALL_DEFINITIONS,
 } from './recallTools.ts';
 import type { RecallEnv } from './recallTools.ts';
+import { createSaveTools, isSaveTool, SAVE_DEFINITIONS } from './saveTools.ts';
+import type { SaveEnv } from './saveTools.ts';
 
 export const MAX_PAGE_CHARS = 20_000;
 export const MAX_READS = 8;
@@ -151,7 +153,7 @@ export type LinkReadOutcome =
   | { ok: false; reason: 'blocked' | 'timeout' | 'unavailable' };
 
 export interface AgentEnv
-  extends ActionEnv, ArtifactToolEnv, EyesEnv, TabsEnv, RecallEnv {
+  extends ActionEnv, ArtifactToolEnv, EyesEnv, TabsEnv, RecallEnv, SaveEnv {
   // Reading a page by its address in a hidden, private window (see linkReader.ts).
   readLink(url: string, signal: AbortSignal): Promise<LinkReadOutcome>;
   // The full address a numbered link on a linked tab goes to (or null).
@@ -551,6 +553,7 @@ export function createAgentTools(
   const eyes = createEyesTools(env, levelOf);
   const tabTools = createTabTools(env, levelOf, () => readWebContent());
   const recall = createRecallTools(env, levelOf);
+  const saveTools = createSaveTools(env, levelOf);
 
   // Has the assistant read web content in this reply (a page, a link, a page's
   // controls or search results)? Pages are written by strangers, so after that
@@ -561,7 +564,8 @@ export function createAgentTools(
     searches > 0 ||
     eyes.used() > 0 ||
     tabTools.used() > 0 ||
-    recall.used() > 0;
+    recall.used() > 0 ||
+    saveTools.used() > 0;
 
   const plan = (call: ToolCall): Plan => {
     if (isArtifactTool(call.name)) {
@@ -589,6 +593,7 @@ export function createAgentTools(
     if (isEyesTool(call.name)) return eyes.plan(call);
     if (isTabTool(call.name)) return tabTools.plan(call);
     if (isRecallTool(call.name)) return recall.plan(call);
+    if (isSaveTool(call.name)) return saveTools.plan(call);
     const own: Plan = isActionName(call.name)
       ? planAction(call, actionContext)
       : call.name === 'web_search'
@@ -910,6 +915,7 @@ export function createAgentTools(
     if (isEyesTool(call.name)) return eyes.describe(call);
     if (isTabTool(call.name)) return tabTools.describe(call);
     if (isRecallTool(call.name)) return recall.describe(call);
+    if (isSaveTool(call.name)) return saveTools.describe(call);
     if (call.name === 'read_page' || call.name === 'look_at_page') {
       const id = tabArgument(call);
       const tab = env.linkedTabs().find((t) => t.id === id);
@@ -946,6 +952,7 @@ export function createAgentTools(
     if (isEyesTool(call.name)) return eyes.run(call, signal);
     if (isTabTool(call.name)) return tabTools.run(call);
     if (isRecallTool(call.name)) return recall.run(call);
+    if (isSaveTool(call.name)) return saveTools.run(call, signal);
     if (isActionName(call.name)) return runAction(call, signal);
     if (call.name === 'web_search') return runSearch(call, signal);
     if (call.name === 'read_link') return runReadLink(call, signal);
@@ -1116,6 +1123,7 @@ export function createAgentTools(
       ...EYES_DEFINITIONS,
       ...TAB_DEFINITIONS,
       ...RECALL_DEFINITIONS,
+      ...SAVE_DEFINITIONS,
       ...ACTION_DEFINITIONS,
       ...ARTIFACT_DEFINITIONS,
     ].filter((definition) => levelOf(definition.name) !== 'never'),

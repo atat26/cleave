@@ -279,6 +279,16 @@ function setup(
       };
     },
     linkedTabs: () => tabs,
+    // (The save tools have their own tests in saveTools.test.ts.)
+    savePage: async () => ({ ok: false as const, reason: 'closed' as const }),
+    bookmarkPage: async () => ({
+      ok: false as const,
+      reason: 'closed' as const,
+    }),
+    checkPreview: async () => ({
+      ok: false as const,
+      reason: 'missing' as const,
+    }),
     // (The recall tools have their own tests in recallTools.test.ts.)
     currentChatId: () => 1,
     now: () => 1_700_000_000_000,
@@ -1580,6 +1590,32 @@ test('the recall tools are offered and in the Tools panel, ask by default, and c
   }
   const { tools } = setup(undefined, () => 'always');
   await tools.run(call('search_history', { query: 'goldfish' }), ABORT);
+  const write = tools.plan(
+    call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
+  );
+  assert.equal(write.kind, 'ask');
+});
+
+test('the save, bookmark and check tools are offered, in the Tools panel, ask by default, and count as web content', async () => {
+  const everything = createAgentTools(
+    setup().env,
+    () => 'always',
+  ).definitions.map((d) => d.name);
+  for (const name of [
+    'save_page_as_artifact',
+    'bookmark_page',
+    'check_artifact',
+  ]) {
+    assert.ok(everything.includes(name), name);
+    assert.equal(defaultLevel(name), 'ask', name);
+  }
+  // Looking at what an artifact's page reported counts as reading web content.
+  const { tools, env } = setup(undefined, () => 'always');
+  env.linkedArtifacts = () => [
+    { id: 3, title: 'Tool', kind: 'html', spaceId: null },
+  ];
+  env.checkPreview = async () => ({ ok: true, problems: [], internet: false });
+  await tools.run(call('check_artifact', { artifact: 3 }), ABORT);
   const write = tools.plan(
     call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
   );

@@ -101,6 +101,16 @@ const TABLES_SCRIPT = `(() => {
   return { tables, total: all.length, title: String(document.title || ''), url: String(location.href || '') };
 })()`;
 
+// The text selected on the page (it only reads; it never changes the selection).
+const SELECTION_SCRIPT = `(() => {
+  const selection = getSelection();
+  return {
+    title: String(document.title || ''),
+    url: String(location.href || ''),
+    text: selection ? String(selection.toString()).slice(0, 100000) : '',
+  };
+})()`;
+
 const DEFAULT_LIMIT_MS = 8000;
 
 type Debugger = WebContents['debugger'];
@@ -259,6 +269,21 @@ export async function captureScreenshotVia(cdp: Cdp): Promise<string> {
     throw new Error('no-screenshot');
   }
   return shot.data;
+}
+
+// The text the user has selected on the page (see SELECTION_SCRIPT).
+export async function readSelectionVia(cdp: Cdp): Promise<PageText> {
+  const value = (await evaluateIsolated(cdp, SELECTION_SCRIPT)) as Record<
+    string,
+    unknown
+  > | null;
+  if (typeof value !== 'object' || value === null)
+    throw new Error('unreadable');
+  return {
+    title: typeof value.title === 'string' ? value.title : '',
+    url: typeof value.url === 'string' ? value.url : '',
+    text: typeof value.text === 'string' ? value.text : '',
+  };
 }
 
 // Read the text of the page that `cdp` is attached to (one fixed script, in an

@@ -29,6 +29,7 @@ import type { FileReading } from './artifactTools';
 import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import type { TabsEnv } from './tabTools';
 import type { RecallEnv } from './recallTools';
+import type { BookmarkResult, PreviewCheck, SaveResult } from './saveTools';
 import {
   messageMenuItems,
   modelMenuItems,
@@ -90,6 +91,23 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // Saving a page, bookmarking it, and checking an HTML artifact (see saveTools.ts).
+  // Saving also links the new artifact to the chat.
+  saveStore: {
+    savePage(
+      chatId: number,
+      tabId: number,
+      what: 'page' | 'selection',
+      title: string | null,
+      spaceId: number | null,
+      signal: AbortSignal,
+    ): Promise<SaveResult>;
+    bookmarkPage(tabId: number, signal: AbortSignal): Promise<BookmarkResult>;
+    checkPreview(
+      artifactId: number,
+      signal: AbortSignal,
+    ): Promise<PreviewCheck>;
+  };
   // What the assistant can look up: your history, bookmarks and earlier chats (see
   // recallTools.ts).
   recallStore: Omit<RecallEnv, 'currentChatId'>;
@@ -356,6 +374,17 @@ export function createChatService(options: {
             createSpace: (input) => options.spaceStore.create(chatId, input),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            savePage: (tabId, what, title, spaceId, signal) =>
+              options.saveStore.savePage(
+                chatId,
+                tabId,
+                what,
+                title,
+                spaceId,
+                signal,
+              ),
+            bookmarkPage: options.saveStore.bookmarkPage,
+            checkPreview: options.saveStore.checkPreview,
             currentChatId: () => chatId,
             now: options.recallStore.now,
             searchHistory: options.recallStore.searchHistory,

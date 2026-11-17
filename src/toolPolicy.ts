@@ -309,6 +309,35 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
       'The assistant will be able to read your earlier chats whenever it likes. What it reads goes to your chosen model.',
   },
   {
+    name: 'bookmark_page',
+    group: 'recall',
+    title: 'Bookmark a page',
+    summary: 'Bookmark the page a linked tab is showing.',
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning: 'The assistant will be able to add to your bookmarks on its own.',
+  },
+  {
+    name: 'save_page_as_artifact',
+    group: 'artifacts',
+    title: 'Save a page as an artifact',
+    summary:
+      "Save a linked tab's text (or the part you selected) as a new artifact, without the model rewriting it.",
+    defaultLevel: 'ask',
+    changesThings: true,
+    warning:
+      'The assistant will be able to save the text of your pages as artifacts on its own.',
+  },
+  {
+    name: 'check_artifact',
+    group: 'artifacts',
+    title: 'Check an HTML artifact for errors',
+    summary:
+      'Open an HTML artifact, let it run in its preview, and see what went wrong, so it can fix its own tools.',
+    defaultLevel: 'ask',
+    changesThings: false,
+  },
+  {
     name: 'read_artifact',
     group: 'artifacts',
     title: 'Read an artifact',
