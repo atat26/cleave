@@ -158,6 +158,7 @@ export function App() {
         canGoForward={state.canGoForward}
         loading={state.loading}
         zoom={state.zoom}
+        zoomable={state.zoomable}
         bookmarked={state.bookmarked}
         downloads={state.downloads}
         certBypassed={state.certBypassed}
@@ -179,7 +180,11 @@ export function App() {
         />
       )}
       {activeArtifact && (
-        <ArtifactView key={activeArtifact.id} tab={activeArtifact} />
+        <ArtifactView
+          key={activeArtifact.id}
+          tab={activeArtifact}
+          zoom={state.zoom}
+        />
       )}
       {leadSpace && (
         <LeadView

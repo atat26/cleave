@@ -2687,3 +2687,83 @@ button {
   outline-offset: -4px;
   border-radius: var(--r-lg);
 }
+
+/* ---- Uploaded images and PDFs ---------------------------------------------------- */
+/* The scrolling area under the top bar. */
+.file-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+}
+/* An image sits in the middle on a light chequerboard, so see-through parts show. */
+.image-stage {
+  display: grid;
+  place-items: center;
+  padding: var(--s-5);
+}
+.image-stage img {
+  display: block;
+  background: conic-gradient(#8884 25%, #0000 0 50%, #8884 0 75%, #0000 0) 0 0 /
+    16px 16px;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
+}
+.pdf-pages {
+  display: grid;
+  gap: var(--s-4);
+  justify-items: center;
+  padding: var(--s-5);
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+.pdf-page {
+  position: relative;
+  background: white;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
+}
+.pdf-page canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* The invisible words over a PDF page, so they can be selected and copied. */
+.pdf-text {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+}
+.pdf-text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+  user-select: text;
+}
+/* Each word's size, stretch and slant come from variables PDF.js writes on it. */
+.pdf-text {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text > :not(.markedContent),
+.pdf-text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+.pdf-text .markedContent {
+  display: contents;
+}
+.pdf-text ::selection {
+  background: rgb(56 120 255 / 0.35);
+}

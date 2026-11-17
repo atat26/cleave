@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
-import { NameButton } from './NameButton';
+import { ArtifactTitle } from './ArtifactTitle';
+import { byteWords } from './artifacts';
 import { PdfPages } from './PdfPages';
 import type { ArtifactTabInfo } from './types';
 import { Button, IconButton, ItemEmoji } from './ui/controls';
@@ -8,15 +9,41 @@ import { Button, IconButton, ItemEmoji } from './ui/controls';
 // An uploaded image or PDF, open in the area where a web page would be. Its bytes are
 // fetched from the app and shown from a short-lived local address. The page has no
 // scripts of its own: an image is drawn as a picture, and a PDF page by page (PdfPages).
-export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
+export function FileArtifactView({
+  tab,
+  zoom,
+}: {
+  tab: ArtifactTabInfo;
+  // The zoom shared with web pages (1 = 100%).
+  zoom: number;
+}) {
   const [shown, setShown] = useState<
     { url: string; mime: string; data: Uint8Array } | 'missing' | null
   >(null);
+
+  const [pages, setPages] = useState<number | null>(null);
+  const [pixels, setPixels] = useState<{ w: number; h: number } | null>(null);
+  const card = useRef<HTMLElement>(null);
+
+  // Ctrl + scroll zooms in steps, like on a web page.
+  useEffect(() => {
+    const el = card.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      window.browserApi.changeZoom(event.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     let url: string | null = null;
     setShown(null);
+    setPages(null);
+    setPixels(null);
     void window.browserApi.artifactFile(tab.id).then((file) => {
       if (cancelled) return;
       if (!file) {
@@ -37,8 +64,33 @@ export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   const isPdf =
     shown !== null && shown !== 'missing' && shown.mime === 'application/pdf';
 
+  // The line under the title: kind, what is in it, and its size.
+  const meta =
+    shown === null || shown === 'missing'
+      ? isPdfName(tab.title)
+        ? 'PDF'
+        : 'Image'
+      : isPdf
+        ? [
+            'PDF',
+            pages === null
+              ? null
+              : `${pages} ${pages === 1 ? 'page' : 'pages'}`,
+            byteWords(shown.data.length),
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : [
+            'Image',
+            pixels === null ? null : `${pixels.w} × ${pixels.h}`,
+            byteWords(shown.data.length),
+          ]
+            .filter(Boolean)
+            .join(' · ');
+
   return (
     <main
+      ref={card}
       style={{
         position: 'fixed',
         top: TOOLBAR_HEIGHT,
@@ -67,20 +119,24 @@ export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       >
         <ItemEmoji emoji={tab.emoji} />
         <div className="art-title">
-          <div className="art-title-row">
-            <h1
-              className="truncate"
-              style={{ margin: 0, fontSize: 'var(--fs-xl)', fontWeight: 600 }}
-            >
-              {tab.title}
-            </h1>
-            <NameButton kind="artifact" id={tab.id} />
-          </div>
+          <ArtifactTitle id={tab.id} title={tab.title} />
           <div className="art-meta">
-            <span>{shown !== null && isPdf ? 'PDF' : 'Image'}</span>
+            <span>{meta}</span>
           </div>
         </div>
         <div className="art-actions">
+          <IconButton
+            className="reveal"
+            icon="minus"
+            label="Zoom out"
+            onClick={() => window.browserApi.changeZoom(-1)}
+          />
+          <IconButton
+            className="reveal"
+            icon="plus"
+            label="Zoom in"
+            onClick={() => window.browserApi.changeZoom(1)}
+          />
           {isPdf ? (
             <>
               <Button
@@ -125,31 +181,30 @@ export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           This file is no longer there.
         </p>
       ) : isPdf ? (
-        <PdfPages data={shown.data} />
+        <PdfPages data={shown.data} zoom={zoom} onPages={setPages} />
       ) : (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflow: 'auto',
-            display: 'grid',
-            placeItems: 'center',
-            padding: 'var(--s-5)',
-            borderTop: '1px solid var(--c-border)',
-            background: 'var(--c-surface-2)',
-          }}
-        >
+        <div className="file-stage image-stage">
           <img
             src={shown.url}
             alt={tab.title}
-            style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              objectFit: 'contain',
-            }}
+            onLoad={(event) =>
+              setPixels({
+                w: event.currentTarget.naturalWidth,
+                h: event.currentTarget.naturalHeight,
+              })
+            }
+            // At 100% a big picture is shrunk to fit; any other zoom is that share of
+            // its real size.
+            style={
+              zoom === 1 || pixels === null
+                ? { maxWidth: '100%', maxHeight: '100%' }
+                : { width: pixels.w * zoom, height: pixels.h * zoom }
+            }
           />
         </div>
       )}
     </main>
   );
 }
+
+const isPdfName = (title: string) => /.pdf$/i.test(title);

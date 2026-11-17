@@ -178,6 +178,7 @@ const browserApi: BrowserApi = {
     };
   },
   showZoomMenu: (x, y) => ipcRenderer.send('zoom:menu', x, y),
+  changeZoom: (direction) => ipcRenderer.send('zoom:change', direction),
   findReady: () => ipcRenderer.send('find:ready'),
   findQuery: (text, forward, again) =>
     ipcRenderer.send('find:query', text, forward, again),

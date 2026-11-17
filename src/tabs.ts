@@ -643,6 +643,16 @@ export async function createTabs(
 
   const activeTabId = () =>
     state.active?.kind === 'tab' ? state.active.id : null;
+  // How far each uploaded image or PDF is zoomed while the app is open (1 = 100%). They
+  // use the same steps and menu as web pages.
+  const fileZooms = new Map<number, number>();
+  // The uploaded image or PDF on screen, if that is what is open.
+  const activeFileId = (): number | null => {
+    const active = state.active;
+    if (active?.kind !== 'artifact') return null;
+    const found = artifactsModel.findArtifact(artifacts, active.id);
+    return found?.file ? found.id : null;
+  };
   // The active tab's live page, if it has one.
   const activePage = () => {
     const id = state.active?.kind === 'tab' ? state.active.id : null;
@@ -1021,7 +1031,13 @@ export async function createTabs(
         muted: pageContents(tab.id)?.isAudioMuted() ?? false,
       })),
       active: state.active,
-      zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
+      zoom:
+        Math.round(
+          (activeFileId() === null
+            ? (activePage()?.getZoomFactor() ?? 1)
+            : (fileZooms.get(activeFileId() as number) ?? 1)) * 100,
+        ) / 100,
+      zoomable: activeFileId() !== null || activePage() !== undefined,
       bookmarked: isBookmarked(bookmarks, activePage()?.getURL()),
       certBypassed: certBypassed(activePage()?.getURL()),
       blockedPopups:
@@ -1951,6 +1967,15 @@ export async function createTabs(
   // Zoom the active page one step in (1) or out (-1), or back to 100% (0). The
   // site remembers it, and every open page of that site follows.
   const changeZoom = (direction: 1 | -1 | 0) => {
+    const fileId = activeFileId();
+    if (fileId !== null) {
+      const next =
+        direction === 0 ? 1 : stepZoom(fileZooms.get(fileId) ?? 1, direction);
+      if (next === 1) fileZooms.delete(fileId);
+      else fileZooms.set(fileId, next);
+      sendState();
+      return;
+    }
     const contents = activePage();
     if (!contents) return;
     const host = zoomHost(contents.getURL());
@@ -4830,7 +4855,11 @@ export async function createTabs(
       showMenu(
         toolsMenuItems({
           hasPage: id !== null && pageIsShown(),
-          zoomText: zoomLabel(activePage()?.getZoomFactor() ?? 1),
+          zoomText: zoomLabel(
+            activeFileId() === null
+              ? (activePage()?.getZoomFactor() ?? 1)
+              : (fileZooms.get(activeFileId() as number) ?? 1),
+          ),
         }),
         x,
         y,
@@ -4978,6 +5007,12 @@ export async function createTabs(
         undefined,
         'site',
       );
+    },
+    // + / - / Ctrl+scroll in an image or PDF view: one step, like on a web page.
+    'zoom:change': (direction) => {
+      if (direction === 1 || direction === -1 || direction === 0) {
+        changeZoom(direction);
+      }
     },
     // The zoom chip in the address bar.
     'zoom:menu': (x, y) => {

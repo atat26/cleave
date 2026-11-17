@@ -1,16 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { Select } from './ui/controls';
 
-// An uploaded PDF drawn page by page, one under the other, with a zoom control. The
-// PDF library (PDF.js) is only loaded when a PDF is opened. The file is read as plain
-// pictures of its pages: PDF scripts and forms never run (PDF.js has them off here).
-const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+// An uploaded PDF drawn page by page, one under the other. Each page is a picture with
+// invisible text on top, so words can be selected and copied. The PDF library
+// (PDF.js) is only loaded when a PDF is opened. PDF scripts and forms never run.
+// `zoom` is the same factor web pages use. At 100% a page is its real size, or as wide
+// as the window if that is narrower; other zooms are a share of that.
+const REAL_SIZE = 4 / 3; // PDF points to screen pixels
+const GUTTER = 48; // room left and right of a page
 
-export function PdfPages({ data }: { data: Uint8Array }) {
+export function PdfPages({
+  data,
+  zoom,
+  onPages,
+}: {
+  data: Uint8Array;
+  zoom: number;
+  onPages: (count: number) => void;
+}) {
   const [doc, setDoc] = useState<PDFDocumentProxy | 'broken' | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const box = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,7 +36,9 @@ export function PdfPages({ data }: { data: Uint8Array }) {
         const loading = pdfjs.getDocument({ data: data.slice() });
         task = loading;
         const opened = await loading.promise;
-        if (!cancelled) setDoc(opened);
+        if (cancelled) return;
+        onPages(opened.numPages);
+        setDoc(opened);
       } catch {
         if (!cancelled) setDoc('broken');
       }
@@ -35,7 +47,18 @@ export function PdfPages({ data }: { data: Uint8Array }) {
       cancelled = true;
       if (task) void task.destroy();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const measure = () => setRoom(el.clientWidth);
+    measure();
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(el);
+    return () => watcher.disconnect();
+  }, [doc]);
 
   if (doc === null) {
     return (
@@ -52,59 +75,11 @@ export function PdfPages({ data }: { data: Uint8Array }) {
     );
   }
   return (
-    <div
-      style={{
-        flex: 1,
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <div
-        className="row-flex"
-        style={{
-          gap: 'var(--s-2)',
-          padding: 'var(--s-2) var(--s-5)',
-          borderTop: '1px solid var(--c-border)',
-          alignItems: 'center',
-        }}
-      >
-        <span className="muted">
-          {doc.numPages} {doc.numPages === 1 ? 'page' : 'pages'}
-        </span>
-        <span style={{ flex: 1 }} />
-        <label className="muted" style={{ display: 'flex', gap: 'var(--s-2)' }}>
-          Zoom
-          <Select
-            small
-            value={zoom}
-            onChange={(event) => setZoom(Number(event.target.value))}
-          >
-            {ZOOMS.map((z) => (
-              <option key={z} value={z}>
-                {Math.round(z * 100)}%
-              </option>
-            ))}
-          </Select>
-        </label>
-      </div>
-      <div
-        ref={box}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: 'auto',
-          background: 'var(--c-surface-2)',
-          padding: 'var(--s-5)',
-        }}
-      >
-        <div
-          style={{ display: 'grid', gap: 'var(--s-4)', justifyItems: 'center' }}
-        >
-          {Array.from({ length: doc.numPages }, (_, i) => (
-            <PdfPage key={i} doc={doc} number={i + 1} zoom={zoom} />
-          ))}
-        </div>
+    <div className="file-stage" ref={stage}>
+      <div className="pdf-pages">
+        {Array.from({ length: doc.numPages }, (_, i) => (
+          <PdfPage key={i} doc={doc} number={i + 1} zoom={zoom} room={room} />
+        ))}
       </div>
     </div>
   );
@@ -115,15 +90,22 @@ function PdfPage({
   doc,
   number,
   zoom,
+  room,
 }: {
   doc: PDFDocumentProxy;
   number: number;
   zoom: number;
+  room: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const text = useRef<HTMLDivElement>(null);
   const holder = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [size, setSize] = useState<{
+    w: number;
+    h: number;
+    scale: number;
+  } | null>(null);
 
   useEffect(() => {
     const el = holder.current;
@@ -138,41 +120,63 @@ function PdfPage({
 
   useEffect(() => {
     let cancelled = false;
-    let task: { cancel: () => void; promise: Promise<unknown> } | null = null;
-    void doc.getPage(number).then((page) => {
+    let drawing: { cancel: () => void; promise: Promise<unknown> } | null =
+      null;
+    let writing: { cancel: () => void } | null = null;
+    void doc.getPage(number).then(async (page) => {
       if (cancelled) return;
-      const view = page.getViewport({ scale: zoom * 1.25 });
-      setSize({ w: view.width / 1.25, h: view.height / 1.25 });
-      if (!near || !canvas.current) return;
+      const width = page.getViewport({ scale: 1 }).width;
+      const fit =
+        room > 0 ? Math.min(REAL_SIZE, (room - GUTTER) / width) : REAL_SIZE;
+      const scale = zoom * fit;
+      const view = page.getViewport({ scale });
+      setSize({ w: view.width, h: view.height, scale });
+      if (!near || !canvas.current || !text.current) return;
       const sharp = window.devicePixelRatio || 1;
-      const scaled = page.getViewport({ scale: zoom * 1.25 * sharp });
+      const sharpView = page.getViewport({ scale: scale * sharp });
       const el = canvas.current;
-      el.width = Math.floor(scaled.width);
-      el.height = Math.floor(scaled.height);
-      task = page.render({ canvas: el, viewport: scaled });
-      task.promise.catch(() => {});
+      el.width = Math.floor(sharpView.width);
+      el.height = Math.floor(sharpView.height);
+      drawing = page.render({ canvas: el, viewport: sharpView });
+      drawing.promise.catch(() => {});
+
+      // The invisible text over the picture.
+      const pdfjs = await import('pdfjs-dist');
+      if (cancelled || !text.current) return;
+      const layer = text.current;
+      layer.replaceChildren();
+      const lines = new pdfjs.TextLayer({
+        textContentSource: page.streamTextContent(),
+        container: layer,
+        viewport: view,
+      });
+      writing = lines;
+      lines.render().catch(() => {});
     });
     return () => {
       cancelled = true;
-      task?.cancel();
+      drawing?.cancel();
+      writing?.cancel();
     };
-  }, [doc, number, zoom, near]);
+  }, [doc, number, zoom, near, room]);
 
   return (
     <div
       ref={holder}
-      style={{
-        width: size?.w ?? 600 * zoom,
-        height: size?.h ?? 800 * zoom,
-        background: 'white',
-        boxShadow: '0 1px 6px rgba(0,0,0,0.35)',
-      }}
+      className="pdf-page"
+      style={
+        {
+          width: size?.w ?? 600 * zoom,
+          height: size?.h ?? 800 * zoom,
+          // What the text layer measures its words against.
+          '--total-scale-factor': size?.scale ?? zoom * REAL_SIZE,
+          '--scale-round-x': '1px',
+          '--scale-round-y': '1px',
+        } as CSSProperties
+      }
     >
-      <canvas
-        ref={canvas}
-        aria-label={`Page ${number}`}
-        style={{ width: '100%', height: '100%', display: 'block' }}
-      />
+      <canvas ref={canvas} aria-label={`Page ${number}`} />
+      <div ref={text} className="pdf-text" />
     </div>
   );
 }

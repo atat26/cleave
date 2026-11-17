@@ -23,6 +23,8 @@ interface ToolbarProps {
   loading: boolean;
   // How far the page is zoomed (1 = 100%); a chip shows when it is not.
   zoom: number;
+  // Whether anything on screen can be zoomed (a web page, an image or a PDF).
+  zoomable: boolean;
   // The page is bookmarked (the star is filled).
   bookmarked: boolean;
   // Downloads going on, or one that just finished (the indicator shows only then).
@@ -194,6 +196,7 @@ export function Toolbar({
   disabled,
   loading,
   zoom,
+  zoomable,
   bookmarked,
   downloads,
   certBypassed,
@@ -425,7 +428,7 @@ export function Toolbar({
                 }
                 spellCheck={false}
               />
-              {zoom !== 1 && !disabled && (
+              {zoom !== 1 && zoomable && (
                 <button
                   type="button"
                   className="zoom-chip"

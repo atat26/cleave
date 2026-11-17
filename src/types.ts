@@ -333,6 +333,8 @@ export interface UiState {
   active: ActiveRef | null;
   // How far the selected page is zoomed (1 = 100%).
   zoom: number;
+  // Whether there is something on screen to zoom (a web page, an image or a PDF).
+  zoomable: boolean;
   // The selected page is bookmarked (the star is filled).
   bookmarked: boolean;
   // What the toolbar's download indicator shows (it is only there when something is
@@ -550,6 +552,8 @@ export interface BrowserApi {
   onLibraryChanged: (callback: () => void) => () => void;
   // The small menu behind the zoom chip in the address bar.
   showZoomMenu: (x: number, y: number) => void;
+  // One zoom step in (1) or out (-1), or back to 100% (0), for what is on screen.
+  changeZoom: (direction: 1 | -1 | 0) => void;
   // Find in page. Only the find bar's own page uses these.
   findReady: () => void;
   findQuery: (text: string, forward: boolean, again: boolean) => void;
