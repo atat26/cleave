@@ -5,6 +5,7 @@ import type { DownloadItem, DownloadSummary } from './downloadList';
 import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
 import type { SiteDataRow, SiteGroup } from './siteData';
 import type { SearchEngineSettings } from './searchEngine';
+import type { NewTabSettings } from './newTabSettings';
 
 // A main site with its cookies, for Settings (icons are remembered from pages).
 export interface SiteDataGroup extends Omit<SiteGroup, 'hosts'> {
@@ -43,6 +44,33 @@ export interface TabInfo {
   // Playing sound right now, and muted (the speaker shows only while one is true).
   audible: boolean;
   muted: boolean;
+}
+
+// What the new-tab page needs, worked out by the app from what is on this computer.
+export interface NewTabInfo {
+  // No Spaces yet: the page is plain, with a line about what a Space is.
+  firstRun: boolean;
+  // The tab the app opened itself at launch, with nothing else to open.
+  welcomeBack: boolean;
+  // Opened straight after another untouched new tab: just the box and the pills.
+  secondInRow: boolean;
+  autoMode: boolean;
+  suggestions: boolean;
+  // Up to three unfinished things from the Space, and how many there are in all.
+  pick: {
+    key: string;
+    kind: 'chat' | 'artifact' | 'page';
+    id: number;
+    title: string;
+    at: number;
+  }[];
+  pickTotal: number;
+  // The Spaces for the pills: the current one first, then the most recently used,
+  // three in all; and how many more there are.
+  spaces: SpaceInfo[];
+  moreSpaces: number;
+  // The time this was worked out (for "12 min ago").
+  now: number;
 }
 
 // An artifact as the UI lists it (its text stays in the app until it is opened).
@@ -248,6 +276,8 @@ export interface UiState {
   certBypassed: boolean;
   // How many pop-ups the page you are on tried to open and were blocked.
   blockedPopups: number;
+  // What the new-tab page shows (null when you are not on one).
+  newTab: NewTabInfo | null;
   // The ACTIVE web tab is still loading (its reload button becomes Stop).
   loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
@@ -319,6 +349,18 @@ export interface BrowserApi {
   showSiteMenu: (x: number, y: number) => void;
   // The new-tab page's box: do what Enter was going to do.
   newTabRun: (text: string, mode: 'go' | 'search' | 'ask') => void;
+  // The new-tab page: open a Pick up item, hide one, click a Space pill (a Space id,
+  // or 'new' for a new Space), or show all of the Space's items.
+  newTabResume: (kind: 'chat' | 'artifact' | 'page', id: number) => void;
+  newTabHide: (key: string) => void;
+  newTabPill: (space: number | 'new') => void;
+  // "+ N more": a menu of the Spaces that are not pills.
+  showNewTabSpacesMenu: (x: number, y: number) => void;
+  newTabShowAll: (spaceId: number) => void;
+  // Settings > New tab.
+  newTabSettingsGet: () => Promise<NewTabSettings>;
+  newTabSettingsSet: (changes: unknown) => Promise<NewTabSettings>;
+  newTabShowHidden: () => Promise<NewTabSettings>;
   // Ctrl+L: the app asks the toolbar to put the keyboard in the address bar.
   onFocusAddress: (callback: () => void) => () => void;
   // The "pop-up blocked" chip's card.

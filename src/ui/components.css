@@ -2037,3 +2037,135 @@ button {
   font-size: var(--fs-sm);
   color: var(--c-text-2);
 }
+
+/* New-tab page: Pick up, Space pills, first run (NewTabView.tsx). */
+.nt-first {
+  margin: 12px 0 0;
+  max-width: 520px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--c-text-2);
+}
+.nt-second {
+  margin-top: 170px;
+}
+.nt-pick {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nt-pick-h {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.nt-pick-h > span:first-child {
+  flex: 1;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text-2);
+}
+.nt-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nt-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.nt-pick-item:hover {
+  background: var(--c-hover);
+}
+.nt-acts {
+  display: flex;
+  gap: 14px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
+.nt-resume {
+  color: var(--c-accent);
+  font-weight: var(--fw-bold);
+}
+.nt-time {
+  width: 76px;
+  flex: none;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+.nt-link {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nt-acts .nt-link {
+  font-size: var(--fs-sm);
+}
+.nt-more {
+  height: 36px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--c-accent);
+  text-align: left;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.nt-pills {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nt-pills::-webkit-scrollbar {
+  display: none;
+}
+.nt-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  background: none;
+  border: 1px solid var(--c-border);
+  flex: none;
+  cursor: pointer;
+}
+.nt-pill:hover {
+  background: var(--c-hover);
+}
+.nt-pill.is-current {
+  font-weight: var(--fw-medium);
+  color: var(--c-text);
+  background: color-mix(in srgb, var(--c) 26%, var(--c-surface));
+  border-color: var(--c);
+}
+.nt-pill.is-add {
+  border-style: dashed;
+  border-color: var(--c-border-strong);
+}

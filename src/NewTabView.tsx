@@ -1,17 +1,18 @@
-// The new-tab page: a greeting and one large box that takes an address, a search or a
-// request to the assistant. A hint says which one Enter will do (auto mode picks, and
-// Tab switches). A new tab has no web page; the app draws this in its place, and the
-// tab becomes a web tab when you go somewhere. The look follows the design hand-off
-// (docs/design/new-tab).
+// The new-tab page: a greeting, one large box that takes an address, a search or a
+// request to the assistant, "Pick up" (unfinished things from the Space you are in)
+// and a row of Space pills. A new tab has no web page; the app draws this in its
+// place, and the tab becomes a web tab when you go somewhere. The look and the
+// behaviour follow the design hand-off (docs/design/new-tab).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
 import { greetingFor } from './greetings';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { autoMode, cycleMode, MODES, modeLabel } from './newTabBox';
 import type { BoxMode } from './newTabBox';
+import { timeAgo } from './pickUp';
 import { activeEngine } from './searchEngine';
 import type { Suggestion } from './suggest';
-import type { SpaceInfo, TabInfo } from './types';
+import type { NewTabInfo, SpaceInfo, TabInfo } from './types';
 import { Pill } from './ui/controls';
 import { Icon } from './ui/Icon';
 import type { IconName } from './ui/iconData';
@@ -25,12 +26,16 @@ const MODE_ICONS: Record<BoxMode, IconName> = {
   ask: 'sparkle',
 };
 
+const PICK_ICONS = { chat: 'chat', artifact: 'doc', page: 'globe' } as const;
+
 export function NewTabView({
   tab,
   space,
+  info,
 }: {
   tab: TabInfo;
   space: SpaceInfo | undefined;
+  info: NewTabInfo;
 }) {
   const [text, setText] = useState(() => drafts.get(tab.id) ?? '');
   // The mode the user chose with Tab or a click; it lasts until the box is emptied.
@@ -41,10 +46,18 @@ export function NewTabView({
   const input = useRef<HTMLInputElement>(null);
   const asked = useRef(0);
   // The same tab always gets the same greeting.
-  const greeting = useMemo(() => greetingFor(new Date(), tab.id), [tab.id]);
+  const greeting = useMemo(
+    () =>
+      info.firstRun
+        ? 'Welcome.'
+        : info.welcomeBack
+          ? 'Welcome back.'
+          : greetingFor(new Date(), tab.id),
+    [info.firstRun, info.welcomeBack, tab.id],
+  );
 
   const typing = text.trim() !== '';
-  const mode: BoxMode = manual ?? autoMode(text);
+  const mode: BoxMode = manual ?? (info.autoMode ? autoMode(text) : 'search');
   const label = modeLabel(mode, engine);
 
   // The box has the keyboard as soon as the page is there.
@@ -98,6 +111,13 @@ export function NewTabView({
   };
 
   const tint = space ? SPACE_COLOR_HEX[space.color] : null;
+  // Pick up shows only when there is something to pick up and nothing is being typed.
+  const showPick =
+    !typing &&
+    info.suggestions &&
+    !info.firstRun &&
+    !info.secondInRow &&
+    info.pick.length > 0;
 
   return (
     <main
@@ -116,7 +136,7 @@ export function NewTabView({
           : 'var(--c-surface)',
       }}
     >
-      {space && (
+      {space && !info.firstRun && (
         <div className="nt-label">
           New tab in
           <Pill
@@ -126,8 +146,8 @@ export function NewTabView({
           </Pill>
         </div>
       )}
-      <div className="nt-col">
-        <h1>{greeting}</h1>
+      <div className={info.secondInRow ? 'nt-col nt-second' : 'nt-col'}>
+        {!info.secondInRow && <h1>{greeting}</h1>}
         <div className="nt-box">
           {typing ? (
             <span className="nt-chip">
@@ -247,7 +267,7 @@ export function NewTabView({
           </div>
         )}
 
-        {space && (
+        {space && !info.firstRun && !info.secondInRow && (
           <div className="nt-ctx">
             <span>The assistant can see</span>
             <Pill
@@ -257,7 +277,127 @@ export function NewTabView({
             </Pill>
           </div>
         )}
+
+        {info.firstRun && (
+          <p className="nt-first">
+            Spaces keep related pages, chats and artifacts together. Make one
+            when you start a piece of work. Nothing is suggested here until you
+            have worked in one.
+          </p>
+        )}
+
+        {showPick && (
+          <section className="nt-pick" aria-labelledby="nt-pick-h">
+            <div className="nt-pick-h reveal-host">
+              <span id="nt-pick-h">Pick up</span>
+              <button
+                type="button"
+                className="nt-link reveal"
+                onClick={() =>
+                  void window.browserApi.newTabSettingsSet({
+                    suggestions: false,
+                  })
+                }
+              >
+                Turn off suggestions
+              </button>
+            </div>
+            <ul className="nt-pick-list">
+              {info.pick.map((row) => (
+                <li key={row.key}>
+                  <div
+                    className="nt-pick-item reveal-host"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
+                      window.browserApi.newTabResume(row.kind, row.id)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        window.browserApi.newTabResume(row.kind, row.id);
+                      }
+                    }}
+                  >
+                    <Icon name={PICK_ICONS[row.kind]} />
+                    <span className="nt-item-title">{row.title}</span>
+                    <span className="nt-acts reveal">
+                      <span className="nt-resume">Resume</span>
+                      <button
+                        type="button"
+                        className="nt-link"
+                        aria-label={`Hide ${row.title} from Pick up`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          window.browserApi.newTabHide(row.key);
+                        }}
+                      >
+                        Hide
+                      </button>
+                    </span>
+                    <span className="nt-time">{timeAgo(row.at, info.now)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {space && info.pickTotal > info.pick.length && (
+              <button
+                type="button"
+                className="nt-more"
+                onClick={() => window.browserApi.newTabShowAll(space.id)}
+              >
+                Show all {info.pickTotal} in this Space
+              </button>
+            )}
+          </section>
+        )}
       </div>
+
+      {!typing && (
+        <nav className="nt-pills" aria-label="Spaces">
+          {!info.firstRun &&
+            info.spaces.map((s) => {
+              const current = s.id === space?.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={current ? 'nt-pill is-current' : 'nt-pill'}
+                  style={{ ['--c' as string]: SPACE_COLOR_HEX[s.color] }}
+                  aria-current={current || undefined}
+                  onClick={() => {
+                    if (current) input.current?.focus();
+                    else window.browserApi.newTabPill(s.id);
+                  }}
+                >
+                  {s.emoji} {s.name}
+                </button>
+              );
+            })}
+          {!info.firstRun && info.moreSpaces > 0 && (
+            <button
+              type="button"
+              className="nt-pill"
+              aria-haspopup="menu"
+              onClick={(event) => {
+                const box = event.currentTarget.getBoundingClientRect();
+                window.browserApi.showNewTabSpacesMenu(box.left, box.top - 4);
+              }}
+            >
+              + {info.moreSpaces} more
+            </button>
+          )}
+          <button
+            type="button"
+            className="nt-pill is-add"
+            onClick={() => window.browserApi.newTabPill('new')}
+          >
+            <Icon name="plus" />
+            New Space
+          </button>
+        </nav>
+      )}
     </main>
   );
 }

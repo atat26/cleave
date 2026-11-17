@@ -1859,6 +1859,26 @@ export function parsePrivacyChoice(id: string): 'reset' | 'clear' | null {
   return null;
 }
 
+// ---- The new-tab page: the Spaces that did not fit as pills -------------------
+
+export function newTabSpacesMenuItems(
+  spaces: { id: number; name: string; emoji: string }[],
+): MenuItem[] {
+  return spaces.map(
+    (space): MenuItem => ({
+      type: 'item',
+      id: `newtab.space:${space.id}`,
+      label: space.name,
+      emoji: space.emoji,
+    }),
+  );
+}
+
+export function parseNewTabSpaceChoice(id: string): number | null {
+  const m = /^newtab\.space:(\d+)$/.exec(id);
+  return m ? Number(m[1]) : null;
+}
+
 // ---- Pop-ups that were blocked (the chip in the address bar) ------------------
 // A card listing what the page tried to open, with a button for each and one to
 // always allow them from the site.
