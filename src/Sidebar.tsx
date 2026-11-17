@@ -167,6 +167,20 @@ function TabRow({
       trailing={
         <>
           {tab.working && <WorkingDot />}
+          {(tab.audible || tab.muted) && (
+            <IconButton
+              icon={tab.muted ? 'volume-off' : 'volume'}
+              size="sm"
+              label={
+                tab.muted ? `Unmute ${labelFor(tab)}` : `Mute ${labelFor(tab)}`
+              }
+              pressed={tab.muted}
+              onClick={(event) => {
+                event.stopPropagation(); // Don't also select this tab.
+                window.browserApi.setTabMuted(tab.id, !tab.muted);
+              }}
+            />
+          )}
           <IconButton
             icon="x"
             size="sm"
@@ -553,6 +567,22 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
       {tab.working && (
         <span style={{ position: 'absolute', top: 2, right: 2 }}>
           <WorkingDot />
+        </span>
+      )}
+      {(tab.audible || tab.muted) && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            bottom: 1,
+            right: 1,
+            display: 'flex',
+            color: 'var(--c-text-2)',
+            background: 'var(--c-surface)',
+            borderRadius: 4,
+          }}
+        >
+          <Icon name={tab.muted ? 'volume-off' : 'volume'} />
         </span>
       )}
     </div>

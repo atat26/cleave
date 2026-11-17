@@ -810,6 +810,8 @@ export async function createTabs(
         loaded: views.has(tab.id),
         working: working.has(tab.id),
         closed: tab.closed,
+        audible: pageContents(tab.id)?.isCurrentlyAudible() ?? false,
+        muted: pageContents(tab.id)?.isAudioMuted() ?? false,
       })),
       active: state.active,
       zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
@@ -1152,6 +1154,8 @@ export async function createTabs(
       }
       closeTab(tab.id);
     });
+    // A page starts or stops making sound: the speaker on its tab follows.
+    contents.on('audio-state-changed', () => sendState());
     // Remember when you last clicked or typed on the page.
     contents.on('input-event', (_event, input) => {
       if (
@@ -2887,6 +2891,11 @@ export async function createTabs(
           ),
         );
         break;
+      case 'mute':
+      case 'unmute':
+        pageContents(tabId)?.setAudioMuted(choice.action === 'mute');
+        sendState();
+        break;
       case 'duplicate':
         commitAndShow(
           revealPage(
@@ -3125,6 +3134,11 @@ export async function createTabs(
     },
     'tab:new': (spaceId) => {
       if (isIdOrNull(spaceId)) openTab(newTabUrl(), spaceId);
+    },
+    'tab:mute': (id, muted) => {
+      if (!isId(id) || typeof muted !== 'boolean') return;
+      pageContents(id)?.setAudioMuted(muted);
+      sendState();
     },
     'tab:close': (id) => {
       if (isId(id)) closeTab(id);
@@ -3858,7 +3872,8 @@ export async function createTabs(
     },
     'tab:menu': (id, x, y) => {
       if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
-      const items = tabMenuItems(state, id);
+      const page = pageContents(id);
+      const items = tabMenuItems(state, id, page ? page.isAudioMuted() : null);
       if (!items) return;
       showMenu(
         items,

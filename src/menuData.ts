@@ -39,6 +39,8 @@ export type TabChoice =
   | { action: 'new-below' }
   | { action: 'reload' }
   | { action: 'duplicate' }
+  | { action: 'mute' }
+  | { action: 'unmute' }
   | { action: 'add-to-chat' }
   | { action: 'move'; spaceId: number | null }
   | { action: 'move-new-space' }
@@ -52,6 +54,8 @@ export type TabChoice =
 export function tabMenuItems(
   state: SavedState,
   tabId: number,
+  // Is the page muted (null: the tab has no page, so there is nothing to mute).
+  muted: boolean | null = null,
 ): MenuItem[] | null {
   const tab = model.findTab(state, tabId);
   if (!tab) return null;
@@ -116,6 +120,16 @@ export function tabMenuItems(
       label: 'Duplicate',
       icon: 'copy',
     },
+    ...(muted === null
+      ? []
+      : [
+          {
+            type: 'item',
+            id: muted ? 'tab.unmute' : 'tab.mute',
+            label: muted ? 'Unmute tab' : 'Mute tab',
+            icon: muted ? 'volume' : 'volume-off',
+          } as MenuItem,
+        ]),
     { type: 'separator' },
     {
       type: 'item',
@@ -175,6 +189,10 @@ export function parseTabChoice(id: string): TabChoice | null {
       return { action: 'reload' };
     case 'tab.duplicate':
       return { action: 'duplicate' };
+    case 'tab.mute':
+      return { action: 'mute' };
+    case 'tab.unmute':
+      return { action: 'unmute' };
     case 'tab.add-to-chat':
       return { action: 'add-to-chat' };
     case 'tab.move-new-space':

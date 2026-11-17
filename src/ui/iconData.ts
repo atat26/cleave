@@ -117,6 +117,13 @@ export const ICON_SHAPES = {
   send: [['path', { d: 'M12 19V5M5 12l7-7 7 7' }]],
   pencil: [['path', { d: 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4' }]],
   edit: [['path', { d: 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4' }]],
+  volume: [
+    [
+      'path',
+      { d: 'M4 9v6h4l5 4V5L8 9zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11' },
+    ],
+  ],
+  'volume-off': [['path', { d: 'M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6' }]],
   trash: [
     ['path', { d: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6' }],
   ],

@@ -157,6 +157,7 @@ const browserApi: BrowserApi = {
   stopLoading: () => ipcRenderer.send('tab:stop'),
   newTab: (spaceId) => ipcRenderer.send('tab:new', spaceId),
   closeTab: (id) => ipcRenderer.send('tab:close', id),
+  setTabMuted: (id, muted) => ipcRenderer.send('tab:mute', id, muted),
   removeTab: (id) => ipcRenderer.send('tab:remove', id),
   reopenTab: (id) => ipcRenderer.send('tab:reopen', id),
   selectTab: (id) => ipcRenderer.send('tab:select', id),
