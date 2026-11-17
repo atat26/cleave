@@ -985,6 +985,7 @@ export async function createTabs(
           messageCount: c.messages.length,
           model: c.model,
           generating: generating.includes(c.id),
+          spaceIds: c.refs.filter((r) => r.kind === 'space').map((r) => r.id),
         })),
         activeId: chats.activeId,
         // The links on the chat you are looking at.
@@ -3326,6 +3327,17 @@ export async function createTabs(
       case 'ungroup':
         menuActions.ungroupSpace(spaceId);
         break;
+      case 'reopen-all': {
+        // Every closed page of the Space comes back as a tab.
+        let next = state;
+        for (const tab of state.tabs.filter(
+          (t) => t.spaceId === spaceId && t.closed,
+        )) {
+          next = model.reopenTab(next, tab.id);
+        }
+        if (next !== state) commitAndShow(revealPage(next));
+        break;
+      }
       case 'close-all':
         for (const tab of state.tabs.filter(
           (t) => t.spaceId === spaceId && !t.closed,
@@ -4738,6 +4750,12 @@ export async function createTabs(
         (choice) => runTabChoice(id, choice),
         requestSender ?? win.webContents,
       );
+    },
+    'space:bulk': (id, action) => {
+      if (!isId(id) || !model.findSpace(state, id)) return;
+      if (action === 'close-all' || action === 'reopen-all') {
+        runSpaceChoice(id, `space.${action}`);
+      }
     },
     'space:menu': (id, x, y) => {
       if (!isId(id) || !isNumber(x) || !isNumber(y)) return;

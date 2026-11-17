@@ -1353,31 +1353,218 @@ button {
   color: var(--c-ok);
 }
 
-/* ---- A Space's overview (from the design) ----------------------------------- */
-.ov-title {
-  margin-top: var(--s-2);
+/* ---- A Space's overview ------------------------------------------------------- */
+/* A tinted band with the Space's picture, name and the line about it, then a search
+   box and folding sections of cards. --ov-color is the Space's own colour. */
+.ov {
+  overflow-y: auto;
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-sizing: border-box;
+}
+.ov-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-6);
+  border-bottom: 1px solid var(--c-border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ov-color) 20%, var(--c-surface)) 0%,
+    var(--c-surface) 75%
+  );
+}
+.ov-hero-icon .sicon {
+  width: 56px;
+  height: 56px;
+  font-size: 30px;
+  border-radius: var(--r-xl);
+}
+.ov-hero-main {
+  flex: 1;
+  min-width: 0;
+}
+.ov-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.ov-name {
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: text;
+  min-width: 0;
+}
+.ov-summary {
+  margin-top: 2px;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+.ov-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+.ov-body {
+  padding: var(--s-5) var(--s-6) var(--s-8);
+}
+.ov-tools {
+  margin-bottom: var(--s-5);
+}
+.ov-search {
+  position: relative;
+  display: block;
+  max-width: 420px;
+}
+.ov-search > .i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--c-text-2);
+  pointer-events: none;
+}
+.ov-search .input {
+  width: 100%;
+  padding-left: 32px;
+}
+.ov-section {
+  margin-bottom: var(--s-6);
+}
+.ov-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+.ov-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: -4px;
+  padding: 2px 6px 2px 4px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--c-text);
+  font: inherit;
+  cursor: pointer;
+}
+.ov-fold:hover {
+  background: var(--c-hover);
+}
+.ov-fold:focus-visible {
+  outline: var(--focus-ring);
+}
+.ov-section-title {
+  font-weight: 600;
+}
+.ov-count {
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-2);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
 }
 .ov-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: var(--s-3);
-  margin-bottom: var(--s-6);
 }
 .ov-card {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+  padding: var(--s-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
   cursor: pointer;
-  font-size: var(--fs-md);
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+.ov-card:hover {
+  border-color: color-mix(in srgb, var(--ov-color) 50%, var(--c-border));
+  box-shadow: var(--sh-card);
 }
 .ov-card:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
 }
-.ov-actions {
+.ov-card.is-closed {
+  border-style: dashed;
+  background: var(--c-surface-2);
+  color: var(--c-text-2);
+}
+.ov-card.is-active {
+  border-color: var(--ov-color);
+}
+.ov-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+  font-size: 18px;
+}
+.ov-card.is-closed .ov-card-icon {
+  background: var(--c-surface-3);
+}
+.ov-card-text {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.ov-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+.ov-card-sub {
+  display: flex;
+  align-items: center;
   gap: var(--s-2);
-  flex-wrap: wrap;
+  min-width: 0;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.ov-badge {
+  flex: none;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-3);
+  font-size: 10.5px;
+}
+.ov-empty {
+  max-width: 460px;
+  margin: var(--s-8) auto;
+  text-align: center;
+}
+.ov-empty-title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+/* The quiet buttons sit one level down in the band and in a section's title row, so
+   they show from the whole of it. */
+.ov-hero:hover .reveal,
+.ov-hero:has(:focus-visible) .reveal,
+.ov-section-head:hover .reveal,
+.ov-section-head:has(:focus-visible) .reveal {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ---- The emoji picker -------------------------------------------------------- */
@@ -1521,13 +1708,9 @@ button {
   white-space: nowrap;
 }
 
-/* A card on a Space's overview: one "…" in its corner while the pointer is on it. */
-.ov-card {
-  position: relative;
-}
+/* A card on a Space's overview: one "…" at its right while the pointer is on it. */
 .ov-more {
   flex: none;
-  margin: -2px -4px 0 0;
 }
 .ov-card:hover .ov-more,
 .ov-card:has(:focus-visible) .ov-more {

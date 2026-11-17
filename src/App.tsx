@@ -170,6 +170,10 @@ export function App() {
           space={leadSpace}
           tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
           artifacts={state.artifacts.filter((a) => a.spaceId === leadSpace.id)}
+          chats={state.chats.conversations.filter((c) =>
+            c.spaceIds.includes(leadSpace.id),
+          )}
+          activeChatId={state.chats.activeId}
           openArtifactIds={state.artifactTabs.map((a) => a.id)}
         />
       )}

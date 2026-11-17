@@ -255,6 +255,7 @@ const browserApi: BrowserApi = {
   artifactSelect: (id) => ipcRenderer.send('artifact:select', id),
   artifactClose: (id) => ipcRenderer.send('artifact:close', id),
   artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
+  spaceBulk: (id, action) => ipcRenderer.send('space:bulk', id, action),
   showNewArtifactMenu: (x, y) => ipcRenderer.send('artifact:new-menu', x, y),
   artifactSetInternet: (id, on) =>
     ipcRenderer.invoke('artifact:set-internet', id, on),

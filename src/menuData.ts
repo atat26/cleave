@@ -226,6 +226,7 @@ export type SpaceChoice =
   | { action: 'toggle-collapse' }
   | { action: 'ungroup' }
   | { action: 'close-all' }
+  | { action: 'reopen-all' }
   | { action: 'delete' };
 
 const capitalize = (text: string) =>
@@ -240,6 +241,7 @@ export function spaceMenuItems(
   if (!space) return null;
   const inSpace = state.tabs.filter((tab) => tab.spaceId === spaceId);
   const open = inSpace.filter((tab) => !tab.closed).length;
+  const closedCount = inSpace.length - open;
   return [
     { type: 'item', id: 'space.open', label: 'Open overview', icon: 'layers' },
     {
@@ -298,6 +300,13 @@ export function spaceMenuItems(
       icon: 'x',
       disabled: open === 0,
     },
+    {
+      type: 'item',
+      id: 'space.reopen-all',
+      label: 'Reopen closed pages',
+      icon: 'undo',
+      disabled: closedCount === 0,
+    },
     { type: 'separator' },
     {
       type: 'item',
@@ -332,6 +341,8 @@ export function parseSpaceChoice(id: string): SpaceChoice | null {
       return { action: 'ungroup' };
     case 'space.close-all':
       return { action: 'close-all' };
+    case 'space.reopen-all':
+      return { action: 'reopen-all' };
     case 'space.delete':
       return { action: 'delete' };
   }

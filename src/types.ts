@@ -303,6 +303,8 @@ export interface ChatInfo {
   model: string | null;
   // A reply is being written in this chat right now.
   generating: boolean;
+  // The Spaces this chat is linked to (so a Space's overview can list its chats).
+  spaceIds: number[];
 }
 
 export interface ChatsInfo {
@@ -631,6 +633,8 @@ export interface BrowserApi {
   artifactSetInternet: (id: number, on: boolean) => Promise<boolean>;
   // "New" in the Artifacts panel: a menu of kinds (made in the Space you are in).
   showNewArtifactMenu: (x: number, y: number) => void;
+  // Close all of a Space's open pages, or reopen all its closed ones.
+  spaceBulk: (id: number, action: 'close-all' | 'reopen-all') => void;
   // The setting changed (from the menu): its artifact's id.
   onArtifactInternet: (callback: (id: number) => void) => () => void;
   // `revision` is the version the text was based on.

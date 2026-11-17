@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
+import { agoWords, overviewContent, summaryLine } from './overviewModel';
 import { Favicon, labelFor } from './Sidebar';
 import { NameButton } from './NameButton';
-import { Button, IconButton, ItemEmoji, SpaceIcon } from './ui/controls';
+import { Button, IconButton, Input, ItemEmoji, SpaceIcon } from './ui/controls';
 import { Icon } from './ui/Icon';
-import type { ArtifactInfo, SpaceInfo, TabInfo } from './types';
+import type { ArtifactInfo, ChatInfo, SpaceInfo, TabInfo } from './types';
 
 function hostOf(url: string): string {
   try {
-    return new URL(url).hostname;
+    return new URL(url).hostname.replace(/^www\./i, '');
   } catch {
     return url;
   }
@@ -24,36 +25,48 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
   code: 'Code',
 };
 
-// One item on the overview: a card you click to open. Its other actions (close,
-// take out, delete...) are in one "…" menu that shows while the pointer is on the
-// card (the same menu as right-click). A closed one is lighter and dashed. The
-// Space's colour runs along its top edge.
+const sizeWords = (chars: number) =>
+  chars < 1000 ? `${chars} chars` : `${(chars / 1000).toFixed(1)}k chars`;
+
+// One item on the overview: a card you click to open. Its other actions are in one
+// "…" menu that shows while the pointer or the keyboard is on the card (the same
+// menu as right-click). A closed page is lighter and dashed.
 function OverviewCard({
-  color,
   icon,
   title,
   subtitle,
-  open,
+  badge,
+  closed = false,
+  active = false,
   onOpen,
   onMenu,
+  moreLabel,
 }: {
-  color: string;
   icon: ReactNode;
   title: string;
   subtitle: string;
-  // Open as a tab right now.
-  open: boolean;
+  // A small note at the right of the subtitle (for example "Open").
+  badge?: string;
+  closed?: boolean;
+  active?: boolean;
   onOpen: () => void;
-  // Show the item's menu at a place in the window.
-  onMenu: (x: number, y: number) => void;
+  // Show the item's menu at a place in the window (none: no menu).
+  onMenu?: (x: number, y: number) => void;
+  moreLabel: string;
 }) {
   return (
     <div
-      className={
-        open ? 'card ov-card reveal-host' : 'card ov-card is-closed reveal-host'
-      }
+      className={[
+        'ov-card',
+        'reveal-host',
+        closed ? 'is-closed' : '',
+        active ? 'is-active' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       role="button"
       tabIndex={0}
+      title={title}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -63,26 +76,25 @@ function OverviewCard({
         }
       }}
       onContextMenu={(event) => {
+        if (!onMenu) return;
         event.preventDefault();
         onMenu(event.clientX, event.clientY);
       }}
-      style={{ borderTop: `3px solid ${color}` }}
     >
-      <div className="row-flex" style={{ gap: 10 }}>
-        {icon}
-        <div className="grow">
-          <div className="truncate" style={{ fontWeight: 600 }}>
-            {title}
-          </div>
-          <div className="truncate muted" style={{ fontSize: 'var(--fs-xs)' }}>
-            {subtitle}
-          </div>
-        </div>
+      <span className="ov-card-icon">{icon}</span>
+      <span className="ov-card-text">
+        <span className="ov-card-title">{title}</span>
+        <span className="ov-card-sub">
+          <span className="truncate">{subtitle}</span>
+          {badge && <span className="ov-badge">{badge}</span>}
+        </span>
+      </span>
+      {onMenu && (
         <IconButton
           icon="more"
           size="sm"
           className="reveal ov-more"
-          label={`More actions for ${title}`}
+          label={moreLabel}
           aria-haspopup="menu"
           onClick={(event) => {
             event.stopPropagation(); // Don't also open the card.
@@ -90,18 +102,73 @@ function OverviewCard({
             onMenu(box.left, box.bottom + 2);
           }}
         />
-      </div>
+      )}
     </div>
   );
 }
 
-// A Space's Lead tab: an overview of the web pages and artifacts in it. Each can
-// be opened or closed (a closed one stays here), and removed for good. It is
-// drawn by our own UI page, in the area where a web page would normally be.
+// A titled part of the page. Click the title to fold it away (remembered), and the
+// section's own buttons show while the pointer or keyboard is on its title.
+function Section({
+  id,
+  title,
+  count,
+  actions,
+  children,
+}: {
+  id: string;
+  title: string;
+  count: number;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  const key = `overviewFold:${id}`;
+  const [folded, setFolded] = useState(() => {
+    try {
+      return localStorage.getItem(key) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setFolded((now) => {
+      try {
+        localStorage.setItem(key, now ? '0' : '1');
+      } catch {
+        // Not remembered; fine.
+      }
+      return !now;
+    });
+  };
+  return (
+    <section className="ov-section" aria-label={title}>
+      <div className="ov-section-head reveal-host">
+        <button
+          type="button"
+          className="ov-fold"
+          aria-expanded={!folded}
+          onClick={toggle}
+        >
+          <Icon name={folded ? 'chev-r' : 'chev-d'} />
+          <span className="ov-section-title">{title}</span>
+          <span className="ov-count">{count}</span>
+        </button>
+        {actions && <span className="ov-section-actions">{actions}</span>}
+      </div>
+      {!folded && children}
+    </section>
+  );
+}
+
+// A Space's overview: everything in it at a glance (its pages, artifacts and chats),
+// with a search box that narrows all of them. It is drawn by our own UI page, in the
+// area where a web page would normally be.
 export function LeadView({
   space,
   tabs,
   artifacts,
+  chats,
+  activeChatId,
   openArtifactIds,
 }: {
   space: SpaceInfo;
@@ -109,12 +176,21 @@ export function LeadView({
   tabs: TabInfo[];
   // The artifacts in this Space.
   artifacts: ArtifactInfo[];
+  // The chats linked to this Space.
+  chats: ChatInfo[];
+  activeChatId: number;
   // Which artifacts are open as tabs.
   openArtifactIds: number[];
 }) {
   const color = SPACE_COLOR_HEX[space.color];
   const [editing, setEditing] = useState(false);
-  // The two small forms under the header.
+  const [query, setQuery] = useState('');
+  // "5 min ago" moves on while the page is open.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const finishRename = (value: string) => {
     setEditing(false);
@@ -123,28 +199,45 @@ export function LeadView({
     }
   };
 
+  const shown = useMemo(
+    () => overviewContent({ query, pages: tabs, artifacts, chats }),
+    [query, tabs, artifacts, chats],
+  );
   const openCount = tabs.filter((t) => !t.closed).length;
+  const empty =
+    tabs.length === 0 && artifacts.length === 0 && chats.length === 0;
+  const nothingFound =
+    !empty &&
+    shown.open.length +
+      shown.closed.length +
+      shown.artifacts.length +
+      shown.chats.length ===
+      0;
+
+  const openChat = (id: number) => {
+    window.browserApi.selectChat(id);
+    window.browserApi.setViewMode('chat');
+  };
 
   return (
     <main
-      style={{
-        // The same rounded card where a web page would be. The app keeps these
-        // variables up to date while the frame slides (see App.tsx).
-        position: 'fixed',
-        top: TOOLBAR_HEIGHT,
-        left: `calc(var(--left) + ${PAGE_INSET}px)`,
-        right: `calc(var(--rail) + var(--panel) + ${PAGE_INSET}px)`,
-        bottom: `calc(var(--chat) + ${PAGE_INSET}px)`,
-        overflowY: 'auto',
-        background: 'var(--c-surface)',
-        borderRadius: PAGE_RADIUS,
-        padding: 'var(--s-6)',
-        boxSizing: 'border-box',
-        color: 'var(--c-text)',
-      }}
+      className="ov"
+      style={
+        {
+          // The same rounded card where a web page would be. The app keeps these
+          // variables up to date while the frame slides (see App.tsx).
+          position: 'fixed',
+          top: TOOLBAR_HEIGHT,
+          left: `calc(var(--left) + ${PAGE_INSET}px)`,
+          right: `calc(var(--rail) + var(--panel) + ${PAGE_INSET}px)`,
+          bottom: `calc(var(--chat) + ${PAGE_INSET}px)`,
+          borderRadius: PAGE_RADIUS,
+          '--ov-color': color,
+        } as React.CSSProperties
+      }
     >
-      <div
-        className="reveal-host"
+      <header
+        className="ov-hero reveal-host"
         onContextMenu={(event) => {
           event.preventDefault();
           window.browserApi.showSpaceMenu(
@@ -153,131 +246,248 @@ export function LeadView({
             event.clientY,
           );
         }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          marginBottom: 20,
-          flexWrap: 'wrap',
-        }}
       >
-        <SpaceIcon emoji={space.emoji} tint={color} />
-        {editing ? (
-          <input
-            className="input"
-            autoFocus
-            defaultValue={space.name}
-            maxLength={60}
-            aria-label="Space name"
-            onFocus={(e) => e.target.select()}
-            onBlur={(e) => finishRename(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') finishRename(e.currentTarget.value);
-              if (e.key === 'Escape') setEditing(false);
-            }}
-            style={{
-              fontSize: 'var(--fs-xl)',
-              fontWeight: 600,
-              minWidth: 0,
-              width: 280,
-              height: 36,
-            }}
-          />
-        ) : (
-          <h1
-            onClick={() => setEditing(true)}
-            title="Click to rename"
-            style={{
-              margin: 0,
-              fontSize: 'var(--fs-xl)',
-              cursor: 'text',
+        <span className="ov-hero-icon">
+          <SpaceIcon emoji={space.emoji} tint={color} />
+        </span>
+        <div className="ov-hero-main">
+          <div className="ov-name-row">
+            {editing ? (
+              <input
+                className="input"
+                autoFocus
+                defaultValue={space.name}
+                maxLength={60}
+                aria-label="Space name"
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => finishRename(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') finishRename(e.currentTarget.value);
+                  if (e.key === 'Escape') setEditing(false);
+                }}
+                style={{
+                  fontSize: 'var(--fs-2xl)',
+                  fontWeight: 650,
+                  minWidth: 0,
+                  width: 320,
+                  height: 42,
+                }}
+              />
+            ) : (
+              <h1
+                className="ov-name truncate"
+                onClick={() => setEditing(true)}
+                title="Click to rename"
+              >
+                {space.name}
+              </h1>
+            )}
+            <NameButton kind="space" id={space.id} />
+          </div>
+          <div className="ov-summary">
+            {summaryLine({
+              pages: tabs.length,
+              open: openCount,
+              artifacts: artifacts.length,
+              chats: chats.length,
+            })}
+          </div>
+        </div>
+        <div className="ov-hero-actions">
+          <Button
+            variant="primary"
+            icon="plus"
+            aria-haspopup="menu"
+            aria-label="Add to this Space"
+            title="Add a page or an artifact"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              window.browserApi.showSpaceAddMenu(
+                space.id,
+                box.left,
+                box.bottom + 4,
+              );
             }}
           >
-            {space.name}
-          </h1>
-        )}
-        <NameButton kind="space" id={space.id} />
-        <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
-          {tabs.length} {tabs.length === 1 ? 'page' : 'pages'} ({openCount}{' '}
-          open) · {artifacts.length}{' '}
-          {artifacts.length === 1 ? 'artifact' : 'artifacts'}
-        </span>
-        <Button
-          variant="primary"
-          icon="plus"
-          aria-haspopup="menu"
-          aria-label="Add to this Space"
-          title="Add a page or an artifact"
-          style={{ marginLeft: 'auto' }}
-          onClick={(event) => {
-            const box = event.currentTarget.getBoundingClientRect();
-            window.browserApi.showSpaceAddMenu(
-              space.id,
-              box.left,
-              box.bottom + 4,
-            );
-          }}
-        >
-          Add
-          <Icon name="chev-d" />
-        </Button>
-      </div>
-
-      <h2 className="sect-title ov-title">Web pages</h2>
-      {tabs.length === 0 ? (
-        <p
-          className="muted"
-          style={{ marginTop: 0, marginBottom: 'var(--s-6)' }}
-        >
-          No pages in this Space yet. Use the +, or Ctrl+T while you are in this
-          Space.
-        </p>
-      ) : (
-        <div className="ov-grid">
-          {tabs.map((tab) => (
-            <OverviewCard
-              key={tab.id}
-              color={color}
-              icon={<Favicon tab={tab} />}
-              title={labelFor(tab)}
-              subtitle={`${hostOf(tab.url)} · ${
-                tab.closed ? 'closed' : tab.loaded ? 'open' : 'open, sleeping'
-              }`}
-              open={!tab.closed}
-              onOpen={() => window.browserApi.selectTab(tab.id)}
-              onMenu={(x, y) => window.browserApi.showTabMenu(tab.id, x, y)}
-            />
-          ))}
+            Add
+            <Icon name="chev-d" />
+          </Button>
+          <IconButton
+            icon="more"
+            label="More: rename, colour, close all pages and more"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              window.browserApi.showSpaceMenu(
+                space.id,
+                box.right - 220,
+                box.bottom + 4,
+              );
+            }}
+          />
         </div>
-      )}
+      </header>
 
-      <h2 className="sect-title ov-title">Artifacts</h2>
-      {artifacts.length === 0 ? (
-        <p className="muted" style={{ marginTop: 0 }}>
-          No artifacts in this Space yet. Use the + to make one or add one you
-          have.
-        </p>
-      ) : (
-        <div className="ov-grid">
-          {artifacts.map((a) => {
-            const open = openArtifactIds.includes(a.id);
-            return (
-              <OverviewCard
-                key={a.id}
-                color={color}
-                icon={<ItemEmoji emoji={a.emoji} />}
-                title={a.title}
-                subtitle={`${KIND_WORDS[a.kind]} · ${open ? 'open' : 'closed'}`}
-                open={open}
-                onOpen={() => window.browserApi.artifactOpen(a.id)}
-                onMenu={(x, y) =>
-                  window.browserApi.showArtifactMenu(a.id, x, y)
+      <div className="ov-body">
+        {empty ? (
+          <div className="ov-empty">
+            <p className="ov-empty-title">This Space is empty.</p>
+            <p className="muted">
+              Open a page while you are in it, make an artifact here, or link it
+              to a chat with @. Everything in the Space shows up on this page.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="ov-tools">
+              <label className="ov-search">
+                <Icon name="search" />
+                <Input
+                  aria-label="Search this Space"
+                  placeholder="Search this Space"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && query !== '') {
+                      event.preventDefault();
+                      setQuery('');
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {nothingFound && (
+              <p className="muted" role="status">
+                Nothing in this Space matches “{query.trim()}”.
+              </p>
+            )}
+
+            {shown.open.length > 0 && (
+              <Section
+                id="pages"
+                title="Open pages"
+                count={shown.open.length}
+                actions={
+                  <Button
+                    size="sm"
+                    className="reveal"
+                    onClick={() =>
+                      window.browserApi.spaceBulk(space.id, 'close-all')
+                    }
+                  >
+                    Close all
+                  </Button>
                 }
-              />
-            );
-          })}
-        </div>
-      )}
+              >
+                <div className="ov-grid">
+                  {shown.open.map((tab) => (
+                    <OverviewCard
+                      key={tab.id}
+                      icon={<Favicon tab={tab} />}
+                      title={labelFor(tab)}
+                      subtitle={hostOf(tab.url)}
+                      badge={tab.loaded ? undefined : 'Sleeping'}
+                      onOpen={() => window.browserApi.selectTab(tab.id)}
+                      onMenu={(x, y) =>
+                        window.browserApi.showTabMenu(tab.id, x, y)
+                      }
+                      moreLabel={`More actions for ${labelFor(tab)}`}
+                    />
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {shown.artifacts.length > 0 && (
+              <Section
+                id="artifacts"
+                title="Artifacts"
+                count={shown.artifacts.length}
+              >
+                <div className="ov-grid">
+                  {shown.artifacts.map((a) => {
+                    const open = openArtifactIds.includes(a.id);
+                    return (
+                      <OverviewCard
+                        key={a.id}
+                        icon={<ItemEmoji emoji={a.emoji} />}
+                        title={a.title}
+                        subtitle={`${KIND_WORDS[a.kind]} · ${sizeWords(a.size)}`}
+                        badge={open ? 'Open' : undefined}
+                        onOpen={() => window.browserApi.artifactOpen(a.id)}
+                        onMenu={(x, y) =>
+                          window.browserApi.showArtifactMenu(a.id, x, y)
+                        }
+                        moreLabel={`More actions for ${a.title}`}
+                      />
+                    );
+                  })}
+                </div>
+              </Section>
+            )}
+
+            {shown.chats.length > 0 && (
+              <Section id="chats" title="Chats" count={shown.chats.length}>
+                <div className="ov-grid">
+                  {shown.chats.map((c) => (
+                    <OverviewCard
+                      key={c.id}
+                      icon={<ItemEmoji emoji={c.emoji} />}
+                      title={c.title}
+                      subtitle={`${c.messageCount} ${
+                        c.messageCount === 1 ? 'message' : 'messages'
+                      } · ${agoWords(c.updatedAt, now)}`}
+                      active={c.id === activeChatId}
+                      onOpen={() => openChat(c.id)}
+                      onMenu={(x, y) =>
+                        window.browserApi.showChatMenu(c.id, x, y)
+                      }
+                      moreLabel={`More actions for ${c.title}`}
+                    />
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {shown.closed.length > 0 && (
+              <Section
+                id="closed"
+                title="Closed pages"
+                count={shown.closed.length}
+                actions={
+                  <Button
+                    size="sm"
+                    className="reveal"
+                    onClick={() =>
+                      window.browserApi.spaceBulk(space.id, 'reopen-all')
+                    }
+                  >
+                    Reopen all
+                  </Button>
+                }
+              >
+                <div className="ov-grid">
+                  {shown.closed.map((tab) => (
+                    <OverviewCard
+                      key={tab.id}
+                      closed
+                      icon={<Favicon tab={tab} />}
+                      title={labelFor(tab)}
+                      subtitle={hostOf(tab.url)}
+                      badge="Closed"
+                      onOpen={() => window.browserApi.selectTab(tab.id)}
+                      onMenu={(x, y) =>
+                        window.browserApi.showTabMenu(tab.id, x, y)
+                      }
+                      moreLabel={`More actions for ${labelFor(tab)}`}
+                    />
+                  ))}
+                </div>
+              </Section>
+            )}
+          </>
+        )}
+      </div>
     </main>
   );
 }
