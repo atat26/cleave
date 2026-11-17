@@ -249,7 +249,7 @@ import { isChoosable } from './menuTypes';
 import type { MenuItem } from './menuTypes';
 
 // What a new tab shows. Later this could become an AI chat / search page.
-export const NEW_TAB_URL = 'https://duckduckgo.com';
+export const NEW_TAB_URL = model.NEW_TAB_PAGE;
 
 const isId = (value: unknown): value is number => Number.isInteger(value);
 const isIdOrNull = (value: unknown): value is number | null =>
@@ -402,8 +402,8 @@ export async function createTabs(
     defaultSearchEngineSettings,
   );
   const searchEngineSaver = createSaver(searchEngineFile, () => searchEngine);
-  // Where a new tab opens: the home page of the search engine in use.
-  const newTabUrl = () => engineHome(activeEngine(searchEngine));
+  // A new tab shows the new-tab page (no web page behind it).
+  const newTabUrl = () => model.NEW_TAB_PAGE;
   // What sites may do (camera, location...): see permissions.ts.
   const permissionsFile = path.join(
     app.getPath('userData'),
@@ -645,6 +645,13 @@ export async function createTabs(
   let chatNeed: ChatNeed = 'none';
 
   // Where each part of the frame should be right now.
+  // Is the tab you are on a new tab, with the new-tab page and no web page?
+  const onNewTabPage = () => {
+    const id = activeTabId();
+    const tab = id === null ? undefined : model.findTab(state, id);
+    return tab !== undefined && model.isNewTabPage(tab.url);
+  };
+
   const targetSizes = (): FrameSizes => {
     const s = state.settings;
     const window = windowSize();
@@ -659,13 +666,16 @@ export async function createTabs(
       sidebar: expanded() ? s.sidebarWidth : SIDEBAR_COLLAPSED_WIDTH,
       left: fit.left,
       panel: fit.panel,
-      chat: restingChatHeight(
-        s.viewMode,
-        s.chatExpanded,
-        s.chatHeight,
-        window,
-        chatNeed,
-      ),
+      // The new-tab page has its own box, so there is no chat bar under it.
+      chat: onNewTabPage()
+        ? 0
+        : restingChatHeight(
+            s.viewMode,
+            s.chatExpanded,
+            s.chatHeight,
+            window,
+            chatNeed,
+          ),
     };
     // The part being dragged follows the mouse exactly.
     if (drag?.kind === 'sidebar') {
@@ -1542,7 +1552,7 @@ export async function createTabs(
       } else if (contents.navigationHistory.canGoBack()) {
         contents.navigationHistory.goBack();
       } else {
-        void contents.loadURL(newTabUrl());
+        void contents.loadURL(engineHome(activeEngine(searchEngine)));
       }
     });
 
@@ -1802,11 +1812,12 @@ export async function createTabs(
 
   // Show whatever is selected: wake the active tab if needed, hide the other
   // views. A Lead tab has no web page: the toolbar window draws it instead.
+  let lastOnNewTabPage = false;
   const showActive = () => {
     exitFullscreenIfAway();
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
-    if (tab) ensureView(tab);
+    if (tab && !model.isNewTabPage(tab.url)) ensureView(tab);
     for (const [tabId, view] of views) {
       // Hidden pages are not resized while the layout slides, so catch up now.
       if (tabId === id) view.setBounds(pageBounds());
@@ -1814,9 +1825,17 @@ export async function createTabs(
     }
     syncFind();
     hideSuggest();
-    // Keyboard focus goes to the page, unless it is hidden (chat-only mode).
-    if (id !== null && pageIsShown()) pageContents(id)?.focus();
-    else win.webContents.focus();
+    // Keyboard focus goes to the page, unless it is hidden (chat-only mode). A
+    // new-tab page is drawn by the window itself, which takes the keyboard.
+    if (id !== null && pageIsShown() && !onNewTabPage()) {
+      pageContents(id)?.focus();
+    } else win.webContents.focus();
+    // Entering or leaving a new-tab page moves the chat bar away or back.
+    const now = onNewTabPage();
+    if (now !== lastOnNewTabPage) {
+      lastOnNewTabPage = now;
+      applyLayout(true);
+    }
     sendState();
   };
 
@@ -1885,13 +1904,15 @@ export async function createTabs(
     const tab = model.findTab(state, id);
     if (!tab || tab.closed) return;
     syncLinkSnapshots(); // So a chat's link to this tab remembers its latest name.
-    closedTabs = recordClosed(
-      closedTabs,
-      { url: tab.url, title: tab.title, spaceId: tab.spaceId },
-      Date.now(),
-    );
-    closedSaver.schedule();
-    libraryChanged();
+    if (!model.isNewTabPage(tab.url)) {
+      closedTabs = recordClosed(
+        closedTabs,
+        { url: tab.url, title: tab.title, spaceId: tab.spaceId },
+        Date.now(),
+      );
+      closedSaver.schedule();
+      libraryChanged();
+    }
     destroyView(id);
     commitAndShow(withSomethingActive(model.closeTab(state, id)));
   };
@@ -2041,7 +2062,9 @@ export async function createTabs(
     | { ok: false; reason: 'closed' | 'timeout' }
   > => {
     const tab = model.findTab(state, tabId);
-    if (!tab || tab.closed) return { ok: false, reason: 'closed' };
+    if (!tab || tab.closed || model.isNewTabPage(tab.url)) {
+      return { ok: false, reason: 'closed' };
+    }
     const wasAsleep = !views.has(tabId);
     const contents = ensureView(tab).webContents;
     if (wasAsleep) sendState();
@@ -3422,6 +3445,14 @@ export async function createTabs(
       if (id === null || typeof input !== 'string') return;
       const url = resolveInput(input, activeEngine(searchEngine).template);
       if (url === '') return;
+      const here = model.findTab(state, id);
+      if (here && model.isNewTabPage(here.url)) {
+        // The new tab becomes a web tab: its page is made and loads the address.
+        state = model.updateTab(state, id, { url });
+        saver.schedule();
+        commitAndShow(state);
+        return;
+      }
       void pageContents(id)?.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
       commitAndShow(revealPage(state));

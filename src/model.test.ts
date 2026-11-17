@@ -25,7 +25,9 @@ import {
   deleteSpace,
   findClosedTabByAddress,
   moveTab,
+  isNewTabPage,
   navOrder,
+  NEW_TAB_PAGE,
   openArtifactTab,
   parseState,
   reconcileArtifactTabs,
@@ -648,4 +650,39 @@ test('a new tab can be put right after another one, in the same place in the lis
   const end = addTab(state, { url: 'https://end.example', after: 99999 });
   assert.equal(end.state.tabs.at(-1)?.id, end.id);
   assert.ok(aId > 0);
+});
+
+test('a new tab has no web address, survives a restart, and closing it just removes it', () => {
+  let state = defaultState();
+  const space = addSpace(state);
+  state = space.state;
+  const added = addTab(state, { url: NEW_TAB_PAGE, spaceId: space.id });
+  assert.equal(isNewTabPage(NEW_TAB_PAGE), true);
+  assert.equal(isNewTabPage('https://a.com/'), false);
+  const restored = parseState(JSON.parse(JSON.stringify(added.state)));
+  assert.equal(restored.tabs.find((t) => t.id === added.id)?.url, NEW_TAB_PAGE);
+  // It becomes an ordinary web tab when you go somewhere.
+  const gone = updateTab(added.state, added.id, { url: 'https://a.com/' });
+  assert.equal(gone.tabs.find((t) => t.id === added.id)?.url, 'https://a.com/');
+  // Closing it in a Space does not keep it as a closed link.
+  const closed = closeTab(added.state, added.id);
+  assert.equal(
+    closed.tabs.some((t) => t.id === added.id),
+    false,
+  );
+  // Other odd addresses are still refused.
+  const junk = parseState({
+    ...JSON.parse(JSON.stringify(added.state)),
+    tabs: [
+      {
+        id: 99,
+        url: 'about:blank',
+        title: '',
+        favicon: null,
+        spaceId: null,
+        closed: false,
+      },
+    ],
+  });
+  assert.equal(junk.tabs.length, 0);
 });

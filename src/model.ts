@@ -154,6 +154,12 @@ const MAX_URL = 4096;
 
 // Only normal web addresses are ever loaded or saved. This keeps a tampered
 // save file from making the app open file: or javascript: addresses.
+// The address of a new tab: it has no web page. The app draws the new-tab page
+// itself, and the tab becomes a web tab when you go somewhere.
+export const NEW_TAB_PAGE = 'about:newtab';
+export const isNewTabPage = (value: unknown): value is typeof NEW_TAB_PAGE =>
+  value === NEW_TAB_PAGE;
+
 export const isWebUrl = (value: unknown): value is string =>
   typeof value === 'string' &&
   value.length <= MAX_URL &&
@@ -222,7 +228,7 @@ export function parseState(raw: unknown): SavedState {
         !isRecord(item) ||
         !isId(item.id) ||
         tabIds.has(item.id) ||
-        !isWebUrl(item.url)
+        !(isWebUrl(item.url) || isNewTabPage(item.url))
       ) {
         continue;
       }
@@ -444,7 +450,8 @@ export function updateTab(
       if (tab.id !== id) return tab;
       return {
         ...tab,
-        url: isWebUrl(patch.url) ? patch.url : tab.url,
+        url:
+          isWebUrl(patch.url) || isNewTabPage(patch.url) ? patch.url : tab.url,
         title:
           typeof patch.title === 'string'
             ? patch.title.slice(0, MAX_TITLE)
@@ -482,7 +489,9 @@ export function removeTab(state: SavedState, id: number): SavedState {
 export function closeTab(state: SavedState, id: number): SavedState {
   const tab = findTab(state, id);
   if (!tab) return state;
-  if (tab.spaceId === null) return removeTab(state, id);
+  // A new tab with nothing in it is not worth keeping as a link.
+  if (tab.spaceId === null || isNewTabPage(tab.url))
+    return removeTab(state, id);
   if (tab.closed) return state;
   const before = navOrder(state);
   const next: SavedState = {
