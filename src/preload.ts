@@ -284,6 +284,17 @@ const browserApi: BrowserApi = {
       'newtab:drop',
       files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
     ),
+  // The HTML preview says what it ran into (errors, blocked loads), for the assistant's
+  // check_artifact tool; and the app asks the open preview to run again and report.
+  reportPreview: (id, messages) =>
+    ipcRenderer.send('artifact:preview-report', id, messages),
+  onPreviewCheck: (callback) => {
+    const listener = (_event: unknown, id: number) => callback(id);
+    ipcRenderer.on('artifact:preview-check', listener);
+    return () => {
+      ipcRenderer.removeListener('artifact:preview-check', listener);
+    };
+  },
   searchChats: (query) => ipcRenderer.invoke('chats:search', query),
   onFocusChatSearch: (callback) => {
     const listener = () => callback();

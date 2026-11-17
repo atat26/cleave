@@ -26,6 +26,10 @@ import {
 } from './chatLinks';
 import type { ArtifactKind } from './artifacts';
 import type { FileReading } from './artifactTools';
+import type { FindRead, ShotRead, TablesRead } from './pageEyes';
+import type { TabsEnv } from './tabTools';
+import type { RecallEnv } from './recallTools';
+import type { BookmarkResult, PreviewCheck, SaveResult } from './saveTools';
 import {
   messageMenuItems,
   modelMenuItems,
@@ -87,6 +91,36 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // Saving a page, bookmarking it, and checking an HTML artifact (see saveTools.ts).
+  // Saving also links the new artifact to the chat.
+  saveStore: {
+    savePage(
+      chatId: number,
+      tabId: number,
+      what: 'page' | 'selection',
+      title: string | null,
+      spaceId: number | null,
+      signal: AbortSignal,
+    ): Promise<SaveResult>;
+    bookmarkPage(tabId: number, signal: AbortSignal): Promise<BookmarkResult>;
+    checkPreview(
+      artifactId: number,
+      signal: AbortSignal,
+    ): Promise<PreviewCheck>;
+  };
+  // What the assistant can look up: your history, bookmarks and earlier chats (see
+  // recallTools.ts).
+  recallStore: Omit<RecallEnv, 'currentChatId'>;
+  // The assistant's tab and Space tools (see tabTools.ts).
+  tabStore: Omit<TabsEnv, 'linkedSpaces'>;
+  // More ways to look at a tab (read-only; see pageEyes.ts).
+  screenshotPage(tabId: number, signal: AbortSignal): Promise<ShotRead>;
+  findInPage(
+    tabId: number,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<FindRead>;
+  readTables(tabId: number, signal: AbortSignal): Promise<TablesRead>;
   // The full address a numbered link on a tab goes to (or null).
   linkAddress(
     tabId: number,
@@ -340,6 +374,34 @@ export function createChatService(options: {
             createSpace: (input) => options.spaceStore.create(chatId, input),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            savePage: (tabId, what, title, spaceId, signal) =>
+              options.saveStore.savePage(
+                chatId,
+                tabId,
+                what,
+                title,
+                spaceId,
+                signal,
+              ),
+            bookmarkPage: options.saveStore.bookmarkPage,
+            checkPreview: options.saveStore.checkPreview,
+            currentChatId: () => chatId,
+            now: options.recallStore.now,
+            searchHistory: options.recallStore.searchHistory,
+            searchBookmarks: options.recallStore.searchBookmarks,
+            searchChats: options.recallStore.searchChats,
+            readChat: options.recallStore.readChat,
+            allTabs: options.tabStore.allTabs,
+            allSpaces: options.tabStore.allSpaces,
+            moveTab: options.tabStore.moveTab,
+            closeTab: options.tabStore.closeTab,
+            sleepTab: options.tabStore.sleepTab,
+            reopenTab: options.tabStore.reopenTab,
+            spaceNote: options.tabStore.spaceNote,
+            setSpaceNote: options.tabStore.setSpaceNote,
+            screenshotPage: options.screenshotPage,
+            findInPage: options.findInPage,
+            readTables: options.readTables,
             linkAddress: options.linkAddress,
             readLink: (url, signal) => readLinkText(url, signal),
             rememberedAddresses: () => rememberedAddresses(chatId),

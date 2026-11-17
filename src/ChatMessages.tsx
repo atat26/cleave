@@ -294,7 +294,13 @@ function ToolBlock({
         style={{ margin: '0 0 8px' }}
       >
         <div style={{ ...muted }}>The assistant wants to:</div>
-        <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+        <div
+          style={{
+            fontWeight: 600,
+            overflowWrap: 'anywhere',
+            whiteSpace: 'pre-line',
+          }}
+        >
           {part.ask}
         </div>
         {part.risky && (

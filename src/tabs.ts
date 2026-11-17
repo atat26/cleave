@@ -51,6 +51,9 @@ import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { chatMarkdown } from './chatExport';
 import { exportFileName, spaceMarkdown } from './spaceExport';
 import type { FileReading } from './artifactTools';
+import { fitWithin, MAX_SHOT_SIDE } from './pageEyes';
+import { cleanSavedText, savedContent } from './saveTools';
+import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import { parsePdfText } from './pdfTextFormat';
 import type { PdfTextResult } from './pdfTextFormat';
 import {
@@ -96,7 +99,15 @@ import {
 } from './pageActions';
 import type { Cdp, DoneResult } from './pageActions';
 import { buildOutline } from './pageOutline';
-import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
+import {
+  captureScreenshotVia,
+  findInPageVia,
+  readAccessibilityTree,
+  readPageText,
+  readSelectionVia,
+  readTablesVia,
+  withCdp,
+} from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import { registerDownloads } from './downloadManager';
@@ -212,7 +223,7 @@ import {
 import type { NameResult } from './naming';
 import { createChatService } from './chatService';
 import type { ChatService } from './chatService';
-import { snapshotLookup } from './chatLinks';
+import { cleanLabel, snapshotLookup } from './chatLinks';
 import type { Workspace } from './chatLinks';
 import * as model from './model';
 import type { ActiveRef, SavedState, SavedTab } from './model';
@@ -2457,6 +2468,111 @@ export async function createTabs(
     }
   };
 
+  // A picture of what a tab shows (shrunk if it is big), for a model that can see.
+  const screenshotTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<ShotRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const raw = await withCdp(ready.contents, 10_000, captureScreenshotVia);
+      const bytes = Buffer.from(raw, 'base64');
+      const picture = nativeImage.createFromBuffer(bytes);
+      const size = picture.getSize();
+      const fit = fitWithin(size.width, size.height, MAX_SHOT_SIDE);
+      const shrunk =
+        !picture.isEmpty() &&
+        (fit.width !== size.width || fit.height !== size.height);
+      const out = shrunk
+        ? picture.resize({
+            width: fit.width,
+            height: fit.height,
+            quality: 'good',
+          })
+        : picture;
+      return {
+        ok: true,
+        title: ready.contents.getTitle(),
+        url: ready.contents.getURL(),
+        mime: 'image/jpeg',
+        data: shrunk ? out.toJPEG(80).toString('base64') : raw,
+        width: shrunk ? fit.width : size.width,
+        height: shrunk ? fit.height : size.height,
+      };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
+  // Find text in a tab, scrolling to the first match.
+  const findInTab = async (
+    tabId: number,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<FindRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const found = await withCdp(ready.contents, 8000, (cdp) =>
+        findInPageVia(cdp, text),
+      );
+      return { ok: true, ...found };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
+  // The tables of a tab.
+  const tablesInTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<TablesRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const read = await withCdp(ready.contents, 8000, readTablesVia);
+      return { ok: true, ...read };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
+  // What the HTML previews of artifacts last reported (errors, blocked loads), and who
+  // is waiting for the next report (the assistant's check_artifact tool).
+  interface PreviewReport {
+    at: number;
+    messages: { kind: 'blocked' | 'error'; text: string }[];
+  }
+  const previewReports = new Map<number, PreviewReport>();
+  const previewWaiters = new Map<
+    number,
+    ((r: PreviewReport | null) => void)[]
+  >();
+  ipcMain.on(
+    'artifact:preview-report',
+    (event, id: unknown, messages: unknown) => {
+      if (event.sender !== win.webContents || typeof id !== 'number') return;
+      if (!Array.isArray(messages)) return;
+      const clean: PreviewReport['messages'] = [];
+      for (const m of messages.slice(0, 20)) {
+        const item = m as { kind?: unknown; text?: unknown } | null;
+        if (
+          item !== null &&
+          typeof item === 'object' &&
+          (item.kind === 'blocked' || item.kind === 'error') &&
+          typeof item.text === 'string'
+        ) {
+          clean.push({ kind: item.kind, text: item.text.slice(0, 200) });
+        }
+      }
+      const entry: PreviewReport = { at: Date.now(), messages: clean };
+      previewReports.set(id, entry);
+      for (const resolve of previewWaiters.get(id) ?? []) resolve(entry);
+      previewWaiters.delete(id);
+    },
+  );
+
   // The outline of a tab: its controls, as a numbered list.
   const outlineTab = async (
     tabId: number,
@@ -2747,6 +2863,225 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    saveStore: {
+      savePage: async (chatId, tabId, what, title, spaceId, signal) => {
+        const ready = await prepareTab(tabId, signal);
+        if (!ready.ok) return ready;
+        let page: { title: string; url: string; text: string };
+        try {
+          page =
+            what === 'selection'
+              ? await withCdp(ready.contents, 8000, readSelectionVia)
+              : await readPageText(ready.contents);
+        } catch {
+          return { ok: false, reason: 'unavailable' };
+        }
+        const text = cleanSavedText(page.text);
+        if (text === '') return { ok: false, reason: 'empty' };
+        const name = title ?? (cleanLabel(page.title, 80) || 'Saved page');
+        const made = artifactsModel.createArtifact(
+          artifacts,
+          {
+            kind: 'markdown',
+            title: name,
+            content: savedContent({
+              title: name,
+              url: page.url,
+              what,
+              text,
+              now: new Date(),
+            }),
+            spaceId:
+              spaceId !== null && model.findSpace(state, spaceId)
+                ? spaceId
+                : null,
+          },
+          Date.now(),
+        );
+        if (!made.ok) {
+          return {
+            ok: false,
+            reason:
+              made.reason === 'too-long'
+                ? 'too-long'
+                : made.reason === 'too-many'
+                  ? 'too-many'
+                  : 'unavailable',
+          };
+        }
+        commitArtifacts(made.state);
+        // Link it to the chat, so the assistant can read it.
+        commitChats(
+          chatsModel.addRef(chats, chatId, {
+            kind: 'artifact',
+            id: made.artifact.id,
+            title: made.artifact.title,
+            url: null,
+          }),
+        );
+        return {
+          ok: true,
+          artifactId: made.artifact.id,
+          title: made.artifact.title,
+          chars: text.length,
+        };
+      },
+      bookmarkPage: async (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab || tab.closed) return { ok: false, reason: 'closed' };
+        if (historyUrl(tab.url) === null)
+          return { ok: false, reason: 'not-web' };
+        const already = isBookmarked(bookmarks, tab.url);
+        if (!already) {
+          const next = addBookmark(bookmarks, tab.url, tab.title, Date.now());
+          if (next === bookmarks) return { ok: false, reason: 'full' };
+          bookmarks = next;
+          bookmarksSaver.schedule();
+          libraryChanged();
+          sendState();
+        }
+        return { ok: true, already, title: tab.title };
+      },
+      checkPreview: async (artifactId, signal) => {
+        const found = artifactsModel.findArtifact(artifacts, artifactId);
+        if (!found) return { ok: false, reason: 'missing' };
+        if (found.kind !== 'html') return { ok: false, reason: 'not-html' };
+        // Wait for the open preview to say how it went (it runs again, so this is a
+        // fresh run), or give up if it never does (the editor is on screen instead).
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const report = new Promise<PreviewReport | null>((resolve) => {
+          const waiters = previewWaiters.get(artifactId) ?? [];
+          waiters.push(resolve);
+          previewWaiters.set(artifactId, waiters);
+          timer = setTimeout(() => resolve(null), 8000);
+          signal.addEventListener('abort', () => resolve(null), { once: true });
+        });
+        openArtifact(artifactId);
+        // The page may already be open (and loaded): ask it to run again.
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.send('artifact:preview-check', artifactId);
+        }
+        const got = await report;
+        clearTimeout(timer);
+        previewWaiters.delete(artifactId);
+        if (got === null) return { ok: false, reason: 'not-shown' };
+        return {
+          ok: true,
+          problems: got.messages,
+          internet: artifactsModel.hasInternet(found),
+        };
+      },
+    },
+    recallStore: {
+      now: () => Date.now(),
+      searchHistory: (query, limit) =>
+        searchHistory(history, query, limit).map((e) => ({
+          title: e.title,
+          url: e.url,
+          at: e.visitedAt,
+        })),
+      searchBookmarks: (query, limit) =>
+        searchBookmarks(bookmarks, query, limit).map((b) => ({
+          title: b.title,
+          url: b.url,
+          at: b.addedAt,
+        })),
+      searchChats: (query, limit) =>
+        chatsModel
+          .searchChats(chats, query)
+          .slice(0, limit)
+          .flatMap((match) => {
+            const chat = chatsModel.findConversation(chats, match.id);
+            return chat
+              ? [
+                  {
+                    id: chat.id,
+                    title: chat.title,
+                    at: chat.updatedAt,
+                    snippet: match.snippet,
+                  },
+                ]
+              : [];
+          }),
+      readChat: (id) => {
+        const chat = chatsModel.findConversation(chats, id);
+        if (!chat) return null;
+        return {
+          title: chat.title,
+          at: chat.updatedAt,
+          messages: chat.messages.flatMap((m) =>
+            (m.role === 'user' || m.role === 'assistant') && m.content !== ''
+              ? [{ role: m.role, text: m.content }]
+              : [],
+          ),
+        };
+      },
+    },
+    tabStore: {
+      allTabs: () =>
+        state.tabs.map((t) => ({
+          id: t.id,
+          title: t.title,
+          url: t.url,
+          spaceId: t.spaceId,
+          closed: t.closed,
+          asleep: !t.closed && !views.has(t.id),
+          active: state.active?.kind === 'tab' && state.active.id === t.id,
+        })),
+      allSpaces: () =>
+        state.spaces.map((s) => ({
+          id: s.id,
+          name: s.name,
+          emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
+          hasNote: s.about.trim() !== '',
+        })),
+      moveTab: (tabId, spaceId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (spaceId !== null && !model.findSpace(state, spaceId)) {
+          return { ok: false, reason: 'no-space' };
+        }
+        if (model.isNewTabPage(tab.url))
+          return { ok: false, reason: 'new-tab' };
+        commit(model.moveTab(state, tabId, spaceId));
+        return { ok: true };
+      },
+      closeTab: (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (tab.closed) return { ok: false, reason: 'closed' };
+        closeTab(tabId);
+        return { ok: true };
+      },
+      sleepTab: (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (tab.closed) return { ok: false, reason: 'closed' };
+        if (state.active?.kind === 'tab' && state.active.id === tabId) {
+          return { ok: false, reason: 'active' };
+        }
+        if (!views.has(tabId)) return { ok: false, reason: 'asleep' };
+        putToSleep([tabId]);
+        return { ok: true };
+      },
+      reopenTab: (tabId) => {
+        const tab = model.findTab(state, tabId);
+        if (!tab) return { ok: false, reason: 'no-tab' };
+        if (!tab.closed) return { ok: false, reason: 'open' };
+        // Opened where it is, without switching to it.
+        commit({ ...model.reopenTab(state, tabId), active: state.active });
+        return { ok: true };
+      },
+      spaceNote: (spaceId) => model.findSpace(state, spaceId)?.about ?? null,
+      setSpaceNote: (spaceId, text) => {
+        if (!model.findSpace(state, spaceId)) return { ok: false };
+        commit(model.setSpaceAbout(state, spaceId, text));
+        return { ok: true };
+      },
+    },
+    screenshotPage: screenshotTab,
+    findInPage: findInTab,
+    readTables: tablesInTab,
     // Where a numbered link goes (its full address, read from the page).
     linkAddress: async (tabId, control, signal) => {
       const ready = await prepareTab(tabId, signal);

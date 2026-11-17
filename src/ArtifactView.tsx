@@ -263,6 +263,20 @@ function TextArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   // messages that come from that frame, in our own shape, are taken.
   const frame = useRef<HTMLIFrameElement>(null);
   const [heard, setHeard] = useState<PreviewMessage[]>([]);
+  // The assistant's check_artifact tool asks for the page to run again and report: the
+  // frame is made again (a new run), and once it has loaded, what it said goes to the app.
+  const [run, setRun] = useState(0);
+  const [loaded, setLoaded] = useState(0);
+  useEffect(
+    () =>
+      window.browserApi.onPreviewCheck((id) => {
+        if (id === tab.id) {
+          setLoaded(0);
+          setRun((n) => n + 1);
+        }
+      }),
+    [tab.id],
+  );
   useEffect(() => {
     setHeard([]);
     const onMessage = (event: MessageEvent) => {
@@ -277,8 +291,18 @@ function TextArtifactView({ tab }: { tab: ArtifactTabInfo }) {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [text, showPreview, tab.id, internet]);
+  }, [text, showPreview, tab.id, internet, run]);
   const isHtml = tab.kind === 'html';
+  // A moment after the page has loaded (and again if it says more), tell the app what it
+  // reported, so it can be checked.
+  useEffect(() => {
+    if (!showPreview || !isHtml || loaded === 0) return;
+    const timer = setTimeout(
+      () => window.browserApi.reportPreview(tab.id, heard),
+      1200,
+    );
+    return () => clearTimeout(timer);
+  }, [heard, loaded, showPreview, isHtml, tab.id]);
   const note = showPreview && isHtml ? previewNote(heard) : null;
   // Something was refused for lack of the internet (not just an error in the page).
   const refused = heard.some(
@@ -463,7 +487,9 @@ function TextArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             </div>
           )}
           <iframe
+            key={run}
             ref={frame}
+            onLoad={() => setLoaded((n) => n + 1)}
             title={`${tab.title} (preview)`}
             sandbox={HTML_SANDBOX}
             srcDoc={htmlDocument(text, internet)}

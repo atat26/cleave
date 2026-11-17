@@ -671,6 +671,13 @@ export interface BrowserApi {
   onComposerAdd: (
     callback: (chatId: number, kind: 'page' | 'space' | 'artifact') => void,
   ) => () => void;
+  // What the HTML preview of an artifact reported (errors, blocked loads).
+  reportPreview: (
+    id: number,
+    messages: { kind: 'blocked' | 'error'; text: string }[],
+  ) => void;
+  // The app asks the open preview of an artifact to run again and report.
+  onPreviewCheck: (callback: (id: number) => void) => () => void;
   // Find chats by name or by what was said in them.
   searchChats: (query: string) => Promise<ChatMatch[]>;
   // "Search chats…" was chosen: put the keyboard in the chat list's search box.
