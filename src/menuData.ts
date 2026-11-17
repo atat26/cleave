@@ -1760,6 +1760,43 @@ export function parseAddExtensionChoice(id: string): AddExtensionChoice | null {
   return null;
 }
 
+export type SwitchSpaceChoice = { spaceId: number } | { action: 'new-space' };
+
+// The Space switcher: every Space in the order of the sidebar, the current one
+// ticked, with what is in it, and the keys that go to the first nine.
+export function spaceSwitcherItems(
+  state: SavedState,
+  currentId: number | null,
+): MenuItem[] {
+  const items: MenuItem[] = state.spaces.map((space, index): MenuItem => {
+    const pages = state.tabs.filter((t) => t.spaceId === space.id);
+    const open = pages.filter((t) => !t.closed).length;
+    return {
+      type: 'item',
+      id: `switch-space:${space.id}`,
+      label: space.name,
+      emoji: spaceEmoji(space),
+      detail: `${pages.length} ${pages.length === 1 ? 'page' : 'pages'} (${open} open)`,
+      checked: space.id === currentId,
+      ...(index < 9 ? { shortcut: `Alt+${index + 1}` } : {}),
+    };
+  });
+  if (items.length > 0) items.push({ type: 'separator' });
+  items.push({
+    type: 'item',
+    id: 'switch-space.new',
+    label: 'New Space',
+    icon: 'plus',
+  });
+  return items;
+}
+
+export function parseSwitchSpaceChoice(id: string): SwitchSpaceChoice | null {
+  if (id === 'switch-space.new') return { action: 'new-space' };
+  const m = /^switch-space:(\d{1,9})$/.exec(id);
+  return m ? { spaceId: Number(m[1]) } : null;
+}
+
 export type NewArtifactChoice = { kind: ArtifactKind };
 
 // "New" in the Artifacts panel: what kind of artifact to make.

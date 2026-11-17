@@ -2646,3 +2646,37 @@ button {
   margin-top: var(--s-1);
   font-size: var(--fs-xs);
 }
+
+/* The Space chip in the toolbar: the Space you are in, and a way to switch. */
+.tb-space {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 160px;
+  height: var(--h-md);
+  padding: 0 var(--s-3) 0 var(--s-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--sp) 16%, var(--c-surface));
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.tb-space:hover {
+  border-color: color-mix(in srgb, var(--sp) 55%, var(--c-border));
+}
+.tb-space:focus-visible {
+  outline: var(--focus-ring);
+}
+.tb-space-emoji {
+  font-size: 15px;
+}
+@container (max-width: 760px) {
+  .tb-space-name {
+    display: none;
+  }
+  .tb-space {
+    padding: 0 var(--s-2);
+  }
+}

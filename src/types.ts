@@ -637,6 +637,8 @@ export interface BrowserApi {
   showNewArtifactMenu: (x: number, y: number) => void;
   // Close all of a Space's open pages, or reopen all its closed ones.
   spaceBulk: (id: number, action: 'close-all' | 'reopen-all') => void;
+  // The Space switcher menu, at a place in the window.
+  showSpaceSwitcher: (x: number, y: number) => void;
   // Save the note on a Space's overview.
   setSpaceAbout: (id: number, text: string) => void;
   // The setting changed (from the menu): its artifact's id.

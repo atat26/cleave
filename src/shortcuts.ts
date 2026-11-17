@@ -30,6 +30,17 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: 'Spaces',
+    shortcuts: [
+      {
+        keys: 'Alt+1 to Alt+9',
+        does: 'Go to the Space at that place in the sidebar',
+      },
+      { keys: 'Alt+Down / Alt+Up', does: 'Next or previous Space' },
+      { keys: 'Ctrl+Shift+S', does: 'Switch Space (a list of all of them)' },
+    ],
+  },
+  {
     title: 'Address and page',
     shortcuts: [
       { keys: 'Ctrl+L / Alt+D', does: 'Go to the address bar' },

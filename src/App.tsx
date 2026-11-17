@@ -131,6 +131,22 @@ export function App() {
       ? state.spaces.find((space) => space.id === active.spaceId)
       : undefined;
 
+  // The Space you are in (a page, its overview, or one of its artifacts), if any.
+  const currentSpaceId = (() => {
+    const a = state.active;
+    if (a?.kind === 'lead') return a.spaceId;
+    if (a?.kind === 'tab') {
+      return state.tabs.find((t) => t.id === a.id)?.spaceId ?? null;
+    }
+    if (a?.kind === 'artifact') {
+      return state.artifactTabs.find((t) => t.id === a.id)?.spaceId ?? null;
+    }
+    return null;
+  })();
+  const currentSpace =
+    currentSpaceId === null
+      ? null
+      : (state.spaces.find((s) => s.id === currentSpaceId) ?? null);
   if (state.rightPanel !== null) lastPanel.current = state.rightPanel;
   const shownPanel = state.rightPanel ?? lastPanel.current;
 
@@ -149,6 +165,7 @@ export function App() {
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}
+        space={currentSpace}
       />
       {onNewTab && activeTab && state.newTab && (
         <NewTabView

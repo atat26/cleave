@@ -1413,3 +1413,43 @@ test('the New artifact menu offers each kind, and only a real kind is read back'
     assert.equal(parseNewArtifactChoice(bad), null, bad);
   }
 });
+
+test('the Space switcher lists every Space in order, ticks the current one and shows the keys', async () => {
+  const { spaceSwitcherItems, parseSwitchSpaceChoice } =
+    await import('./menuData.ts');
+  const { addSpace, defaultState } = await import('./model.ts');
+  let state = defaultState();
+  const ids: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    const added = addSpace(state, `S${i + 1}`);
+    state = added.state;
+    ids.push(added.id);
+  }
+  const items = spaceSwitcherItems(state, ids[1]);
+  assert.deepEqual(menuIds(items), [
+    ...ids.map((id) => `switch-space:${id}`),
+    'switch-space.new',
+  ]);
+  const second = entry(items, `switch-space:${ids[1]}`);
+  assert.equal(second.checked, true);
+  assert.equal(second.shortcut, 'Alt+2');
+  assert.equal(entry(items, `switch-space:${ids[0]}`).checked, false);
+  // Only the first nine have a key.
+  assert.equal(entry(items, `switch-space:${ids[8]}`).shortcut, 'Alt+9');
+  assert.equal(entry(items, `switch-space:${ids[9]}`).shortcut, undefined);
+  assert.deepEqual(menuIds(spaceSwitcherItems(defaultState(), null)), [
+    'switch-space.new',
+  ]);
+  assert.deepEqual(parseSwitchSpaceChoice('switch-space:12'), { spaceId: 12 });
+  assert.deepEqual(parseSwitchSpaceChoice('switch-space.new'), {
+    action: 'new-space',
+  });
+  for (const bad of [
+    'switch-space:',
+    'switch-space:x',
+    'switch-space:1;2',
+    'x',
+  ]) {
+    assert.equal(parseSwitchSpaceChoice(bad), null, bad);
+  }
+});

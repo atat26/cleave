@@ -42,8 +42,10 @@ import {
   SIDEBAR_CLOSE_MARGIN,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_SNAP_WIDTH,
+  TOOLBAR_HEIGHT,
 } from './layout';
 import * as artifactsModel from './artifacts';
+import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { setPreviewInternetCheck } from './previewGuard';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
@@ -243,6 +245,8 @@ import {
   downloadMenuItems,
   addExtensionMenuItems,
   extensionMenuItems,
+  parseSwitchSpaceChoice,
+  spaceSwitcherItems,
   newArtifactMenuItems,
   parseNewArtifactChoice,
   libraryMenuItems,
@@ -1967,6 +1971,9 @@ export async function createTabs(
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
     if (tab && !model.isNewTabPage(tab.url)) ensureView(tab);
+    if (tab && tab.spaceId !== null && !tab.closed) {
+      lastInSpace.set(tab.spaceId, tab.id);
+    }
     for (const [tabId, view] of views) {
       // Hidden pages are not resized while the layout slides, so catch up now.
       if (tabId === id) view.setBounds(pageBounds());
@@ -3470,6 +3477,37 @@ export async function createTabs(
   const select = (ref: ActiveRef) =>
     commitAndShow(revealPage(model.setActive(state, ref)));
 
+  // The page you were last on in each Space (so going to a Space lands there).
+  const lastInSpace = new Map<number, number>();
+  // Go to a Space: the page you were last on there, else its first open page, else
+  // its overview.
+  const goToSpace = (spaceId: number | null) => {
+    if (spaceId === null || !model.findSpace(state, spaceId)) return;
+    const tab = landingTab(state.tabs, spaceId, lastInSpace.get(spaceId));
+    select(tab === null ? { kind: 'lead', spaceId } : { kind: 'tab', id: tab });
+  };
+  const spaceIds = () => state.spaces.map((s) => s.id);
+  // The Space switcher: a menu of every Space, at a place in the window.
+  const openSpaceSwitcher = (x: number, y: number) => {
+    showMenu(
+      spaceSwitcherItems(state, currentSpaceId()),
+      x,
+      y,
+      (choice) => {
+        const parsed = parseSwitchSpaceChoice(choice);
+        if (parsed === null) return;
+        if ('spaceId' in parsed) {
+          goToSpace(parsed.spaceId);
+        } else if (state.spaces.length < model.MAX_SPACES) {
+          const created = model.addSpace(state);
+          commit(created.state);
+          select({ kind: 'lead', spaceId: created.id });
+        }
+      },
+      win.webContents,
+    );
+  };
+
   // Expand the chat, or shrink it back to the compact bar. If the chat is
   // closed, or fills the window, bring back the page with the chat instead.
   const toggleChat = () => {
@@ -3595,6 +3633,24 @@ export async function createTabs(
       } else if (input.key === 'ArrowRight') {
         event.preventDefault();
         goBackOrForward('forward');
+      } else if (/^[1-9]$/.test(input.key)) {
+        // Alt+1 to Alt+9: the Space at that place in the sidebar.
+        const id = spaceIdByNumber(spaceIds(), Number(input.key));
+        if (id !== null) {
+          event.preventDefault();
+          goToSpace(id);
+        }
+      } else if (input.key === 'ArrowDown' || input.key === 'ArrowUp') {
+        // Alt+Down / Alt+Up: the next / previous Space.
+        const id = neighborSpaceId(
+          spaceIds(),
+          currentSpaceId(),
+          input.key === 'ArrowDown' ? 1 : -1,
+        );
+        if (id !== null) {
+          event.preventDefault();
+          goToSpace(id);
+        }
       }
       return;
     }
@@ -3616,6 +3672,11 @@ export async function createTabs(
     } else if (key === '0') {
       event.preventDefault();
       changeZoom(0);
+    } else if (key === 's' && input.shift) {
+      // Ctrl+Shift+S: the Space switcher, at the top left of the page.
+      event.preventDefault();
+      const bounds = win.getContentBounds();
+      openSpaceSwitcher(bounds.width / 2 - 140, TOOLBAR_HEIGHT);
     } else if (key === 's' && !input.shift) {
       event.preventDefault();
       savePageAs();
@@ -4763,6 +4824,11 @@ export async function createTabs(
     'space:about': (id, text) => {
       if (!isId(id) || typeof text !== 'string') return;
       commit(model.setSpaceAbout(state, id, text));
+    },
+    // The Space chip in the toolbar.
+    'spaces:switcher': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      openSpaceSwitcher(x, y);
     },
     'space:bulk': (id, action) => {
       if (!isId(id) || !model.findSpace(state, id)) return;
