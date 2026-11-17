@@ -82,7 +82,7 @@ function skillItems(query: string, skills: SkillInfo[]): PickerItem[] {
       group: 'Skills' as const,
       favicon: null,
       color: null,
-      emoji: '✨',
+      emoji: '⚡',
       skill: true,
     }));
 }

@@ -433,7 +433,7 @@ export function chatRowMenuItems(
       type: 'item',
       id: `chat.make-skill:${chatId}`,
       label: 'Make a skill from this chat…',
-      icon: 'sparkle',
+      icon: 'bolt',
       // Nothing to learn from an empty chat.
       disabled:
         chats.conversations.find((c) => c.id === chatId)?.messages.length === 0,
@@ -484,7 +484,7 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
       type: 'item',
       id: `chat.make-skill:${active}`,
       label: 'Make a skill from this chat…',
-      icon: 'sparkle',
+      icon: 'bolt',
       disabled:
         chats.conversations.find((c) => c.id === active)?.messages.length === 0,
     },

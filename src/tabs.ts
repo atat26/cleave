@@ -6585,7 +6585,7 @@ export async function createTabs(
         kind: 'skill' as const,
         id: s.id,
         title: s.name,
-        emoji: '✨',
+        emoji: '⚡',
         detail: 'Skill',
         deletedAt: s.deletedAt,
         daysLeft: daysLeft(s.deletedAt),

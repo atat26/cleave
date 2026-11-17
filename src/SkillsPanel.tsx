@@ -119,7 +119,7 @@ function Row({ skill, onEdit }: { skill: SkillInfo; onEdit: () => void }) {
         window.browserApi.showSkillMenu(skill.id, event.clientX, event.clientY);
       }}
     >
-      <ItemEmoji emoji="✨" />
+      <ItemEmoji emoji="⚡" />
       <span className="grow" style={{ minWidth: 0 }}>
         <span
           className="truncate"
