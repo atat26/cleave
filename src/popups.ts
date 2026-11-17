@@ -52,3 +52,8 @@ export function blockedLabel(address: string): string {
     return address.slice(0, 48);
   }
 }
+
+// A link clicked with the middle button, or with Ctrl, opens behind the page you are
+// on (Electron calls it a "background tab"). Anything else opens and switches to it.
+export const opensInBackground = (disposition: string): boolean =>
+  disposition === 'background-tab';

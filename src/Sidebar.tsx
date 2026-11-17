@@ -97,6 +97,7 @@ function Row({
   title,
   onOpen,
   onContextMenu,
+  onMiddleClick,
   icon,
   children,
   trailing,
@@ -109,6 +110,8 @@ function Row({
   title: string;
   onOpen: () => void;
   onContextMenu?: (event: ReactMouseEvent) => void;
+  // Middle-click on the row (a tab or an artifact: close it).
+  onMiddleClick?: () => void;
   icon: ReactNode;
   children: ReactNode;
   trailing?: ReactNode;
@@ -132,6 +135,14 @@ function Row({
         if (!event.defaultPrevented) rowKeys(onOpen)(event);
       }}
       onContextMenu={onContextMenu}
+      onMouseDown={(event) => {
+        if (event.button === 1 && onMiddleClick) event.preventDefault();
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1 || !onMiddleClick) return;
+        event.preventDefault();
+        onMiddleClick();
+      }}
       style={{ opacity: dim ? 0.6 : 1 }}
     >
       {icon}
@@ -163,6 +174,7 @@ function TabRow({
       title={labelFor(tab)}
       onOpen={() => window.browserApi.selectTab(tab.id)}
       onContextMenu={showTabMenu(tab)}
+      onMiddleClick={() => window.browserApi.closeTab(tab.id)}
       icon={<Favicon tab={tab} />}
       trailing={
         <>
@@ -556,6 +568,14 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
         }
       }}
       onContextMenu={showTabMenu(tab)}
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault();
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        window.browserApi.closeTab(tab.id);
+      }}
       title={labelFor(tab)}
       style={{
         ...stripButton(active),

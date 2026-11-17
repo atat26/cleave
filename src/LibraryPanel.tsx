@@ -47,6 +47,7 @@ function Row({
   aside,
   actionLabel,
   onOpen,
+  onOpenBackground,
   onAction,
 }: {
   title: string;
@@ -54,6 +55,8 @@ function Row({
   aside?: string;
   actionLabel?: string;
   onOpen: () => void;
+  // Middle-click or Ctrl+click: open it behind the page you are on.
+  onOpenBackground?: () => void;
   onAction?: () => void;
 }) {
   return (
@@ -62,7 +65,19 @@ function Row({
       role="button"
       tabIndex={0}
       title={detail}
-      onClick={onOpen}
+      onClick={(event) =>
+        (event.ctrlKey || event.metaKey) && onOpenBackground
+          ? onOpenBackground()
+          : onOpen()
+      }
+      onMouseDown={(event) => {
+        if (event.button === 1 && onOpenBackground) event.preventDefault();
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1 || !onOpenBackground) return;
+        event.preventDefault();
+        onOpenBackground();
+      }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
@@ -386,6 +401,9 @@ export function LibraryPanel() {
               detail={hostOf(bookmark.url)}
               actionLabel={`Remove bookmark ${bookmark.title || hostOf(bookmark.url)}`}
               onOpen={() => window.browserApi.libraryOpen(bookmark.url)}
+              onOpenBackground={() =>
+                window.browserApi.libraryOpen(bookmark.url, true)
+              }
               onAction={() =>
                 window.browserApi.libraryRemoveBookmark(bookmark.id)
               }
@@ -410,6 +428,9 @@ export function LibraryPanel() {
                   aside={timeOf(entry.visitedAt)}
                   actionLabel={`Remove ${entry.title || hostOf(entry.url)} from history`}
                   onOpen={() => window.browserApi.libraryOpen(entry.url)}
+                  onOpenBackground={() =>
+                    window.browserApi.libraryOpen(entry.url, true)
+                  }
                   onAction={() =>
                     window.browserApi.libraryRemoveVisit(entry.id)
                   }
