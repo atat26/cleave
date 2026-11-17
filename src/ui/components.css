@@ -2831,3 +2831,29 @@ button {
   gap: var(--s-2);
   font-size: var(--fs-sm);
 }
+
+/* "Reply waiting": a chat whose latest reply you have not read. */
+.nt-waiting {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--c-accent);
+}
+
+/* Something is being dragged over the new-tab page. */
+.nt-card.is-dropping {
+  outline: 2px dashed var(--c-accent);
+  outline-offset: -6px;
+}
+.nt-card.is-dropping::after {
+  content: 'Drop to add to the box';
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-4);
+  padding: 2px var(--s-2);
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}

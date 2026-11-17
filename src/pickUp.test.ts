@@ -142,3 +142,14 @@ test('two tabs on the same page are one item', () => {
     ['page:9'],
   );
 });
+
+test('a chat with a reply nobody has read is marked "Reply waiting"; nothing else is', () => {
+  const from = { ...sources(), unread: new Set([5, 99]) };
+  const { rows } = pickUpRows(1, from, []);
+  const flags = Object.fromEntries(rows.map((r) => [r.key, r.unread]));
+  assert.equal(flags['chat:5'], true);
+  assert.equal(flags['chat:4'], false);
+  assert.equal(flags['artifact:2'], false);
+  // Nothing is unread unless said so.
+  assert.ok(pickUpRows(1, sources(), []).rows.every((r) => !r.unread));
+});

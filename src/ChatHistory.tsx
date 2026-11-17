@@ -81,6 +81,16 @@ function ChatRow({
           ●
         </span>
       )}
+      {!chat.generating && chat.unread && (
+        <span
+          role="img"
+          aria-label="Reply waiting"
+          title="Reply waiting"
+          style={{ order: 3, color: 'var(--c-accent)', fontSize: 10 }}
+        >
+          ●
+        </span>
+      )}
       {editing ? (
         <input
           autoFocus
@@ -292,11 +302,28 @@ export function ChatStrip({ chats }: { chats: ChatsInfo }) {
             title={chat.title}
             style={{
               ...stripButton(chat.id === chats.activeId),
+              position: 'relative',
               fontSize: 13,
               fontWeight: 600,
             }}
           >
             {chat.emoji}
+            {chat.unread && !chat.generating && (
+              <span
+                role="img"
+                aria-label="Reply waiting"
+                title="Reply waiting"
+                style={{
+                  position: 'absolute',
+                  top: 3,
+                  right: 3,
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: 'var(--c-accent)',
+                }}
+              />
+            )}
           </div>
         ))}
       </div>

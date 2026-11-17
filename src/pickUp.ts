@@ -19,6 +19,8 @@ export interface PickRow {
   title: string;
   // When it was last touched.
   at: number;
+  // A chat whose latest reply has not been read ("Reply waiting").
+  unread: boolean;
 }
 
 export interface PickSources {
@@ -26,6 +28,8 @@ export interface PickSources {
   artifacts: readonly Artifact[];
   chats: readonly Conversation[];
   history: readonly HistoryEntry[];
+  // The chats with a reply nobody has read yet.
+  unread?: ReadonlySet<number>;
 }
 
 // Every candidate for a Space, newest first (hidden ones not removed yet).
@@ -43,6 +47,7 @@ function candidates(spaceId: number, from: PickSources): PickRow[] {
       id: chat.id,
       title: chat.title.trim() || 'Chat',
       at: chat.updatedAt,
+      unread: from.unread?.has(chat.id) ?? false,
     });
   }
   for (const artifact of from.artifacts) {
@@ -53,6 +58,7 @@ function candidates(spaceId: number, from: PickSources): PickRow[] {
       id: artifact.id,
       title: artifact.title.trim() || 'Untitled',
       at: artifact.updatedAt,
+      unread: false,
     });
   }
   // A page counts by when it was last visited.
@@ -75,6 +81,7 @@ function candidates(spaceId: number, from: PickSources): PickRow[] {
       id: tab.id,
       title: tab.title.trim() || url || 'Page',
       at,
+      unread: false,
     });
   }
   return rows.sort((a, b) => b.at - a.at || b.id - a.id);

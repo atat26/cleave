@@ -948,6 +948,7 @@ export async function createTabs(
       artifacts: artifacts.artifacts,
       chats: chats.conversations,
       history: history.entries,
+      unread: unreadChats,
     };
     const picked = pickUpRows(spaceId, from, newTabSettings.hidden);
     const ordered = recentSpaceIds(
@@ -991,12 +992,40 @@ export async function createTabs(
     };
   };
 
+  // Chats with a reply that finished while you were not looking at that chat ("Reply
+  // waiting"). Kept while the app is open. A chat is being looked at when it is the
+  // open chat and the chat is showing in full (alone, or tall enough in the bar).
+  const unreadChats = new Set<number>();
+  let wasGenerating = new Set<number>();
+  const watching = (chatId: number) =>
+    chats.activeId === chatId &&
+    (state.settings.viewMode === 'chat' ||
+      (state.settings.viewMode === 'both' && state.settings.chatExpanded));
+  const trackUnread = (generating: number[]) => {
+    const now = new Set(generating);
+    for (const id of wasGenerating) {
+      if (
+        !now.has(id) &&
+        chats.conversations.some((c) => c.id === id) &&
+        !watching(id)
+      ) {
+        unreadChats.add(id);
+      }
+    }
+    wasGenerating = now;
+    if (watching(chats.activeId)) unreadChats.delete(chats.activeId);
+    for (const id of unreadChats) {
+      if (!chats.conversations.some((c) => c.id === id)) unreadChats.delete(id);
+    }
+  };
+
   const sendState = () => {
     if (win.isDestroyed()) return;
     const id = activeTabId();
     const history =
       id === null ? undefined : pageContents(id)?.navigationHistory;
     const generating = chatService?.runningChats() ?? [];
+    trackUnread(generating);
     const ui: UiState = {
       spaces: state.spaces.map(
         ({ id, name, color, emoji, collapsed, about }) => ({
@@ -1073,6 +1102,7 @@ export async function createTabs(
           messageCount: c.messages.length,
           model: c.model,
           generating: generating.includes(c.id),
+          unread: unreadChats.has(c.id),
           spaceIds: c.refs.filter((r) => r.kind === 'space').map((r) => r.id),
         })),
         activeId: chats.activeId,
@@ -3257,6 +3287,8 @@ export async function createTabs(
     rawPaths: unknown,
     spaceId: number | null,
     chatId: number | null = null,
+    // When given, the new artifacts' numbers are added here and nothing is opened.
+    collect?: number[],
   ): Promise<number> => {
     if (!Array.isArray(rawPaths)) return 0;
     if (spaceId !== null && !model.findSpace(state, spaceId)) spaceId = null;
@@ -3268,6 +3300,7 @@ export async function createTabs(
     let added = 0;
     // Link a new artifact to the chat the files are for.
     const attach = (artifactId: number, name: string) => {
+      collect?.push(artifactId);
       if (chatId === null) return;
       const found = snapshotLookup(workspace())('artifact', artifactId);
       const count = () =>
@@ -3363,7 +3396,9 @@ export async function createTabs(
     if (rawPaths.length > MAX_UPLOAD_FILES) {
       refused.push(`Only the first ${MAX_UPLOAD_FILES} files were looked at.`);
     }
-    if (first !== null && chatId === null) openArtifact(first);
+    if (first !== null && chatId === null && collect === undefined) {
+      openArtifact(first);
+    }
     if (refused.length > 0) {
       void dialog.showMessageBox(win, {
         type: 'info',
@@ -6331,6 +6366,26 @@ ${artifact.content.slice(0, 1500)}`;
     };
   }
 
+  // Files dropped on the new-tab page: they become artifacts (in the tab's Space) and
+  // are given back so the page can show them as chips under its box. Nothing is
+  // opened or sent.
+  ipcMain.handle('newtab:drop', async (event, paths: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const ids: number[] = [];
+    await importFiles(paths, currentSpaceId(), null, ids);
+    return ids.flatMap((id) => {
+      const a = artifactsModel.findArtifact(artifacts, id);
+      return a
+        ? [
+            {
+              id,
+              title: a.title,
+              emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
+            },
+          ]
+        : [];
+    });
+  });
   // Search across all chats (by name and by what was said), for the chat list.
   // (The chat list is in the sidebar page, so that page may ask too.)
   ipcMain.handle('chats:search', (event, query: unknown) => {
@@ -6604,6 +6659,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('uploads:pick');
     ipcMain.removeHandler('uploads:drop');
     ipcMain.removeHandler('chats:search');
+    ipcMain.removeHandler('newtab:drop');
     ipcMain.removeHandler('chat:attach-pick');
     ipcMain.removeHandler('chat:attach-drop');
     ipcMain.removeHandler('chat:attach-bytes');

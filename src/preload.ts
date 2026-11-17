@@ -279,6 +279,11 @@ const browserApi: BrowserApi = {
       files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
       spaceId,
     ),
+  newTabDropFiles: (files) =>
+    ipcRenderer.invoke(
+      'newtab:drop',
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+    ),
   searchChats: (query) => ipcRenderer.invoke('chats:search', query),
   onFocusChatSearch: (callback) => {
     const listener = () => callback();

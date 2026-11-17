@@ -80,6 +80,9 @@ export function NewChatView({
                   >
                     <ItemEmoji emoji={c.emoji} />
                     <span className="nt-item-title truncate">{c.title}</span>
+                    {c.unread && (
+                      <span className="nt-waiting">Reply waiting</span>
+                    )}
                     <span className="nt-time">
                       {agoWords(c.updatedAt, Date.now())}
                     </span>

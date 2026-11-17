@@ -4,6 +4,12 @@
 // place, and the tab becomes a web tab when you go somewhere. The look and the
 // behaviour follow the design hand-off (docs/design/new-tab).
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ARTIFACT_DRAG,
+  hasArtifactDrag,
+  hasFileDrag,
+  readArtifactDrag,
+} from './artifactDrag';
 import { SPACE_COLOR_HEX } from './colors';
 import { greetingFor } from './greetings';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
@@ -130,18 +136,8 @@ export function NewTabView({
     setMentionIndex(0);
   };
 
-  // Choose something from the "@" list: it becomes a chip and the "@..." goes.
-  const pickMention = (item: PickerItem) => {
-    if (!mention) return;
-    const caret = input.current?.selectionStart ?? text.length;
-    const next = withoutMention(text, mention.start, caret);
-    const added: Chip = {
-      kind: item.kind,
-      id: item.id,
-      tag: mentionTag(item.label),
-      label: item.label,
-      emoji: item.emoji,
-    };
+  // Add something to the chips under the box (once).
+  const addChip = (added: Chip) => {
     const chipsNow = chips.some(
       (c) => c.kind === added.kind && c.id === added.id,
     )
@@ -149,6 +145,67 @@ export function NewTabView({
       : [...chips, added];
     setChips(chipsNow);
     draftChips.set(tab.id, chipsNow);
+  };
+
+  // Something dragged onto the page: files from the computer, or an artifact from the
+  // Artifacts panel. It becomes a chip; nothing is sent.
+  const [dropping, setDropping] = useState(false);
+  const accepts = (types: readonly string[]) =>
+    hasFileDrag(types) || hasArtifactDrag(types);
+  const dropped = (event: React.DragEvent) => {
+    setDropping(false);
+    if (!accepts(event.dataTransfer.types)) return;
+    event.preventDefault();
+    if (hasFileDrag(event.dataTransfer.types)) {
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+      void window.browserApi.newTabDropFiles(files).then((made) => {
+        // Adding one at a time would lose all but the last (each works from the
+        // chips as they were), so add them together.
+        const next = [...chips];
+        for (const m of made) {
+          if (!next.some((c) => c.kind === 'artifact' && c.id === m.id)) {
+            next.push({
+              kind: 'artifact',
+              id: m.id,
+              tag: mentionTag(m.title),
+              label: m.title,
+              emoji: m.emoji,
+            });
+          }
+        }
+        setChips(next);
+        draftChips.set(tab.id, next);
+        input.current?.focus();
+      });
+      return;
+    }
+    const id = readArtifactDrag(event.dataTransfer.getData(ARTIFACT_DRAG));
+    const found = id === null ? undefined : artifacts.find((a) => a.id === id);
+    if (found) {
+      addChip({
+        kind: 'artifact',
+        id: found.id,
+        tag: mentionTag(found.title),
+        label: found.title,
+        emoji: found.emoji,
+      });
+      input.current?.focus();
+    }
+  };
+
+  // Choose something from the "@" list: it becomes a chip and the "@..." goes.
+  const pickMention = (item: PickerItem) => {
+    if (!mention) return;
+    const caret = input.current?.selectionStart ?? text.length;
+    const next = withoutMention(text, mention.start, caret);
+    addChip({
+      kind: item.kind,
+      id: item.id,
+      tag: mentionTag(item.label),
+      label: item.label,
+      emoji: item.emoji,
+    });
     setText(next);
     drafts.set(tab.id, next);
     setMention(null);
@@ -240,8 +297,20 @@ export function NewTabView({
 
   return (
     <main
-      className="nt-card"
+      className={dropping ? 'nt-card is-dropping' : 'nt-card'}
       aria-label="New tab"
+      onDragOver={(event) => {
+        if (!accepts(event.dataTransfer.types)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropping(false);
+        }
+      }}
+      onDrop={dropped}
       style={{
         // The same rounded card where a web page would be. The app keeps these
         // variables up to date while the frame slides (see App.tsx).
@@ -528,6 +597,9 @@ export function NewTabView({
                   >
                     <Icon name={PICK_ICONS[row.kind]} />
                     <span className="nt-item-title">{row.title}</span>
+                    {row.unread && (
+                      <span className="nt-waiting">Reply waiting</span>
+                    )}
                     <span className="nt-acts reveal">
                       <span className="nt-resume">Resume</span>
                       <button

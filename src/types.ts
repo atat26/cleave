@@ -128,6 +128,8 @@ export interface NewTabInfo {
     id: number;
     title: string;
     at: number;
+    // A chat with a reply waiting to be read.
+    unread: boolean;
   }[];
   pickTotal: number;
   // The Spaces for the pills: the current one first, then the most recently used,
@@ -315,6 +317,8 @@ export interface ChatInfo {
   model: string | null;
   // A reply is being written in this chat right now.
   generating: boolean;
+  // A reply finished while you were not looking at this chat, and is still unread.
+  unread: boolean;
   // The Spaces this chat is linked to (so a Space's overview can list its chats).
   spaceIds: number[];
 }
@@ -656,6 +660,11 @@ export interface BrowserApi {
   // Add files dropped on the Artifacts panel or a Space's overview.
   uploadDrop: (files: File[], spaceId: number | null) => Promise<number>;
   // The bytes of an uploaded image or PDF (null if it is gone).
+  // Files dropped on the new-tab page: they are added as artifacts, and these are
+  // returned to show as chips under the box.
+  newTabDropFiles: (
+    files: File[],
+  ) => Promise<{ id: number; title: string; emoji: string }[]>;
   // Find chats by name or by what was said in them.
   searchChats: (query: string) => Promise<ChatMatch[]>;
   // "Search chats…" was chosen: put the keyboard in the chat list's search box.
