@@ -34,6 +34,7 @@
 - [ ] M7: Module system plus builder agent. Not designed yet. Two ideas for it, for later:
   - Mini-apps: artifacts that can save their own data and be pinned to the rail, so the assistant can build you a small tool (a price tracker, say) that stays.
   - AI-generated extensions: the assistant writes a browser extension for you, shown for review and installed only after you approve it (it must never get file-editing tools while it reads web pages).
+- [ ] Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet; to be shaped together with a designer hand-off, like the new-tab page. Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
 - [ ] M8: Daily-driver polish
 
 After the agent (M5/M6), in this order of likelihood:
