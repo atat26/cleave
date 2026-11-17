@@ -40,6 +40,9 @@ export interface TabInfo {
   working: boolean;
   // Closed but kept as a link in its Space (no tab, shown on the overview).
   closed: boolean;
+  // Playing sound right now, and muted (the speaker shows only while one is true).
+  audible: boolean;
+  muted: boolean;
 }
 
 // An artifact as the UI lists it (its text stays in the app until it is opened).
@@ -428,6 +431,8 @@ export interface BrowserApi {
   newTab: (spaceId: number | null) => void;
   // Close a tab. In a Space the page is kept as a closed link on the overview.
   closeTab: (id: number) => void;
+  // Mute or unmute one tab (it stays as set until the app closes).
+  setTabMuted: (id: number, muted: boolean) => void;
   // Delete a tab for good, including a closed link.
   removeTab: (id: number) => void;
   // Open a closed link again.

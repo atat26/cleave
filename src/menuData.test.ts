@@ -1226,3 +1226,18 @@ test('the pop-up chip lists what was blocked, with a button each and one to alwa
     assert.equal(parsePopupChoice(bad), null, bad);
   }
 });
+
+test("a tab's menu can mute or unmute its page, and reads the choice back", () => {
+  const { state } = build();
+  const id = state.tabs[0].id;
+  const none = menuIds(tabMenuItems(state, id) ?? []);
+  assert.ok(!none.includes('tab.mute') && !none.includes('tab.unmute'));
+  const sound = tabMenuItems(state, id, false) ?? [];
+  assert.ok(menuIds(sound).includes('tab.mute'));
+  assert.equal(entry(sound, 'tab.mute').label, 'Mute tab');
+  const muted = tabMenuItems(state, id, true) ?? [];
+  assert.ok(menuIds(muted).includes('tab.unmute'));
+  assert.equal(entry(muted, 'tab.unmute').label, 'Unmute tab');
+  assert.deepEqual(parseTabChoice('tab.mute'), { action: 'mute' });
+  assert.deepEqual(parseTabChoice('tab.unmute'), { action: 'unmute' });
+});
