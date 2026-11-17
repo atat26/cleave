@@ -4,6 +4,7 @@
 import type { MenuItem } from './menuTypes.ts';
 import type { IconName } from './ui/iconData.ts';
 import { ASK_KINDS, askText } from './permissions.ts';
+import { blockedLabel } from './popups.ts';
 import type { Answer, AskKind } from './permissions.ts';
 import * as model from './model.ts';
 import type { SavedState } from './model.ts';
@@ -1626,6 +1627,7 @@ const PERMISSION_ICONS: Record<AskKind, IconName> = {
   location: 'pin',
   notifications: 'bell',
   clipboard: 'paste',
+  popups: 'ext-link',
 };
 
 export type PermissionChoice = 'allow' | 'once' | 'block';
@@ -1677,6 +1679,7 @@ const SITE_KINDS: { kind: AskKind; label: string; icon: IconName }[] = [
   { kind: 'location', label: 'Location', icon: 'pin' },
   { kind: 'notifications', label: 'Notifications', icon: 'bell' },
   { kind: 'clipboard', label: 'Clipboard', icon: 'paste' },
+  { kind: 'popups', label: 'Pop-ups', icon: 'ext-link' },
 ];
 
 export function siteMenuItems(options: {
@@ -1816,4 +1819,44 @@ export function parsePrivacyChoice(id: string): 'reset' | 'clear' | null {
   if (id === 'privacy.reset') return 'reset';
   if (id === 'privacy.clear-data') return 'clear';
   return null;
+}
+
+// ---- Pop-ups that were blocked (the chip in the address bar) ------------------
+// A card listing what the page tried to open, with a button for each and one to
+// always allow them from the site.
+
+export type PopupCardChoice =
+  | { action: 'open'; index: number }
+  | { action: 'allow' };
+
+export function blockedPopupItems(
+  host: string,
+  addresses: string[],
+): MenuItem[] {
+  return [
+    {
+      type: 'header',
+      label: `${addresses.length} pop-up${addresses.length === 1 ? '' : 's'} blocked`,
+      icon: 'ext-link',
+      detail: host,
+    },
+    ...addresses.map(
+      (address, index): MenuItem => ({
+        type: 'item',
+        id: `popup.open:${index}`,
+        label: `Open ${blockedLabel(address)}`,
+      }),
+    ),
+    {
+      type: 'item',
+      id: 'popup.allow',
+      label: `Always allow pop-ups from ${host}`,
+    },
+  ];
+}
+
+export function parsePopupChoice(id: string): PopupCardChoice | null {
+  if (id === 'popup.allow') return { action: 'allow' };
+  const m = /^popup\.open:(\d{1,2})$/.exec(id);
+  return m ? { action: 'open', index: Number(m[1]) } : null;
 }

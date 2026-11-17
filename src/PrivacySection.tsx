@@ -39,6 +39,7 @@ const KIND_ICONS: Record<(typeof ASK_KINDS)[number], IconName> = {
   location: 'pin',
   notifications: 'bell',
   clipboard: 'paste',
+  popups: 'ext-link',
 };
 
 // One site's page: the site at the top, then every permission it can ask for, each
