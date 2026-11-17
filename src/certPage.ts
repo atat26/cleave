@@ -63,7 +63,7 @@ export const canProceed = (code: number): boolean =>
 export const certErrorName = (code: number): string =>
   NAMES[code]?.name ?? 'ERR_CERT';
 
-const escapeHtml = (text: string): string =>
+export const escapeHtml = (text: string): string =>
   text.replace(
     /[&<>"']/g,
     (c) =>
@@ -72,19 +72,11 @@ const escapeHtml = (text: string): string =>
       ] ?? c,
   );
 
-// The page, as an address the tab can load.
-export function certErrorUrl(host: string, code: number): string {
-  const info = NAMES[code];
-  const safeHost = escapeHtml(host);
-  const proceed = canProceed(code)
-    ? `<details><summary>Advanced</summary>
-<p>${escapeHtml(info?.reason ?? 'The certificate could not be checked.')}
-The code is <code>${escapeHtml(certErrorName(code))}</code>.</p>
-<p>You can go on, but only do this if you know why the site’s certificate is wrong, such as a device on your own network. Nothing is remembered: it applies to this site until you close the browser.</p>
-<p><a class="link" href="aib:proceed">Proceed to ${safeHost} (unsafe)</a></p></details>`
-    : `<p class="muted">This site cannot be opened. The code is <code>${escapeHtml(certErrorName(code))}</code>.</p>`;
+// The look shared by the app's own pages shown in a tab (the certificate warning,
+// "this site can't be reached"...): a title, and the page's contents in a card.
+export function shellPage(title: string, inner: string): string {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Privacy error</title>
+<title>${escapeHtml(title)}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{color-scheme:light dark;--bg:#fff;--fg:#1f2328;--mut:#59636e;--card:#f6f8fa;--bd:#d1d9e0;--acc:#0969da;--red:#cf222e}
@@ -100,17 +92,38 @@ details{margin-top:24px;border-top:1px solid var(--bd);padding-top:12px}
 summary{cursor:pointer;color:var(--mut)}
 .link{color:var(--red)}
 </style></head><body><main>
-<div class="icon">!</div>
-<h1>Your connection isn’t private</h1>
-<p>Attackers might be trying to steal what you send to <b>${safeHost}</b>, such as passwords or messages. The site’s security certificate cannot be trusted.</p>
-<p><a class="btn" href="aib:back">Back to safety</a></p>
-${proceed}
+${inner}
 </main></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
+// The page, as an address the tab can load.
+export function certErrorUrl(host: string, code: number): string {
+  const info = NAMES[code];
+  const safeHost = escapeHtml(host);
+  const proceed = canProceed(code)
+    ? `<details><summary>Advanced</summary>
+<p>${escapeHtml(info?.reason ?? 'The certificate could not be checked.')}
+The code is <code>${escapeHtml(certErrorName(code))}</code>.</p>
+<p>You can go on, but only do this if you know why the site’s certificate is wrong, such as a device on your own network. Nothing is remembered: it applies to this site until you close the browser.</p>
+<p><a class="link" href="aib:proceed">Proceed to ${safeHost} (unsafe)</a></p></details>`
+    : `<p class="muted">This site cannot be opened. The code is <code>${escapeHtml(certErrorName(code))}</code>.</p>`;
+  return shellPage(
+    'Privacy error',
+    `<div class="icon">!</div>
+<h1>Your connection isn’t private</h1>
+<p>Attackers might be trying to steal what you send to <b>${safeHost}</b>, such as passwords or messages. The site’s security certificate cannot be trusted.</p>
+<p><a class="btn" href="aib:back">Back to safety</a></p>
+${proceed}
+`,
+  );
+}
+
 // What an "aib:" link on the page means (anything else is nothing).
-export function parseCertLink(url: string): 'back' | 'proceed' | null {
+export function parseCertLink(
+  url: string,
+): 'back' | 'proceed' | 'reload' | null {
+  if (url === 'aib:reload') return 'reload';
   if (url === 'aib:back') return 'back';
   if (url === 'aib:proceed') return 'proceed';
   return null;
