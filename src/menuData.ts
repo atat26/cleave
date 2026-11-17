@@ -15,6 +15,8 @@ import type {
   TextArtifactKind,
 } from './artifacts.ts';
 import { byRecency } from './chats.ts';
+import { APPROVAL_LEVELS, isApprovalLevel, LEVEL_WORDS } from './toolPolicy.ts';
+import type { ApprovalLevel } from './toolPolicy.ts';
 import type { ChatRef, ChatsState } from './chats.ts';
 import { resolveLink } from './chatLinks.ts';
 import type { Workspace } from './chatLinks.ts';
@@ -2401,4 +2403,44 @@ export function parsePopupChoice(id: string): PopupCardChoice | null {
   if (id === 'popup.allow') return { action: 'allow' };
   const m = /^popup\.open:(\d{1,2})$/.exec(id);
   return m ? { action: 'open', index: Number(m[1]) } : null;
+}
+
+// ---- The Tools panel: how much a tool (or a whole group) may do -------------------
+
+// What a menu is for: one tool ("tool:read_page") or a whole group ("group:look").
+export type ToolTarget =
+  | { kind: 'tool'; name: string }
+  | { kind: 'group'; group: string };
+
+export function parseToolTarget(target: unknown): ToolTarget | null {
+  if (typeof target !== 'string' || target.length > 80) return null;
+  if (target.startsWith('tool:') && target.length > 5) {
+    return { kind: 'tool', name: target.slice(5) };
+  }
+  if (target.startsWith('group:') && target.length > 6) {
+    return { kind: 'group', group: target.slice(6) };
+  }
+  return null;
+}
+
+// The four levels, with the one it is at ticked and the default marked.
+export function toolLevelMenuItems(
+  current: ApprovalLevel | null,
+  fallback: ApprovalLevel | null,
+): MenuItem[] {
+  return APPROVAL_LEVELS.map(
+    (level): MenuItem => ({
+      type: 'item',
+      id: `tool.level:${level}`,
+      label: LEVEL_WORDS[level],
+      checked: level === current,
+      ...(level === fallback ? { detail: 'Default' } : {}),
+    }),
+  );
+}
+
+export function parseToolLevelChoice(id: string): ApprovalLevel | null {
+  if (!id.startsWith('tool.level:')) return null;
+  const level = id.slice('tool.level:'.length);
+  return isApprovalLevel(level) ? level : null;
 }

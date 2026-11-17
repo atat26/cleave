@@ -262,13 +262,19 @@ import {
   isThemeChoice,
   parseThemeSettings,
 } from './themeSettings';
-import { isApprovalLevel } from './toolPolicy';
+import { defaultLevel, GROUP_TITLES, isApprovalLevel } from './toolPolicy';
+import type { ApprovalLevel } from './toolPolicy';
 import {
+  commonLevel,
   defaultToolSettings,
   describeTools,
+  groupLevels,
   levelFor,
   parseToolSettings,
+  presetLevels,
+  TOOL_PRESETS,
   withLevel,
+  withLevels,
 } from './toolSettings';
 import type {
   FrameLayout,
@@ -338,6 +344,9 @@ import {
   parseAddToChatChoice,
   parseNewSkillChoice,
   parseSkillChoice,
+  parseToolLevelChoice,
+  parseToolTarget,
+  toolLevelMenuItems,
   parseChatChoice,
   parseEditChoice,
   parseLinkChoice,
@@ -5751,6 +5760,38 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
+    // The level pill of a tool, or of a whole group, in the Tools panel: the four
+    // levels. The choice goes back to the panel (it asks first for "Always allow").
+    'tool:level-menu': (target, x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const parsed = parseToolTarget(target);
+      if (!parsed) return;
+      let current: ApprovalLevel | null = null;
+      let fallback: ApprovalLevel | null = null;
+      if (parsed.kind === 'tool') {
+        fallback = defaultLevel(parsed.name) ?? null;
+        if (fallback === null) return;
+        current = levelFor(toolSettings, parsed.name);
+      } else {
+        const rows = describeTools(toolSettings).filter(
+          (row) => row.group === parsed.group,
+        );
+        if (rows.length === 0) return;
+        current = commonLevel(rows);
+      }
+      showMenu(
+        toolLevelMenuItems(current, fallback),
+        x,
+        y,
+        (choice) => {
+          const level = parseToolLevelChoice(choice);
+          if (level && !win.webContents.isDestroyed()) {
+            win.webContents.send('tool:level-chosen', target, level);
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     'skill:new-menu': (x, y) => {
       if (!isNumber(x) || !isNumber(y)) return;
       showMenu(
@@ -6721,6 +6762,35 @@ ${artifact.content.slice(0, 1500)}`;
     }
     return describeTools(toolSettings);
   });
+  // A preset sets every tool at once; a group sets the tools of one group.
+  ipcMain.handle('tools:preset', (event, preset: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const known = TOOL_PRESETS.find((p) => p === preset);
+    if (known) {
+      toolSettings = withLevels(defaultToolSettings(), presetLevels(known));
+      toolsSaver.schedule();
+    }
+    return describeTools(toolSettings);
+  });
+  ipcMain.handle('tools:set-group', (event, group: unknown, level: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (
+      typeof group === 'string' &&
+      Object.hasOwn(GROUP_TITLES, group) &&
+      isApprovalLevel(level)
+    ) {
+      toolSettings = withLevels(
+        toolSettings,
+        groupLevels(
+          describeTools(toolSettings),
+          group as keyof typeof GROUP_TITLES,
+          level,
+        ),
+      );
+      toolsSaver.schedule();
+    }
+    return describeTools(toolSettings);
+  });
   // The editor loads an artifact's text when it opens, and saves as you type.
   ipcMain.handle('artifact:read', (event, id: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
@@ -7325,6 +7395,8 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
+    ipcMain.removeHandler('tools:preset');
+    ipcMain.removeHandler('tools:set-group');
     ipcMain.removeHandler('artifact:create');
     ipcMain.removeHandler('artifact:copy');
     ipcMain.removeHandler('uploads:pick');

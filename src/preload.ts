@@ -2,6 +2,7 @@
 // Expose small, specific functions here -- never whole Electron modules.
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action';
+import type { ApprovalLevel } from './toolPolicy';
 import type {
   BrowserApi,
   ChatMessage,
@@ -272,6 +273,19 @@ const browserApi: BrowserApi = {
   toolsList: () => ipcRenderer.invoke('tools:list'),
   toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
   toolsReset: () => ipcRenderer.invoke('tools:reset'),
+  toolsPreset: (preset) => ipcRenderer.invoke('tools:preset', preset),
+  toolsSetGroup: (group, level) =>
+    ipcRenderer.invoke('tools:set-group', group, level),
+  showToolLevelMenu: (target, x, y) =>
+    ipcRenderer.send('tool:level-menu', target, x, y),
+  onToolLevelChosen: (callback) => {
+    const listener = (_event: unknown, target: string, level: ApprovalLevel) =>
+      callback(target, level);
+    ipcRenderer.on('tool:level-chosen', listener);
+    return () => {
+      ipcRenderer.removeListener('tool:level-chosen', listener);
+    };
+  },
   artifactCreate: (kind, title, spaceId) =>
     ipcRenderer.invoke('artifact:create', kind, title, spaceId),
   artifactOpen: (id) => ipcRenderer.send('artifact:open', id),

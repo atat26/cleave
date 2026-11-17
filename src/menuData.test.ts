@@ -6,6 +6,9 @@ import {
   addToChatMenuItems,
   newSkillMenuItems,
   skillMenuItems,
+  parseToolLevelChoice,
+  parseToolTarget,
+  toolLevelMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
   emojiPickerItems,
@@ -1568,4 +1571,39 @@ test('the skill menus: edit, turn on or off, duplicate, export and delete; and N
   assert.deepEqual(parseNewSkillChoice('skill.new'), { action: 'new' });
   assert.deepEqual(parseNewSkillChoice('skill.import'), { action: 'import' });
   assert.equal(parseNewSkillChoice('skill.edit'), null);
+});
+
+test('the Tools level menu ticks the current level, marks the default, and reads a choice back', () => {
+  const items = toolLevelMenuItems('ask', 'always');
+  assert.deepEqual(menuIds(items), [
+    'tool.level:always',
+    'tool.level:if-safe',
+    'tool.level:ask',
+    'tool.level:never',
+  ]);
+  assert.equal(entry(items, 'tool.level:ask').checked, true);
+  assert.equal(entry(items, 'tool.level:always').checked, false);
+  assert.equal(entry(items, 'tool.level:always').detail, 'Default');
+  assert.equal(entry(items, 'tool.level:never').detail, undefined);
+  // A group whose tools differ ticks nothing.
+  assert.ok(
+    toolLevelMenuItems(null, null).every(
+      (i) => i.type !== 'item' || !i.checked,
+    ),
+  );
+  assert.equal(parseToolLevelChoice('tool.level:if-safe'), 'if-safe');
+  assert.equal(parseToolLevelChoice('tool.level:sometimes'), null);
+  assert.equal(parseToolLevelChoice('skill.edit'), null);
+  assert.deepEqual(parseToolTarget('tool:read_page'), {
+    kind: 'tool',
+    name: 'read_page',
+  });
+  assert.deepEqual(parseToolTarget('group:look'), {
+    kind: 'group',
+    group: 'look',
+  });
+  assert.equal(parseToolTarget('tool:'), null);
+  assert.equal(parseToolTarget('else'), null);
+  assert.equal(parseToolTarget(5), null);
+  assert.equal(parseToolTarget('tool:' + 'x'.repeat(100)), null);
 });

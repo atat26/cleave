@@ -24,7 +24,7 @@ import type {
   LinkKind,
   MessagePart,
 } from './chats';
-import type { ApprovalLevel } from './toolPolicy';
+import type { ApprovalLevel, ToolGroup } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
 import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
@@ -101,7 +101,7 @@ import type { Suggestion } from './suggest';
 import type { HistoryEntry } from './history';
 import type { LibrarySettings } from './librarySettings';
 import type { ThemeChoice } from './themeSettings';
-import type { ToolRow } from './toolSettings';
+import type { ToolPreset, ToolRow } from './toolSettings';
 import type { ActiveRef, RightPanel, SpaceColor, ViewMode } from './model';
 import type { ModelInfo } from './openrouter';
 import type { ArtifactKind } from './artifacts';
@@ -659,6 +659,13 @@ export interface BrowserApi {
   toolsList: () => Promise<ToolRow[]>;
   toolsSetLevel: (tool: string, level: ApprovalLevel) => Promise<ToolRow[]>;
   toolsReset: () => Promise<ToolRow[]>;
+  toolsPreset: (preset: ToolPreset) => Promise<ToolRow[]>;
+  toolsSetGroup: (group: ToolGroup, level: ApprovalLevel) => Promise<ToolRow[]>;
+  // The level menu of a tool ("tool:name") or a group ("group:name"), and its choice.
+  showToolLevelMenu: (target: string, x: number, y: number) => void;
+  onToolLevelChosen: (
+    callback: (target: string, level: ApprovalLevel) => void,
+  ) => () => void;
   // The Artifacts panel: make one (outside every Space when spaceId is null),
   // rename it, move it into a Space (or null for none), or delete it (the app asks
   // first). The list itself arrives with the rest of the state.
