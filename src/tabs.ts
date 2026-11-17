@@ -49,6 +49,25 @@ import {
 import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { chatMarkdown } from './chatExport';
+import {
+  createSkill,
+  defaultSkills,
+  deleteSkill,
+  duplicateSkill,
+  findSkill,
+  parseSkillMarkdown,
+  parseSkills,
+  PROBLEM_WORDS,
+  purgeOldSkills,
+  purgeSkill,
+  restoreSkill,
+  setSkillEnabled,
+  skillFileName,
+  skillInfo,
+  skillMarkdown,
+  updateSkill,
+} from './skills';
+import type { SkillsState } from './skills';
 import { exportFileName, spaceMarkdown } from './spaceExport';
 import type { FileReading } from './artifactTools';
 import { fitWithin, MAX_SHOT_SIDE } from './pageEyes';
@@ -270,6 +289,8 @@ import {
   addMenuItems,
   artifactMenuItems,
   addToChatMenuItems,
+  newSkillMenuItems,
+  skillMenuItems,
   chatRowMenuItems,
   emojiPickerItems,
   parseEmojiChoice,
@@ -314,6 +335,8 @@ import {
   parseAddChoice,
   parseArtifactChoice,
   parseAddToChatChoice,
+  parseNewSkillChoice,
+  parseSkillChoice,
   parseChatChoice,
   parseEditChoice,
   parseLinkChoice,
@@ -431,6 +454,20 @@ export async function createTabs(
   const saver = createSaver(file, () => state);
   const chatsSaver = createSaver(chatsFile, () => chats);
   const artifactsSaver = createSaver(artifactsFile, () => artifacts);
+  // The skills (see skills.ts).
+  const skillsFile = path.join(app.getPath('userData'), 'skills.json');
+  let skills: SkillsState = await loadJson(
+    skillsFile,
+    (raw) => parseSkills(raw),
+    () => defaultSkills(),
+  );
+  const skillsSaver = createSaver(skillsFile, () => skills);
+  const commitSkills = (next: SkillsState) => {
+    if (next === skills) return;
+    skills = next;
+    skillsSaver.schedule();
+    sendState();
+  };
 
   // The AI connection (key, model, pins, system prompt) and the chat service that
   // talks to the model. Both are set up a little later than the window.
@@ -1064,6 +1101,7 @@ export async function createTabs(
             ]
           : [];
       }),
+      skills: skills.skills.map(skillInfo),
       artifacts: artifacts.artifacts.map((a) => ({
         id: a.id,
         title: a.title,
@@ -3296,6 +3334,7 @@ export async function createTabs(
         librarySettings.trashDays,
       ),
     );
+    commitSkills(purgeOldSkills(skills, now, librarySettings.trashDays));
     const keptSpaces = purgeOldTrashedSpaces(
       spaceTrash,
       now,
@@ -5008,7 +5047,9 @@ export async function createTabs(
         restoreDeletedSpace(id);
         return;
       }
-      if (kind === 'chat') {
+      if (kind === 'skill') {
+        commitSkills(restoreSkill(skills, id, Date.now()));
+      } else if (kind === 'chat') {
         commitChats(chatsModel.restoreConversation(chats, id));
       } else if (kind === 'artifact') {
         commitArtifacts(
@@ -5024,7 +5065,10 @@ export async function createTabs(
     'library:delete-forever': (kind, id) => {
       if (
         !isId(id) ||
-        (kind !== 'chat' && kind !== 'artifact' && kind !== 'space')
+        (kind !== 'chat' &&
+          kind !== 'artifact' &&
+          kind !== 'space' &&
+          kind !== 'skill')
       )
         return;
       const title =
@@ -5032,7 +5076,9 @@ export async function createTabs(
           ? chats.trash.find((c) => c.id === id)?.title
           : kind === 'space'
             ? spaceTrash.items.find((s) => s.id === id)?.name
-            : artifacts.trash.find((a) => a.id === id)?.title;
+            : kind === 'skill'
+              ? skills.trash.find((s) => s.id === id)?.name
+              : artifacts.trash.find((a) => a.id === id)?.title;
       if (title === undefined) return;
       void confirm({
         title: 'Delete for good',
@@ -5042,7 +5088,9 @@ export async function createTabs(
         button: 'Delete for good',
       }).then((yes) => {
         if (!yes) return;
-        if (kind === 'space') {
+        if (kind === 'skill') {
+          commitSkills(purgeSkill(skills, id));
+        } else if (kind === 'space') {
           spaceTrash = purgeTrashedSpace(spaceTrash, id);
           spaceTrashSaver.schedule();
         } else if (kind === 'chat') {
@@ -5588,6 +5636,76 @@ export async function createTabs(
     },
     // "New" in the Artifacts panel: pick a kind; it is made in the Space you are in
     // and its name is asked for right away.
+    // ---- Skills ----
+    'skill:enable': (id, enabled) => {
+      if (isId(id) && typeof enabled === 'boolean') {
+        commitSkills(setSkillEnabled(skills, id, enabled));
+      }
+    },
+    'skill:delete': (id) => {
+      if (isId(id)) {
+        commitSkills(deleteSkill(skills, id, Date.now()));
+        libraryChanged();
+      }
+    },
+    'skill:menu': (id, x, y) => {
+      if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
+      const skill = findSkill(skills, id);
+      if (!skill) return;
+      showMenu(
+        skillMenuItems(skill),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseSkillChoice(choice);
+          if (!parsed) return;
+          const now = findSkill(skills, id);
+          if (!now) return;
+          switch (parsed.action) {
+            case 'edit':
+              if (!win.webContents.isDestroyed()) {
+                win.webContents.send('skill:edit', id);
+              }
+              break;
+            case 'toggle':
+              commitSkills(setSkillEnabled(skills, id, !now.enabled));
+              break;
+            case 'duplicate': {
+              const copy = duplicateSkill(skills, id, Date.now());
+              if (copy.ok) commitSkills(copy.state);
+              break;
+            }
+            case 'export':
+              void exportSkill(id);
+              break;
+            case 'delete':
+              commitSkills(deleteSkill(skills, id, Date.now()));
+              libraryChanged();
+              break;
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    'skill:new-menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        newSkillMenuItems(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseNewSkillChoice(choice);
+          if (parsed?.action === 'new') {
+            if (!win.webContents.isDestroyed()) {
+              win.webContents.send('skill:edit', null);
+            }
+          } else if (parsed?.action === 'import') {
+            void importSkills();
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     'artifact:new-menu': (x, y) => {
       if (!isNumber(x) || !isNumber(y)) return;
       showMenu(
@@ -6358,6 +6476,15 @@ export async function createTabs(
         deletedAt: s.deletedAt,
         daysLeft: daysLeft(s.deletedAt),
       })),
+      ...skills.trash.map((s) => ({
+        kind: 'skill' as const,
+        id: s.id,
+        title: s.name,
+        emoji: '✨',
+        detail: 'Skill',
+        deletedAt: s.deletedAt,
+        daysLeft: daysLeft(s.deletedAt),
+      })),
       ...artifacts.trash.map((a) => ({
         kind: 'artifact' as const,
         id: a.id,
@@ -6743,6 +6870,126 @@ ${artifact.content.slice(0, 1500)}`;
         : [];
     });
   });
+  // ---- Skills: reading one to edit it, saving, importing and exporting ----
+  ipcMain.handle('skills:get', (event, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const skill = isId(id) ? findSkill(skills, id) : undefined;
+    return skill
+      ? {
+          id: skill.id,
+          name: skill.name,
+          description: skill.description,
+          instructions: skill.instructions,
+          enabled: skill.enabled,
+          origin: skill.origin,
+        }
+      : null;
+  });
+  ipcMain.handle('skills:save', (event, input: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const raw = (typeof input === 'object' && input !== null ? input : {}) as {
+      id?: unknown;
+      name?: unknown;
+      description?: unknown;
+      instructions?: unknown;
+    };
+    const fields = {
+      name: typeof raw.name === 'string' ? raw.name : '',
+      description: typeof raw.description === 'string' ? raw.description : '',
+      instructions:
+        typeof raw.instructions === 'string' ? raw.instructions : '',
+    };
+    if (raw.id === null || raw.id === undefined) {
+      const made = createSkill(skills, fields, Date.now(), 'you');
+      if (!made.ok) return { ok: false, error: PROBLEM_WORDS[made.problem] };
+      commitSkills(made.state);
+      return { ok: true, id: made.skill.id };
+    }
+    if (!isId(raw.id)) return { ok: false, error: 'That skill was not found.' };
+    const updated = updateSkill(skills, raw.id, fields, Date.now());
+    if (!updated.ok) {
+      return {
+        ok: false,
+        error:
+          updated.problem === 'not-found'
+            ? 'That skill no longer exists.'
+            : PROBLEM_WORDS[updated.problem],
+      };
+    }
+    commitSkills(updated.state);
+    return { ok: true, id: raw.id };
+  });
+  // Add skills from files (.md): each is read, checked and added, and the ones that
+  // cannot be are listed in one message.
+  const importSkills = async () => {
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Import skills',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Skill files', extensions: ['md', 'markdown', 'txt'] }],
+    });
+    if (picked.canceled) return;
+    let next = skills;
+    let added = 0;
+    const refused: string[] = [];
+    for (const file of picked.filePaths.slice(0, 20)) {
+      const name = path.basename(file);
+      try {
+        const stat = fs.statSync(file);
+        if (!stat.isFile() || stat.size > 100_000) {
+          refused.push(`${name}: it is too big to be a skill.`);
+          continue;
+        }
+        const parsed = parseSkillMarkdown(fs.readFileSync(file, 'utf8'));
+        if (!parsed.ok) {
+          refused.push(`${name}: ${PROBLEM_WORDS[parsed.problem]}`);
+          continue;
+        }
+        const made = createSkill(next, parsed.value, Date.now(), 'imported');
+        if (!made.ok) {
+          refused.push(`${name}: ${PROBLEM_WORDS[made.problem]}`);
+          continue;
+        }
+        // An imported skill starts off until you have looked at it.
+        next = setSkillEnabled(made.state, made.skill.id, false);
+        added++;
+      } catch (error) {
+        refused.push(`${name}: ${(error as Error).message}`);
+      }
+    }
+    commitSkills(next);
+    if (refused.length > 0 || added > 0) {
+      void dialog.showMessageBox(win, {
+        type: refused.length > 0 ? 'info' : 'none',
+        message:
+          added > 0
+            ? `${added} skill${added === 1 ? '' : 's'} imported (turned off until you look at ${added === 1 ? 'it' : 'them'}).`
+            : 'No skills were imported.',
+        detail: refused.join('\n'),
+      });
+    }
+  };
+  const exportSkill = async (id: number) => {
+    const skill = findSkill(skills, id);
+    if (!skill) return;
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export skill',
+      defaultPath: path.join(
+        app.getPath('documents'),
+        skillFileName(skill.name),
+      ),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (picked.canceled || !picked.filePath) return;
+    try {
+      fs.writeFileSync(picked.filePath, skillMarkdown(skill), 'utf8');
+    } catch (error) {
+      void dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'The skill could not be saved.',
+        detail: (error as Error).message,
+      });
+    }
+  };
   // Search across all chats (by name and by what was said), for the chat list.
   // (The chat list is in the sidebar page, so that page may ask too.)
   ipcMain.handle('chats:search', (event, query: unknown) => {
@@ -7016,6 +7263,8 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('uploads:pick');
     ipcMain.removeHandler('uploads:drop');
     ipcMain.removeHandler('chats:search');
+    ipcMain.removeHandler('skills:get');
+    ipcMain.removeHandler('skills:save');
     ipcMain.removeHandler('newtab:drop');
     ipcMain.removeHandler('chat:attach-pick');
     ipcMain.removeHandler('chat:attach-drop');

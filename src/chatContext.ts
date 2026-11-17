@@ -3,7 +3,6 @@
 // never quietly turn into a huge (and expensive) request. Pure code, no network,
 // so it is easy to test.
 import type { ChatMessage } from './chats.ts';
-import type { ChatMessageInput } from './openrouter.ts';
 
 // Used when you have not written your own system prompt in Settings.
 export const DEFAULT_SYSTEM_PROMPT =

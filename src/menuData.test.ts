@@ -4,6 +4,8 @@ import {
   addMenuItems,
   artifactMenuItems,
   addToChatMenuItems,
+  newSkillMenuItems,
+  skillMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
   emojiPickerItems,
@@ -47,6 +49,8 @@ import {
   zoomChipMenuItems,
   parseLinkChoice,
   parseAddToChatChoice,
+  parseNewSkillChoice,
+  parseSkillChoice,
   parseMessageChoice,
   parseModelChoice,
   parseSpaceChoice,
@@ -1532,4 +1536,28 @@ test('the "+" menu in the message box offers a page, a Space, an artifact and a 
   });
   assert.deepEqual(parseAddToChatChoice('addchat.file'), { action: 'file' });
   assert.equal(parseAddToChatChoice('addchat.nope'), null);
+});
+
+test('the skill menus: edit, turn on or off, duplicate, export and delete; and New skill or import', () => {
+  const on = skillMenuItems({ enabled: true });
+  assert.deepEqual(menuIds(on), [
+    'skill.edit',
+    'skill.toggle',
+    'skill.duplicate',
+    'skill.export',
+    'skill.delete',
+  ]);
+  assert.equal(entry(on, 'skill.toggle').label, 'Turn off');
+  assert.equal(
+    entry(skillMenuItems({ enabled: false }), 'skill.toggle').label,
+    'Turn on',
+  );
+  assert.equal(entry(on, 'skill.delete').danger, true);
+  assert.deepEqual(parseSkillChoice('skill.export'), { action: 'export' });
+  assert.deepEqual(parseSkillChoice('skill.delete'), { action: 'delete' });
+  assert.equal(parseSkillChoice('skill.nope'), null);
+  assert.deepEqual(menuIds(newSkillMenuItems()), ['skill.new', 'skill.import']);
+  assert.deepEqual(parseNewSkillChoice('skill.new'), { action: 'new' });
+  assert.deepEqual(parseNewSkillChoice('skill.import'), { action: 'import' });
+  assert.equal(parseNewSkillChoice('skill.edit'), null);
 });

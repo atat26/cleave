@@ -6,6 +6,8 @@ import { PAGE_INSET, RAIL_WIDTH, TOOLBAR_HEIGHT } from './layout';
 import type { RightPanel as RightPanelName } from './model';
 import { ResizeHandle } from './ResizeHandle';
 import { SettingsPanel } from './SettingsPanel';
+import { SkillsPanel } from './SkillsPanel';
+import type { SkillInfo } from './skills';
 import { ToolsPanel } from './ToolsPanel';
 import type { ArtifactInfo, SpaceInfo } from './types';
 import { IconButton } from './ui/controls';
@@ -19,17 +21,13 @@ const TITLES: Record<RightPanelName, string> = {
   settings: 'Settings',
 };
 
-// Panels that have no content yet. (Settings has its own panel component.)
-const PLACEHOLDERS: Partial<Record<RightPanelName, string>> = {
-  skills: 'Reusable skills you can run from here are coming in a later update.',
-};
-
 // The panel that opens to the left of the rail. It is a card on the frame, and
 // you can drag its left edge to make it wider or narrower (drag it narrow to
 // close it). The app keeps the --panel variable up to date while it slides.
 export function RightPanel({
   panel,
   artifacts,
+  skills,
   openArtifactIds,
   spaces,
   artifactRenameRequest,
@@ -37,6 +35,7 @@ export function RightPanel({
 }: {
   panel: RightPanelName;
   artifacts: ArtifactInfo[];
+  skills: SkillInfo[];
   // The artifacts that are open as tabs.
   openArtifactIds: number[];
   spaces: SpaceInfo[];
@@ -112,16 +111,7 @@ export function RightPanel({
               onRenameHandled={onArtifactRenameHandled}
             />
           ) : (
-            <p
-              style={{
-                margin: 0,
-                color: 'var(--c-text-2)',
-                fontSize: 'var(--fs-sm)',
-                lineHeight: 1.5,
-              }}
-            >
-              {PLACEHOLDERS[panel]}
-            </p>
+            <SkillsPanel skills={skills} />
           )}
         </div>
       </section>

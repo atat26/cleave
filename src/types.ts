@@ -1,4 +1,22 @@
 import type { PdfTextResult } from './pdfTextFormat';
+import type { SkillInfo } from './skills';
+
+// A skill with its steps, for the editor.
+export interface SkillDetail {
+  id: number;
+  name: string;
+  description: string;
+  instructions: string;
+  enabled: boolean;
+  origin: 'you' | 'starter' | 'assistant' | 'imported';
+}
+export interface SkillSaveInput {
+  // null makes a new skill.
+  id: number | null;
+  name: string;
+  description: string;
+  instructions: string;
+}
 import type {
   ChatMatch,
   ChatMessage,
@@ -285,7 +303,7 @@ export type LibraryList =
 
 // A deleted chat or artifact, as the Library lists it.
 export interface DeletedItemInfo {
-  kind: 'chat' | 'artifact' | 'space';
+  kind: 'chat' | 'artifact' | 'space' | 'skill';
   id: number;
   title: string;
   emoji: string;
@@ -337,6 +355,8 @@ export interface UiState {
   llm: LlmInfo;
   spaces: SpaceInfo[];
   artifacts: ArtifactInfo[];
+  // The skills (names and descriptions; the steps are fetched when one is edited).
+  skills: SkillInfo[];
   // The artifacts that are open as tabs, in the order they were opened.
   artifactTabs: ArtifactTabInfo[];
   tabs: TabInfo[];
@@ -541,9 +561,12 @@ export interface BrowserApi {
   libraryClosed: () => Promise<ClosedTabInfo[]>;
   // Chats and artifacts deleted lately, newest first, and what to do with them.
   libraryDeleted: () => Promise<DeletedItemInfo[]>;
-  libraryRestore: (kind: 'chat' | 'artifact' | 'space', id: number) => void;
+  libraryRestore: (
+    kind: 'chat' | 'artifact' | 'space' | 'skill',
+    id: number,
+  ) => void;
   libraryDeleteForever: (
-    kind: 'chat' | 'artifact' | 'space',
+    kind: 'chat' | 'artifact' | 'space' | 'skill',
     id: number,
   ) => void;
   // Settings > Library (history and Recently deleted).
@@ -671,6 +694,17 @@ export interface BrowserApi {
   onComposerAdd: (
     callback: (chatId: number, kind: 'page' | 'space' | 'artifact') => void,
   ) => () => void;
+  // Skills: the full text of one (to edit it), save one (a new one with id null),
+  // import files, and the app asking the panel to open its editor (id null = new).
+  skillGet: (id: number) => Promise<SkillDetail | null>;
+  skillSave: (
+    input: SkillSaveInput,
+  ) => Promise<{ ok: true; id: number } | { ok: false; error: string }>;
+  skillEnable: (id: number, enabled: boolean) => void;
+  skillDelete: (id: number) => void;
+  showSkillMenu: (id: number, x: number, y: number) => void;
+  showNewSkillMenu: (x: number, y: number) => void;
+  onSkillEdit: (callback: (id: number | null) => void) => () => void;
   // What the HTML preview of an artifact reported (errors, blocked loads).
   reportPreview: (
     id: number,

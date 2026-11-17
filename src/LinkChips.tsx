@@ -5,7 +5,6 @@ import type { Workspace } from './chatLinks';
 import { SPACE_COLOR_HEX } from './colors';
 import { labelFor } from './Sidebar';
 import type { LinkKind, Mention } from './chats';
-import { Button, IconButton } from './ui/controls';
 import type { ArtifactInfo, ChatRef, SpaceInfo, TabInfo } from './types';
 
 // Linking Spaces and tabs to a chat. This file draws the link chips above the

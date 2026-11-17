@@ -514,6 +514,80 @@ export function parseChatChoice(id: string): ChatChoice | null {
   };
 }
 
+// ---- Skills ------------------------------------------------------------------------
+
+export type SkillChoice =
+  | { action: 'edit' }
+  | { action: 'toggle' }
+  | { action: 'duplicate' }
+  | { action: 'export' }
+  | { action: 'delete' };
+
+// Right-click (or the "…" on hover) on a skill.
+export function skillMenuItems(skill: { enabled: boolean }): MenuItem[] {
+  return [
+    { type: 'item', id: 'skill.edit', label: 'Edit', icon: 'pencil' },
+    {
+      type: 'item',
+      id: 'skill.toggle',
+      label: skill.enabled ? 'Turn off' : 'Turn on',
+      icon: skill.enabled ? 'x' : 'check',
+    },
+    { type: 'item', id: 'skill.duplicate', label: 'Duplicate', icon: 'copy' },
+    {
+      type: 'item',
+      id: 'skill.export',
+      label: 'Export as a file…',
+      icon: 'upload',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'skill.delete',
+      label: 'Delete',
+      icon: 'trash',
+      danger: true,
+    },
+  ];
+}
+
+export function parseSkillChoice(id: string): SkillChoice | null {
+  switch (id) {
+    case 'skill.edit':
+      return { action: 'edit' };
+    case 'skill.toggle':
+      return { action: 'toggle' };
+    case 'skill.duplicate':
+      return { action: 'duplicate' };
+    case 'skill.export':
+      return { action: 'export' };
+    case 'skill.delete':
+      return { action: 'delete' };
+  }
+  return null;
+}
+
+export type NewSkillChoice = { action: 'new' } | { action: 'import' };
+
+// The "New" button on the Skills panel.
+export function newSkillMenuItems(): MenuItem[] {
+  return [
+    { type: 'item', id: 'skill.new', label: 'New skill', icon: 'plus' },
+    {
+      type: 'item',
+      id: 'skill.import',
+      label: 'Import from a file…',
+      icon: 'doc',
+    },
+  ];
+}
+
+export function parseNewSkillChoice(id: string): NewSkillChoice | null {
+  if (id === 'skill.new') return { action: 'new' };
+  if (id === 'skill.import') return { action: 'import' };
+  return null;
+}
+
 // ---- The "+" menu in the chat's message box ----------------------------------------
 
 export type AddToChatChoice =

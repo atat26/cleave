@@ -168,6 +168,19 @@ const browserApi: BrowserApi = {
   downloadsOpenFolder: () => ipcRenderer.invoke('downloads:open-folder'),
   libraryClosed: () => ipcRenderer.invoke('library:closed'),
   libraryDeleted: () => ipcRenderer.invoke('library:deleted'),
+  skillGet: (id) => ipcRenderer.invoke('skills:get', id),
+  skillSave: (input) => ipcRenderer.invoke('skills:save', input),
+  skillEnable: (id, enabled) => ipcRenderer.send('skill:enable', id, enabled),
+  skillDelete: (id) => ipcRenderer.send('skill:delete', id),
+  showSkillMenu: (id, x, y) => ipcRenderer.send('skill:menu', id, x, y),
+  showNewSkillMenu: (x, y) => ipcRenderer.send('skill:new-menu', x, y),
+  onSkillEdit: (callback) => {
+    const listener = (_event: unknown, id: number | null) => callback(id);
+    ipcRenderer.on('skill:edit', listener);
+    return () => {
+      ipcRenderer.removeListener('skill:edit', listener);
+    };
+  },
   libraryRestore: (kind, id) => ipcRenderer.send('library:restore', kind, id),
   libraryDeleteForever: (kind, id) =>
     ipcRenderer.send('library:delete-forever', kind, id),
