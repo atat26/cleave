@@ -19,6 +19,8 @@ import {
   SIDEBAR_MIN_WIDTH,
   setSidebarWidth,
   addSpace,
+  MAX_ABOUT_CHARS,
+  setSpaceAbout,
   addTab,
   closeArtifactTab,
   closeTab,
@@ -726,5 +728,40 @@ test("an extension's own page (chrome-extension://<id>/...) is a valid tab addre
   assert.deepEqual(
     state.tabs.map((t) => t.id),
     [1],
+  );
+});
+
+test("a Space's note is cleaned and limited, can be cleared, and is kept across a restart", () => {
+  const added = addSpace(defaultState(), 'Trip');
+  const id = added.id;
+  assert.equal(added.state.spaces[0].about, '');
+  const set = setSpaceAbout(
+    added.state,
+    id,
+    '  Goal: Rome in May\r\n\r\n\r\n\r\nBudget 2k\u0000 ',
+  );
+  assert.equal(set.spaces[0].about, 'Goal: Rome in May\n\nBudget 2k');
+  // The same text again changes nothing (the same state comes back).
+  assert.equal(setSpaceAbout(set, id, 'Goal: Rome in May\n\nBudget 2k'), set);
+  assert.equal(setSpaceAbout(set, 999, 'x'), set);
+  assert.equal(setSpaceAbout(set, id, 5).spaces[0].about, '');
+  assert.equal(
+    setSpaceAbout(set, id, 'a'.repeat(MAX_ABOUT_CHARS + 500)).spaces[0].about
+      .length,
+    MAX_ABOUT_CHARS,
+  );
+  assert.equal(setSpaceAbout(set, id, '').spaces[0].about, '');
+  // Saved and read back; a bad value on disk becomes empty.
+  const back = parseState(JSON.parse(JSON.stringify(set)));
+  assert.equal(back.spaces[0].about, 'Goal: Rome in May\n\nBudget 2k');
+  const bad = parseState({
+    spaces: [
+      { id: 1, name: 'A', about: { x: 1 } },
+      { id: 2, name: 'B' },
+    ],
+  });
+  assert.deepEqual(
+    bad.spaces.map((s) => s.about),
+    ['', ''],
   );
 });

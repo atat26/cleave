@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
+import { MAX_ABOUT_CHARS } from './model';
 import { agoWords, overviewContent, summaryLine } from './overviewModel';
 import { Favicon, labelFor } from './Sidebar';
 import { NameButton } from './NameButton';
@@ -103,6 +104,95 @@ function OverviewCard({
           }}
         />
       )}
+    </div>
+  );
+}
+
+// The note you wrote about the Space (its goal, a budget, what to keep in mind). It
+// is told to the assistant when the Space is linked to a chat. Click it to change it;
+// it is saved when you click away (Ctrl+Enter also saves, Escape leaves it as it was).
+function AboutBlock({ space }: { space: SpaceInfo }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(space.about);
+
+  const start = () => {
+    setDraft(space.about);
+    setEditing(true);
+  };
+  const finish = (save: boolean) => {
+    setEditing(false);
+    if (save && draft.trim() !== space.about) {
+      window.browserApi.setSpaceAbout(space.id, draft);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="ov-about is-editing">
+        <textarea
+          className="input ov-about-input"
+          aria-label="About this Space"
+          autoFocus
+          value={draft}
+          maxLength={MAX_ABOUT_CHARS}
+          rows={3}
+          placeholder="What is this Space for? Its goal, a budget, anything to keep in mind…"
+          onFocus={(event) => {
+            const end = event.currentTarget.value.length;
+            event.currentTarget.setSelectionRange(end, end);
+          }}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => finish(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              finish(false);
+            } else if (
+              event.key === 'Enter' &&
+              (event.ctrlKey || event.metaKey)
+            ) {
+              event.preventDefault();
+              finish(true);
+            }
+          }}
+        />
+        <div className="ov-about-hint muted">
+          Only you see this, and the assistant when this Space is linked to a
+          chat. Ctrl+Enter saves.
+          {draft.length > MAX_ABOUT_CHARS - 200 && (
+            <span> {MAX_ABOUT_CHARS - draft.length} characters left.</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (space.about === '') {
+    return (
+      <button type="button" className="ov-about is-empty" onClick={start}>
+        <Icon name="pencil" />
+        Add a note about this Space: its goal, a budget, what to keep in mind
+      </button>
+    );
+  }
+  return (
+    <div className="ov-about reveal-host">
+      <div
+        className="ov-about-text"
+        role="button"
+        tabIndex={0}
+        title="Click to change"
+        onClick={start}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            start();
+          }
+        }}
+      >
+        {space.about}
+      </div>
     </div>
   );
 }
@@ -329,6 +419,7 @@ export function LeadView({
       </header>
 
       <div className="ov-body">
+        <AboutBlock key={space.id} space={space} />
         {empty ? (
           <div className="ov-empty">
             <p className="ov-empty-title">This Space is empty.</p>

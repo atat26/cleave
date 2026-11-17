@@ -544,7 +544,11 @@ export async function createTabs(
       spaceId: t.spaceId,
       closed: t.closed,
     })),
-    spaces: state.spaces.map((s) => ({ id: s.id, name: s.name })),
+    spaces: state.spaces.map((s) => ({
+      id: s.id,
+      name: s.name,
+      about: s.about,
+    })),
     artifacts: artifacts.artifacts.map((a) => ({
       id: a.id,
       title: a.title,
@@ -904,6 +908,7 @@ export async function createTabs(
                 emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
                 color: s.color,
                 collapsed: s.collapsed,
+                about: s.about,
               },
             ]
           : [];
@@ -920,13 +925,16 @@ export async function createTabs(
       id === null ? undefined : pageContents(id)?.navigationHistory;
     const generating = chatService?.runningChats() ?? [];
     const ui: UiState = {
-      spaces: state.spaces.map(({ id, name, color, emoji, collapsed }) => ({
-        id,
-        name,
-        emoji: emojiOr(emoji, DEFAULT_SPACE_EMOJI),
-        color,
-        collapsed,
-      })),
+      spaces: state.spaces.map(
+        ({ id, name, color, emoji, collapsed, about }) => ({
+          about,
+          id,
+          name,
+          emoji: emojiOr(emoji, DEFAULT_SPACE_EMOJI),
+          color,
+          collapsed,
+        }),
+      ),
       artifactTabs: state.artifactTabs.flatMap((t) => {
         const a = artifactsModel.findArtifact(artifacts, t.artifactId);
         return a
@@ -4750,6 +4758,11 @@ export async function createTabs(
         (choice) => runTabChoice(id, choice),
         requestSender ?? win.webContents,
       );
+    },
+    // The note on a Space's overview.
+    'space:about': (id, text) => {
+      if (!isId(id) || typeof text !== 'string') return;
+      commit(model.setSpaceAbout(state, id, text));
     },
     'space:bulk': (id, action) => {
       if (!isId(id) || !model.findSpace(state, id)) return;

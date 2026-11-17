@@ -178,6 +178,8 @@ export interface SpaceInfo {
   emoji: string;
   color: SpaceColor;
   collapsed: boolean;
+  // The note you wrote about it.
+  about: string;
 }
 
 // ---- The AI provider (OpenRouter) -------------------------------------------
@@ -635,6 +637,8 @@ export interface BrowserApi {
   showNewArtifactMenu: (x: number, y: number) => void;
   // Close all of a Space's open pages, or reopen all its closed ones.
   spaceBulk: (id: number, action: 'close-all' | 'reopen-all') => void;
+  // Save the note on a Space's overview.
+  setSpaceAbout: (id: number, text: string) => void;
   // The setting changed (from the menu): its artifact's id.
   onArtifactInternet: (callback: (id: number) => void) => () => void;
   // `revision` is the version the text was based on.
