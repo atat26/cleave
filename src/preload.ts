@@ -42,6 +42,16 @@ const browserApi: BrowserApi = {
   newTabSettingsSet: (changes) =>
     ipcRenderer.invoke('new-tab-settings:set', changes),
   newTabShowHidden: () => ipcRenderer.invoke('new-tab-settings:show-hidden'),
+  extensionsList: () => ipcRenderer.invoke('extensions:list'),
+  extensionsAddFolder: () => ipcRenderer.invoke('extensions:add-folder'),
+  extensionsSetEnabled: (key, enabled) =>
+    ipcRenderer.invoke('extensions:set-enabled', key, enabled),
+  extensionsRemove: (key) => ipcRenderer.invoke('extensions:remove', key),
+  onExtensionsChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('extensions:changed', listener);
+    return () => ipcRenderer.removeListener('extensions:changed', listener);
+  },
   onFocusAddress: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('toolbar:focus-address', listener);
