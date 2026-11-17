@@ -1,3 +1,4 @@
+import type { PdfTextResult } from './pdfTextFormat';
 import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
@@ -653,6 +654,10 @@ export interface BrowserApi {
   // dialog, drop them, or paste a picture. Each gives how many were added.
   chatAttachPick: (chatId: number) => Promise<number>;
   chatAttachFiles: (chatId: number, files: File[]) => Promise<number>;
+  // Answer the app's requests to read a PDF's text (see pdfText.ts).
+  onPdfExtract: (
+    handler: (data: Uint8Array) => Promise<PdfTextResult>,
+  ) => () => void;
   artifactFile: (
     id: number,
   ) => Promise<{ mime: string; data: Uint8Array } | null>;

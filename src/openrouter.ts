@@ -142,15 +142,37 @@ export interface ToolCall {
   arguments: string;
 }
 
+// A piece of a message that is not plain text: a picture (base64 bytes of the file).
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mime: string; data: string };
+
 export type ChatMessageInput =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  // A user message is text, or text and pictures (for models that can see).
+  | { role: 'user'; content: string | ContentPart[] }
   // An assistant message may ask for tools to be run.
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
   // What a tool found, handed back to the model.
   | { role: 'tool'; toolCallId: string; content: string };
 
 // The message in the shape OpenRouter wants.
-function toApiMessage(message: ChatMessageInput): Record<string, unknown> {
+export function toApiMessage(
+  message: ChatMessageInput,
+): Record<string, unknown> {
+  if (message.role === 'user' && Array.isArray(message.content)) {
+    return {
+      role: 'user',
+      content: message.content.map((part) =>
+        part.type === 'text'
+          ? { type: 'text', text: part.text }
+          : {
+              type: 'image_url',
+              image_url: { url: `data:${part.mime};base64,${part.data}` },
+            },
+      ),
+    };
+  }
   if (message.role === 'tool') {
     return {
       role: 'tool',

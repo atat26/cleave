@@ -33,6 +33,8 @@ export interface WorkspaceArtifact {
   title: string;
   // What kind of document: markdown, text, html or code.
   kind: string;
+  // "Image" or "PDF" for an uploaded file (kind "file"); left out for the rest.
+  fileLabel?: string | null;
   spaceId: number | null;
 }
 export interface Workspace {
@@ -336,7 +338,7 @@ export function buildLinkedContext(
   const artifactLine = (a: WorkspaceArtifact, nested: boolean) => {
     const head = nested ? '  - artifact' : 'Artifact';
     const mark = canRead ? ` ${a.id}: ` : nested ? ' ' : ': ';
-    return `${head}${mark}"${cleanLabel(a.title) || 'Untitled artifact'}" (${cleanLabel(a.kind, 20) || 'document'})`;
+    return `${head}${mark}"${cleanLabel(a.title) || 'Untitled artifact'}" (${cleanLabel(a.fileLabel ?? a.kind, 20) || 'document'})`;
   };
   let artifactCount = 0;
   let closedCount = 0;
@@ -422,7 +424,7 @@ export function buildLinkedContext(
   const artifactNote =
     artifactCount > 0
       ? canRead
-        ? ' Artifacts are documents the user made inside this browser. You have their titles and kinds here; read one with read_artifact (give its number), and change one with edit_artifact (the user approves each change).'
+        ? ' Artifacts are documents the user made inside this browser. You have their titles and kinds here; read one with read_artifact (give its number), and change one with edit_artifact (the user approves each change). An image or PDF the user uploaded is an artifact too: read_artifact shows you the image (if you can see images) or gives you the PDF text.'
         : ' Artifacts are documents the user made inside this browser: you only have their titles and kinds here, not their contents.'
       : '';
   const closedNote =

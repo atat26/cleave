@@ -169,6 +169,9 @@ export interface ToolOutcome {
   // What the tool found, kept with the call so you can read it later (search
   // results, a page's controls). Never page text.
   details?: string;
+  // Pictures to show the model next (for a model that can see): they are handed
+  // over right after this round's tool results, in a message of the user's.
+  images?: { mime: string; data: string; label: string }[];
   // A short note, written by the app, on how it went (saved with the call so you
   // can see it later). The page text itself is never saved.
   note: string;

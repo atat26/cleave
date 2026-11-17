@@ -307,6 +307,20 @@ const browserApi: BrowserApi = {
     }
     return added;
   },
+  // The app asks this window to read the words of a PDF (PDF.js runs here).
+  onPdfExtract: (handler) => {
+    const listener = async (
+      _event: unknown,
+      requestId: number,
+      data: Uint8Array,
+    ) => {
+      ipcRenderer.send('pdf:extracted', requestId, await handler(data));
+    };
+    ipcRenderer.on('pdf:extract', listener);
+    return () => {
+      ipcRenderer.removeListener('pdf:extract', listener);
+    };
+  },
   artifactFile: (id) => ipcRenderer.invoke('artifact:file', id),
   artifactOpenFile: (id, how) =>
     ipcRenderer.invoke('artifact:open-file', id, how),

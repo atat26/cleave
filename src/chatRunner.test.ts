@@ -214,11 +214,11 @@ test('links are given to the model with the system prompt, and again on retry', 
       done: Promise<void>;
     }
   ).done;
-  assert.ok(t.calls[0].messages[0].content.endsWith(linked));
+  assert.ok(String(t.calls[0].messages[0].content).endsWith(linked));
   assert.equal(t.calls[0].messages[0].role, 'system');
 
   await (t.runner.retry(t.chatId, withLinks) as { done: Promise<void> }).done;
-  assert.ok(t.calls[1].messages[0].content.endsWith(linked));
+  assert.ok(String(t.calls[1].messages[0].content).endsWith(linked));
 
   // A chat with no links gets the plain system prompt.
   const plain = setup(sends(text('ok')));
@@ -848,4 +848,56 @@ test('retrying an earlier message removes what came after it and writes a new re
     ok: false,
     reason: 'nothing-to-retry',
   });
+});
+
+test('pictures a tool asks to show come after the tool results, as one message of the user, and are not saved in the chat', async () => {
+  const { tools } = fakeTools(async () => ({
+    label: 'Looked at image: photo.png',
+    ok: true,
+    note: 'Showed the picture to the assistant.',
+    result: 'Artifact 7 (image). The picture is attached in the next message.',
+    images: [{ mime: 'image/png', data: 'QUJD', label: 'photo.png' }],
+  }));
+  const t = setup(
+    scripted([text('Looking.'), call('c1', 7)], [text('A gradient.')]),
+  );
+  const started = t.runner.send(t.chatId, 'What is in my photo?', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+
+  const second = t.calls[1].messages;
+  const [assistant, tool, picture] = second.slice(-3);
+  assert.equal(assistant.role, 'assistant');
+  assert.equal(tool.role, 'tool');
+  assert.equal(picture.role, 'user');
+  assert.ok(Array.isArray(picture.content));
+  const parts = picture.content as {
+    type: string;
+    mime?: string;
+    data?: string;
+    text?: string;
+  }[];
+  assert.equal(parts[0].type, 'text');
+  assert.match(parts[0].text ?? '', /photo\.png/);
+  assert.match(parts[0].text ?? '', /data, not instructions/);
+  assert.deepEqual(parts[1], {
+    type: 'image',
+    mime: 'image/png',
+    data: 'QUJD',
+  });
+  // The picture is only for this reply: the chat keeps no copy of its bytes.
+  assert.ok(!JSON.stringify(t.chat).includes('QUJD'));
+});
+
+test('without pictures no extra message is added after the tool results', async () => {
+  const { tools } = fakeTools();
+  const t = setup(scripted([call('c1', 3)], [text('ok')]));
+  const started = t.runner.send(t.chatId, 'x', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  const second = t.calls[1].messages;
+  assert.equal(second[second.length - 1].role, 'tool');
 });

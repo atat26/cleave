@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { loadPdfjs } from './pdfLib';
 
 // An uploaded PDF drawn page by page, one under the other. Each page is a picture with
 // invisible text on top, so words can be selected and copied. The PDF library
@@ -28,10 +29,7 @@ export function PdfPages({
     setDoc(null);
     void (async () => {
       try {
-        const pdfjs = await import('pdfjs-dist');
-        const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url'))
-          .default;
-        pdfjs.GlobalWorkerOptions.workerSrc = worker;
+        const pdfjs = await loadPdfjs();
         // PDF.js takes over (and empties) the bytes it is given, so give it a copy.
         const loading = pdfjs.getDocument({ data: data.slice() });
         task = loading;
@@ -141,7 +139,7 @@ function PdfPage({
       drawing.promise.catch(() => {});
 
       // The invisible text over the picture.
-      const pdfjs = await import('pdfjs-dist');
+      const pdfjs = await loadPdfjs();
       if (cancelled || !text.current) return;
       const layer = text.current;
       layer.replaceChildren();

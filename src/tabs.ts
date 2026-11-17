@@ -4,6 +4,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  nativeImage,
   nativeTheme,
   screen,
   session,
@@ -48,6 +49,9 @@ import {
 import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { exportFileName, spaceMarkdown } from './spaceExport';
+import type { FileReading } from './artifactTools';
+import { parsePdfText } from './pdfTextFormat';
+import type { PdfTextResult } from './pdfTextFormat';
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_FILES,
@@ -610,6 +614,7 @@ export async function createTabs(
       id: a.id,
       title: a.title,
       kind: a.kind,
+      fileLabel: artifactsModel.fileLabel(a),
       spaceId: a.spaceId,
     })),
   });
@@ -2723,6 +2728,7 @@ export async function createTabs(
     },
     actions: actionEnv,
     artifactStore: {
+      readFile: (id) => readUploadedFile(id),
       read: (id) => {
         const found = artifactsModel.findArtifact(artifacts, id);
         return found
@@ -6194,6 +6200,94 @@ ${artifact.content.slice(0, 1500)}`;
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return importFiles(paths, isId(spaceId) ? spaceId : currentSpaceId());
   });
+  // ---- Letting the assistant read uploads --------------------------------------
+  // A PDF's words are read by this window (PDF.js runs there, in a worker, away from
+  // the main process). A picture is shrunk if it is big, so it is cheap to send.
+  const pdfRequests = new Map<number, (result: PdfTextResult) => void>();
+  let nextPdfRequest = 1;
+  const pdfTexts = new Map<number, PdfTextResult>();
+  const askWindowForPdfText = (bytes: Uint8Array): Promise<PdfTextResult> =>
+    new Promise((resolve) => {
+      if (win.isDestroyed() || win.webContents.isDestroyed()) {
+        resolve({ ok: false });
+        return;
+      }
+      const requestId = nextPdfRequest++;
+      const timer = setTimeout(() => {
+        pdfRequests.delete(requestId);
+        resolve({ ok: false });
+      }, 60_000);
+      pdfRequests.set(requestId, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      win.webContents.send('pdf:extract', requestId, bytes);
+    });
+  ipcMain.on('pdf:extracted', (event, requestId: unknown, result: unknown) => {
+    if (!fromWindow(event) || typeof requestId !== 'number') return;
+    const done = pdfRequests.get(requestId);
+    if (!done) return;
+    pdfRequests.delete(requestId);
+    done(parsePdfText(result));
+  });
+  const MAX_PICTURE_SIDE = 1568;
+  const MAX_PICTURE_BYTES = 4 * 1024 * 1024;
+  async function readUploadedFile(id: number): Promise<FileReading> {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found?.file) return { ok: false, reason: 'missing' };
+    let bytes: Buffer;
+    try {
+      bytes = fs.readFileSync(uploadPath(found));
+    } catch {
+      return { ok: false, reason: 'missing' };
+    }
+    if (found.file.mime === 'application/pdf') {
+      let text = pdfTexts.get(id);
+      if (!text) {
+        text = await askWindowForPdfText(new Uint8Array(bytes));
+        if (text.ok) pdfTexts.set(id, text);
+      }
+      return text.ok
+        ? {
+            ok: true,
+            kind: 'pdf',
+            pages: text.pages,
+            text: text.text,
+            scanned: text.scanned,
+            truncated: text.truncated,
+          }
+        : { ok: false, reason: 'unreadable' };
+    }
+    // A picture: shrink a big one (and send it as a JPEG), keep a small one as it is.
+    const picture = nativeImage.createFromBuffer(bytes);
+    if (!picture.isEmpty()) {
+      const { width, height } = picture.getSize();
+      const longest = Math.max(width, height);
+      if (longest > MAX_PICTURE_SIDE || bytes.length > MAX_PICTURE_BYTES) {
+        const scale = Math.min(1, MAX_PICTURE_SIDE / longest);
+        const smaller = picture.resize({
+          width: Math.max(1, Math.round(width * scale)),
+          height: Math.max(1, Math.round(height * scale)),
+          quality: 'good',
+        });
+        return {
+          ok: true,
+          kind: 'image',
+          mime: 'image/jpeg',
+          data: smaller.toJPEG(85).toString('base64'),
+        };
+      }
+    }
+    if (bytes.length > MAX_PICTURE_BYTES)
+      return { ok: false, reason: 'too-big' };
+    return {
+      ok: true,
+      kind: 'image',
+      mime: found.file.mime,
+      data: bytes.toString('base64'),
+    };
+  }
+
   // Files attached to a chat: picked from a dialog, dropped on the chat, or an image
   // pasted into the message box. They become artifacts (in the Space you are in) that
   // are linked to the chat, and no tab is opened.

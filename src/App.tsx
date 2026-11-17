@@ -3,6 +3,7 @@ import { ChatBar } from './ChatBar';
 import { CHAT_FULL_MIN_HEIGHT, RAIL_WIDTH } from './layout';
 import { ArtifactView } from './ArtifactView';
 import { pushInsert } from './composerBus';
+import { extractPdfText } from './pdfText';
 import { requestSettingsSection } from './settingsNav';
 import { LeadView } from './LeadView';
 import { isNewTabPage } from './model';
@@ -79,6 +80,11 @@ export function App() {
     () => window.browserApi.onChatRenameRequest(setChatRenameRequest),
     [],
   );
+  // The app asks this window to read the text of a PDF the assistant opens.
+  useEffect(() => {
+    if (IS_SIDEBAR) return;
+    return window.browserApi.onPdfExtract(extractPdfText);
+  }, []);
 
   // The app sends the frame's layout many times a second while it slides. A CSS
   // variable moves everything without re-drawing the whole page each time; only

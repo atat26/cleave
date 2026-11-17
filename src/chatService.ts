@@ -25,6 +25,7 @@ import {
   snapshotLookup,
 } from './chatLinks';
 import type { ArtifactKind } from './artifacts';
+import type { FileReading } from './artifactTools';
 import {
   messageMenuItems,
   modelMenuItems,
@@ -102,6 +103,8 @@ export function createChatService(options: {
     read(
       id: number,
     ): { title: string; kind: ArtifactKind; content: string } | null;
+    // An uploaded image or PDF: a PDF's text, or a picture ready to show the model.
+    readFile(id: number): Promise<FileReading>;
     create(
       chatId: number,
       input: {
@@ -305,6 +308,7 @@ export function createChatService(options: {
     // The tools are there even when nothing is linked: the assistant can always
     // open a new tab (which is then linked to the chat).
     const canRead = llm.getModelInfo(model)?.supportsTools !== false;
+    const seesImages = llm.getModelInfo(model)?.supportsImages !== false;
     const tools = canRead
       ? createAgentTools(
           {
@@ -327,6 +331,9 @@ export function createChatService(options: {
                 options.getWorkspace(),
               ),
             readArtifact: options.artifactStore.read,
+            readFile: options.artifactStore.readFile,
+            // An unknown model is tried: if it cannot see, the provider says so.
+            canSeeImages: () => seesImages,
             createArtifact: (input) =>
               options.artifactStore.create(chatId, input),
             updateArtifact: options.artifactStore.update,

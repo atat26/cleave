@@ -10,6 +10,7 @@ import {
   OPENROUTER_BASE,
   parseModels,
   streamChat,
+  toApiMessage,
 } from './openrouter.ts';
 import type { FetchLike, StreamEvent } from './openrouter.ts';
 
@@ -762,4 +763,31 @@ test('parseModels records what a model can do, and null when the list does not s
     [by('c/unknown')?.supportsTools, by('c/unknown')?.supportsImages],
     [null, null],
   );
+});
+
+test('a user message with a picture is sent as text and an image address', () => {
+  assert.deepEqual(
+    toApiMessage({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Look' },
+        { type: 'image', mime: 'image/png', data: 'AAAA' },
+      ],
+    }),
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Look' },
+        {
+          type: 'image_url',
+          image_url: { url: 'data:image/png;base64,AAAA' },
+        },
+      ],
+    },
+  );
+  // Plain messages are unchanged.
+  assert.deepEqual(toApiMessage({ role: 'user', content: 'hi' }), {
+    role: 'user',
+    content: 'hi',
+  });
 });

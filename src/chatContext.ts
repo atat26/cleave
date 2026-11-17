@@ -47,6 +47,12 @@ export function rememberedSearches(history: HistoryMessage[]): string | null {
   ].join('\n\n');
 }
 
+// Messages made from the chat's history are always plain text.
+export type TextMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
+
 export function buildMessages(options: {
   systemPrompt: string | null;
   // The list of linked Spaces and tabs (see chatLinks.ts), if any. It goes after
@@ -55,7 +61,7 @@ export function buildMessages(options: {
   history: HistoryMessage[];
   maxMessages?: number;
   maxChars?: number;
-}): ChatMessageInput[] {
+}): TextMessage[] {
   const maxMessages = options.maxMessages ?? MAX_HISTORY_MESSAGES;
   const maxChars = options.maxChars ?? MAX_HISTORY_CHARS;
 

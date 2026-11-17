@@ -487,3 +487,30 @@ test("a linked Space's own note is told to the model as background, cleaned and 
     ) ?? '';
   assert.ok(long.length < 5000);
 });
+
+test('an uploaded image or PDF is described as one, not as a "file", and the assistant is told how to look at it', () => {
+  const uploads: Workspace = {
+    ...workspace,
+    artifacts: [
+      {
+        id: 7,
+        title: 'photo.png',
+        kind: 'file',
+        fileLabel: 'Image',
+        spaceId: null,
+      },
+      {
+        id: 8,
+        title: 'report.pdf',
+        kind: 'file',
+        fileLabel: 'PDF',
+        spaceId: null,
+      },
+    ],
+  };
+  const text =
+    buildLinkedContext([artifactRef(7), artifactRef(8)], uploads, true) ?? '';
+  assert.match(text, /Artifact 7: "photo\.png" \(Image\)/);
+  assert.match(text, /Artifact 8: "report\.pdf" \(PDF\)/);
+  assert.match(text, /read_artifact shows you the image/);
+});
