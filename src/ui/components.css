@@ -2402,3 +2402,11 @@ button {
     justify-self: end;
   }
 }
+
+/* The artifact's top bar keeps its quiet buttons (name with AI, allow internet, the
+   saved note) one level down, so they are revealed from the whole bar. */
+.art-head:hover .reveal,
+.art-head:has(:focus-visible) .reveal {
+  opacity: 1;
+  pointer-events: auto;
+}
