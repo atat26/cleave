@@ -26,6 +26,8 @@ import {
   libraryMenuItems,
   parseDownloadChoice,
   parsePermissionChoice,
+  parsePopupChoice,
+  blockedPopupItems,
   parsePrivacyChoice,
   privacyDataMenuItems,
   privacySiteMenuItems,
@@ -1190,4 +1192,37 @@ test('a site you went on to despite its certificate is never called secure', () 
       siteMenuItems({ host: 'a.com', secure: true, canAsk: true, answers: {} }),
     ).includes('site.rewarn'),
   );
+});
+
+test('the pop-up chip lists what was blocked, with a button each and one to always allow', () => {
+  const items = blockedPopupItems('a.com', [
+    'https://ad.example.com/win',
+    'https://b.example/x',
+  ]);
+  const header = items[0];
+  assert.equal(header.type, 'header');
+  assert.equal(
+    header.type === 'header' ? header.label : '',
+    '2 pop-ups blocked',
+  );
+  assert.deepEqual(menuIds(items), [
+    'popup.open:0',
+    'popup.open:1',
+    'popup.allow',
+  ]);
+  assert.equal((items[1] as MenuEntry).label, 'Open ad.example.com/win');
+  assert.equal(
+    blockedPopupItems('a.com', ['https://x.com/'])[0].type === 'header' &&
+      (blockedPopupItems('a.com', ['https://x.com/'])[0] as { label: string })
+        .label,
+    '1 pop-up blocked',
+  );
+  assert.deepEqual(parsePopupChoice('popup.allow'), { action: 'allow' });
+  assert.deepEqual(parsePopupChoice('popup.open:1'), {
+    action: 'open',
+    index: 1,
+  });
+  for (const bad of ['', 'popup.open:x', 'popup.open:100', 'popup.deny']) {
+    assert.equal(parsePopupChoice(bad), null, bad);
+  }
 });

@@ -243,6 +243,8 @@ export interface UiState {
   downloads: DownloadSummary;
   // The page is on a site you went on to despite its certificate (not secure).
   certBypassed: boolean;
+  // How many pop-ups the page you are on tried to open and were blocked.
+  blockedPopups: number;
   // The ACTIVE web tab is still loading (its reload button becomes Stop).
   loading: boolean;
   // Whether the ACTIVE web tab can go back / forward.
@@ -312,6 +314,8 @@ export interface BrowserApi {
   showStarMenu: (x: number, y: number) => void;
   // The lock chip's menu: what this site may do.
   showSiteMenu: (x: number, y: number) => void;
+  // The "pop-up blocked" chip's card.
+  showPopupsMenu: (x: number, y: number) => void;
   libraryBookmarks: (query: string) => Promise<Bookmark[]>;
   libraryRemoveBookmark: (id: number) => void;
   // Downloads: the list, and Settings > Downloads.

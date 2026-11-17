@@ -27,6 +27,8 @@ interface ToolbarProps {
   downloads: DownloadSummary;
   // The site's certificate is wrong and you went on anyway: never shown as secure.
   certBypassed: boolean;
+  // Pop-ups blocked on this page (the chip shows only when there are some).
+  blockedPopups: number;
   // What the middle of the window shows right now.
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
@@ -191,6 +193,7 @@ export function Toolbar({
   bookmarked,
   downloads,
   certBypassed,
+  blockedPopups,
   viewMode,
   chats,
 }: ToolbarProps) {
@@ -401,6 +404,21 @@ export function Toolbar({
                   <Icon name="zoom" />
                   {zoomLabel(zoom)}
                 </button>
+              )}
+              {!disabled && blockedPopups > 0 && (
+                <IconButton
+                  icon="ext-link"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  label={`${blockedPopups} pop-up${blockedPopups === 1 ? '' : 's'} blocked. Show`}
+                  onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect();
+                    window.browserApi.showPopupsMenu(
+                      box.right - 340,
+                      box.bottom + 4,
+                    );
+                  }}
+                />
               )}
               {!disabled && /^https?:/i.test(url) && (
                 <IconButton

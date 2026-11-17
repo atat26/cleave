@@ -80,6 +80,7 @@ import {
   withDownloadSettings,
 } from './downloadSettings';
 import {
+  answerFor,
   ASK_KINDS,
   classify,
   decide,
@@ -92,6 +93,7 @@ import {
 } from './permissions';
 import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
+import { addBlocked, decidePopup } from './popups';
 import {
   canProceed,
   certErrorCode,
@@ -212,6 +214,8 @@ import {
   downloadMenuItems,
   libraryMenuItems,
   parsePermissionChoice,
+  parsePopupChoice,
+  blockedPopupItems,
   parsePrivacyChoice,
   parseSiteChoice,
   privacyDataMenuItems,
@@ -503,7 +507,7 @@ export async function createTabs(
   // The active tab's live page, if it has one.
   const activePage = () => {
     const id = state.active?.kind === 'tab' ? state.active.id : null;
-    const contents = id === null ? undefined : views.get(id)?.webContents;
+    const contents = id === null ? undefined : pageContents(id);
     return contents && !contents.isDestroyed() ? contents : undefined;
   };
 
@@ -744,6 +748,10 @@ export async function createTabs(
     { url: string; code: number; host: string; kind: 'cert' | 'load' | 'crash' }
   >();
   const certAllowed = new Set<string>();
+  // Pop-ups: when you last clicked or typed on each page, and what each page tried
+  // to open without you asking (see popups.ts).
+  const lastGesture = new Map<number, number>();
+  const blockedPopups = new Map<number, string[]>();
   // Is this address on a site you went on to despite its certificate? (It is never
   // shown as secure.)
   const certBypassed = (address: string | undefined): boolean => {
@@ -760,7 +768,7 @@ export async function createTabs(
     if (win.isDestroyed()) return;
     const id = activeTabId();
     const history =
-      id === null ? undefined : views.get(id)?.webContents.navigationHistory;
+      id === null ? undefined : pageContents(id)?.navigationHistory;
     const generating = chatService?.runningChats() ?? [];
     const ui: UiState = {
       spaces: state.spaces.map(({ id, name, color, emoji, collapsed }) => ({
@@ -807,9 +815,10 @@ export async function createTabs(
       zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
       bookmarked: isBookmarked(bookmarks, activePage()?.getURL()),
       certBypassed: certBypassed(activePage()?.getURL()),
+      blockedPopups:
+        (id === null ? undefined : blockedPopups.get(id))?.length ?? 0,
       downloads: downloadSummary(downloads, Date.now()),
-      loading:
-        id === null ? false : (views.get(id)?.webContents.isLoading() ?? false),
+      loading: id === null ? false : (pageContents(id)?.isLoading() ?? false),
       canGoBack: history?.canGoBack() ?? false,
       canGoForward: history?.canGoForward() ?? false,
       sidebarPinned: pinned(),
@@ -1108,10 +1117,52 @@ export async function createTabs(
     const contents = view.webContents;
     // Links that want a new window (target="_blank") open as a new tab in the
     // same Space. Only normal web addresses are allowed.
+    // A page may open a window only when you just clicked or pressed a key on it.
+    // Otherwise it is blocked, and the chip in the address bar offers it to you.
     contents.setWindowOpenHandler(({ url }) => {
-      if (model.isWebUrl(url))
-        openTab(url, model.findTab(state, tab.id)?.spaceId ?? null);
+      const site = siteKey(
+        model.findTab(state, tab.id)?.url ?? contents.getURL(),
+      );
+      const last = lastGesture.get(tab.id);
+      const decision = decidePopup({
+        answer: site === null ? null : answerFor(permissions, site, 'popups'),
+        sinceGesture: last === undefined ? null : Date.now() - last,
+      });
+      if (decision === 'open') {
+        if (model.isWebUrl(url))
+          openTab(url, model.findTab(state, tab.id)?.spaceId ?? null);
+      } else if (decision === 'block') {
+        blockedPopups.set(
+          tab.id,
+          addBlocked(blockedPopups.get(tab.id) ?? [], url),
+        );
+        sendState();
+      }
       return { action: 'deny' };
+    });
+    // A page can close its own window (window.close()). Its page is then gone, so
+    // the tab closes with it (and is kept in Recently closed, like any closed tab).
+    contents.once('destroyed', () => {
+      if (views.get(tab.id) !== view) return; // we closed it ourselves
+      views.delete(tab.id);
+      try {
+        win.contentView.removeChildView(view);
+      } catch {
+        // Already gone.
+      }
+      closeTab(tab.id);
+    });
+    // Remember when you last clicked or typed on the page.
+    contents.on('input-event', (_event, input) => {
+      if (
+        input.type === 'mouseDown' ||
+        input.type === 'mouseUp' ||
+        input.type === 'keyDown' ||
+        input.type === 'rawKeyDown' ||
+        input.type === 'char'
+      ) {
+        lastGesture.set(tab.id, Date.now());
+      }
     });
     contents.on('before-input-event', handleShortcut);
     // The reload button turns into Stop while the page loads.
@@ -1221,6 +1272,8 @@ export async function createTabs(
       void contents.loadURL(crashPageUrl(host));
     });
     contents.on('did-navigate', () => {
+      // A new page starts with nothing blocked.
+      blockedPopups.delete(tab.id);
       const failed = failedPages.get(tab.id);
       if (failed && contents.getURL().startsWith('data:text/html')) {
         updateTab(tab.id, { url: failed.url, favicon: null });
@@ -1440,7 +1493,7 @@ export async function createTabs(
 
   // Give a page the zoom its site was given (100% when none).
   const applySiteZoom = (tabId: number) => {
-    const contents = views.get(tabId)?.webContents;
+    const contents = pageContents(tabId);
     if (!contents || contents.isDestroyed()) return;
     const wanted = zoomFor(zoomSettings, zoomHost(contents.getURL()));
     if (Math.abs(contents.getZoomFactor() - wanted) > 1e-6) {
@@ -1518,7 +1571,7 @@ export async function createTabs(
     syncFind();
     hideSuggest();
     // Keyboard focus goes to the page, unless it is hidden (chat-only mode).
-    if (id !== null && pageIsShown()) views.get(id)?.webContents.focus();
+    if (id !== null && pageIsShown()) pageContents(id)?.focus();
     else win.webContents.focus();
     sendState();
   };
@@ -1544,6 +1597,13 @@ export async function createTabs(
     commitAndShow(revealPage(model.addTab(state, { url, spaceId }).state));
 
   // Throw away a tab's live web page (if it has one).
+  // A tab's page, or nothing if it has none (or it is gone: a page can close its own
+  // window, which destroys it).
+  const pageContents = (id: number): Electron.WebContents | undefined => {
+    const contents = views.get(id)?.webContents;
+    return contents && !contents.isDestroyed() ? contents : undefined;
+  };
+
   const destroyView = (id: number) => {
     const view = views.get(id);
     if (!view) return;
@@ -2840,7 +2900,7 @@ export async function createTabs(
         break;
       case 'reload':
         {
-          const page = views.get(tabId)?.webContents;
+          const page = pageContents(tabId);
           if (page) reloadTab(tabId, page);
         }
         break;
@@ -2940,7 +3000,7 @@ export async function createTabs(
     ) {
       event.preventDefault();
       const id = activeTabId();
-      const pageView = id === null ? undefined : views.get(id)?.webContents;
+      const pageView = id === null ? undefined : pageContents(id);
       const here: Region | null = sidebar.isFocused()
         ? 'sidebar'
         : win.webContents.isFocused()
@@ -2994,7 +3054,7 @@ export async function createTabs(
       event.preventDefault();
       const id = activeTabId();
       if (id !== null) {
-        const page = views.get(id)?.webContents;
+        const page = pageContents(id);
         if (page) reloadTab(id, page);
       }
     } else if (key === 'w') {
@@ -3028,7 +3088,7 @@ export async function createTabs(
       if (id === null || typeof input !== 'string') return;
       const url = resolveInput(input, activeEngine(searchEngine).template);
       if (url === '') return;
-      void views.get(id)?.webContents.loadURL(url);
+      void pageContents(id)?.loadURL(url);
       // Going somewhere while the chat fills the window brings the page back.
       commitAndShow(revealPage(state));
     },
@@ -3043,24 +3103,24 @@ export async function createTabs(
     'tab:reload': () => {
       const id = activeTabId();
       if (id !== null) {
-        const page = views.get(id)?.webContents;
+        const page = pageContents(id);
         if (page) reloadTab(id, page);
       }
     },
     'tab:stop': () => {
       const id = activeTabId();
-      if (id !== null) views.get(id)?.webContents.stop();
+      if (id !== null) pageContents(id)?.stop();
     },
     'tab:back': () => {
       const id = activeTabId();
       const history =
-        id === null ? undefined : views.get(id)?.webContents.navigationHistory;
+        id === null ? undefined : pageContents(id)?.navigationHistory;
       if (history?.canGoBack()) history.goBack();
     },
     'tab:forward': () => {
       const id = activeTabId();
       const history =
-        id === null ? undefined : views.get(id)?.webContents.navigationHistory;
+        id === null ? undefined : pageContents(id)?.navigationHistory;
       if (history?.canGoForward()) history.goForward();
     },
     'tab:new': (spaceId) => {
@@ -3490,6 +3550,54 @@ export async function createTabs(
           else saveToNewSpace();
         },
         requestSender ?? win.webContents,
+      );
+    },
+    // The "pop-up blocked" chip: what the page tried to open, with a button each.
+    'popups:menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      const id = activeTabId();
+      const contents = activePage();
+      if (id === null || !contents) return;
+      const blocked = blockedPopups.get(id) ?? [];
+      const address = model.findTab(state, id)?.url ?? contents.getURL();
+      const info = describeSite(address);
+      if (blocked.length === 0 || !info) return;
+      const spaceId = model.findTab(state, id)?.spaceId ?? null;
+      showMenu(
+        blockedPopupItems(info.host, blocked),
+        x,
+        y,
+        (choice) => {
+          const parsed = parsePopupChoice(choice);
+          if (!parsed) return;
+          if (parsed.action === 'open') {
+            const wanted = blocked[parsed.index];
+            if (wanted === undefined) return;
+            blockedPopups.set(
+              id,
+              (blockedPopups.get(id) ?? []).filter((url) => url !== wanted),
+            );
+            if (model.isWebUrl(wanted)) openTab(wanted, spaceId);
+          } else {
+            // Always allow from this site (if it can have a saved answer), and
+            // open what was blocked.
+            const site = siteKey(address);
+            if (site !== null) {
+              permissions = setAnswer(permissions, site, 'popups', 'allow');
+              permissionsChanged();
+            }
+            for (const wanted of blocked) {
+              if (model.isWebUrl(wanted)) openTab(wanted, spaceId);
+            }
+            blockedPopups.delete(id);
+          }
+          sendState();
+        },
+        win.webContents,
+        undefined,
+        false,
+        undefined,
+        'prompt',
       );
     },
     // The lock chip in the address bar: what this site may do.
@@ -3935,7 +4043,7 @@ export async function createTabs(
     again: unknown,
   ) => {
     if (!fromFind(event) || findTabId === null) return;
-    const contents = views.get(findTabId)?.webContents;
+    const contents = pageContents(findTabId);
     if (!contents || contents.isDestroyed() || typeof text !== 'string') return;
     if (text === '') {
       contents.stopFindInPage('clearSelection');

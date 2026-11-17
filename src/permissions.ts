@@ -10,7 +10,8 @@ export type AskKind =
   | 'microphone'
   | 'location'
   | 'notifications'
-  | 'clipboard';
+  | 'clipboard'
+  | 'popups';
 
 export const ASK_KINDS: AskKind[] = [
   'camera',
@@ -18,6 +19,7 @@ export const ASK_KINDS: AskKind[] = [
   'location',
   'notifications',
   'clipboard',
+  'popups',
 ];
 
 export type Answer = 'allow' | 'block';
@@ -193,6 +195,7 @@ const KIND_WORDS: Record<AskKind, string> = {
   location: 'know your location',
   notifications: 'show notifications',
   clipboard: 'see text you copied',
+  popups: 'open pop-up windows',
 };
 
 // "docs.example.com wants to use your camera and microphone".
@@ -217,6 +220,7 @@ export const KIND_LABELS: Record<AskKind, string> = {
   location: 'Location',
   notifications: 'Notifications',
   clipboard: 'Clipboard',
+  popups: 'Pop-ups',
 };
 
 // Everything about one site, for its page in Settings.

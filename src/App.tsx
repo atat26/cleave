@@ -141,6 +141,7 @@ export function App() {
         bookmarked={state.bookmarked}
         downloads={state.downloads}
         certBypassed={state.certBypassed}
+        blockedPopups={state.blockedPopups}
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}
