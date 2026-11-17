@@ -1,13 +1,30 @@
 // Artifacts: documents made inside the browser (notes, drafts, pages of code).
 // They are kept in artifacts.json in the app's data folder. Pure data and
-// functions with no Electron, so it is easy to test. Uploaded files are a separate
-// thing, to be added later.
+// functions with no Electron, so it is easy to test. An uploaded image or PDF is an
+// artifact of kind "file": its bytes live in the app's uploads folder, not here.
 import { cleanEmoji } from './emoji.ts';
 
-// What kind of document it is. Every kind here has a text editor. Kinds that can
-// only be previewed (PDFs, images) come back with uploads.
-export const ARTIFACT_KINDS = ['markdown', 'text', 'html', 'code'] as const;
+// What kind of document it is. The text kinds have an editor (and the assistant can
+// read and write them); "file" is an uploaded image or PDF, which can only be viewed.
+export const TEXT_ARTIFACT_KINDS = [
+  'markdown',
+  'text',
+  'html',
+  'code',
+] as const;
+export type TextArtifactKind = (typeof TEXT_ARTIFACT_KINDS)[number];
+export const ARTIFACT_KINDS = [...TEXT_ARTIFACT_KINDS, 'file'] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
+
+// An uploaded file kept in the uploads folder (named by the artifact's number).
+export interface StoredFile {
+  // The name it had, for showing.
+  name: string;
+  mime: string;
+  // The ending it is stored with ("png", "pdf").
+  ext: string;
+  bytes: number;
+}
 
 export const MAX_ARTIFACT_CHARS = 1_000_000;
 export const MAX_ARTIFACTS = 500;
@@ -28,6 +45,8 @@ export interface Artifact {
   // was based on an older text is refused, so a stale editor can never overwrite
   // a newer text.
   revision: number;
+  // Set for kind "file": what was uploaded.
+  file: StoredFile | null;
   // The version of the text (a `revision`) that you allowed to use the internet
   // in its preview, or null. It only counts while it equals the current revision,
   // so the moment the text changes any way but by your own typing (the assistant
@@ -68,10 +87,29 @@ export const isArtifactKind = (value: unknown): value is ArtifactKind =>
   typeof value === 'string' &&
   (ARTIFACT_KINDS as readonly string[]).includes(value);
 
-// Which kinds the editor can open. Today that is all of them.
-export const canEdit = (kind: ArtifactKind): boolean => isArtifactKind(kind);
+// Which kinds the editor can open: the text ones.
+export const canEdit = (kind: ArtifactKind): boolean => kind !== 'file';
 
-const KIND_BY_EXTENSION: Record<string, ArtifactKind> = {
+const MIME = /^[a-z]+\/[a-z0-9.+-]{1,40}$/;
+const EXT = /^[a-z0-9]{1,5}$/;
+// A stored file's details from disk or from the app, or null if they are not valid.
+export function cleanStoredFile(value: unknown): StoredFile | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const f = value as Record<string, unknown>;
+  if (typeof f.name !== 'string' || typeof f.mime !== 'string') return null;
+  if (typeof f.ext !== 'string' || !EXT.test(f.ext) || !MIME.test(f.mime))
+    return null;
+  if (typeof f.bytes !== 'number' || !Number.isInteger(f.bytes) || f.bytes < 0)
+    return null;
+  return {
+    name: f.name.slice(0, 200),
+    mime: f.mime,
+    ext: f.ext,
+    bytes: f.bytes,
+  };
+}
+
+const KIND_BY_EXTENSION: Record<string, TextArtifactKind> = {
   md: 'markdown',
   markdown: 'markdown',
   txt: 'text',
@@ -95,10 +133,25 @@ const KIND_BY_EXTENSION: Record<string, ArtifactKind> = {
 
 // The kind a file name suggests, or null when it cannot be an artifact (a PDF,
 // an image, anything we have no editor or preview for), so it gets no tab.
-export function kindFromName(name: string): ArtifactKind | null {
+export function kindFromName(name: string): TextArtifactKind | null {
   const dot = name.lastIndexOf('.');
   if (dot < 0) return null;
   return KIND_BY_EXTENSION[name.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+// What an uploaded file is called in lists ("Image", "PDF"), or null for a text artifact.
+export function fileLabel(artifact: {
+  file: StoredFile | null;
+}): string | null {
+  if (artifact.file === null) return null;
+  return artifact.file.mime === 'application/pdf' ? 'PDF' : 'Image';
+}
+
+// A size in bytes, as people say it ("340 KB", "2.1 MB").
+export function byteWords(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function cleanTitle(title: unknown): string {
@@ -121,6 +174,10 @@ function parseArtifact(item: unknown): Artifact | null {
   const { id, kind, content, spaceId } = item;
   if (!isCount(id) || id < 1) return null;
   if (!isArtifactKind(kind) || typeof content !== 'string') return null;
+  // An uploaded file needs its details; a text artifact never has any (a stray
+  // field on one is ignored).
+  const file = kind === 'file' ? cleanStoredFile(item.file) : null;
+  if (kind === 'file' && file === null) return null;
   return {
     id,
     title: cleanTitle(item.title),
@@ -131,6 +188,7 @@ function parseArtifact(item: unknown): Artifact | null {
     createdAt: isCount(item.createdAt) ? item.createdAt : 0,
     updatedAt: isCount(item.updatedAt) ? item.updatedAt : 0,
     revision: isCount(item.revision) ? item.revision : 0,
+    file,
     internetFor: isCount(item.internetFor) ? item.internetFor : null,
   };
 }
@@ -172,6 +230,8 @@ export type ArtifactResult =
 export interface NewArtifact {
   title?: string;
   kind: string;
+  // Required for (and only for) kind "file".
+  file?: StoredFile;
   content?: string;
   emoji?: string | null;
   spaceId?: number | null;
@@ -183,7 +243,11 @@ export function createArtifact(
   now: number,
 ): ArtifactResult {
   if (!isArtifactKind(input.kind)) return { ok: false, reason: 'bad-kind' };
-  const content = input.content ?? '';
+  const file = input.kind === 'file' ? cleanStoredFile(input.file) : null;
+  if ((input.kind === 'file') !== (file !== null)) {
+    return { ok: false, reason: 'bad-kind' };
+  }
+  const content = input.kind === 'file' ? '' : (input.content ?? '');
   if (content.length > MAX_ARTIFACT_CHARS)
     return { ok: false, reason: 'too-long' };
   if (state.artifacts.length >= MAX_ARTIFACTS)
@@ -198,6 +262,7 @@ export function createArtifact(
     createdAt: now,
     updatedAt: now,
     revision: 0,
+    file,
     internetFor: null,
   };
   return {
@@ -243,6 +308,8 @@ export function updateArtifact(
   ) {
     return { ok: false, reason: 'too-long' };
   }
+  // An uploaded file has no text to change.
+  if (old.kind === 'file') changes = { ...changes, content: undefined };
   const revision =
     changes.content !== undefined && changes.content !== old.content
       ? old.revision + 1

@@ -48,6 +48,7 @@ import {
 import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { exportFileName, spaceMarkdown } from './spaceExport';
+import { MAX_UPLOAD_FILES, planUpload } from './uploadRules';
 import {
   defaultSleepSettings,
   idleSleepers,
@@ -1002,9 +1003,10 @@ export async function createTabs(
         title: a.title,
         emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
         kind: a.kind,
+        fileLabel: artifactsModel.fileLabel(a),
         spaceId: a.spaceId,
         updatedAt: a.updatedAt,
-        size: a.content.length,
+        size: a.file ? a.file.bytes : a.content.length,
       })),
       tabs: state.tabs.map((tab) => ({
         id: tab.id,
@@ -3113,19 +3115,163 @@ export async function createTabs(
     if (spaceId !== null && !model.findSpace(state, spaceId)) return null;
     const original = artifactsModel.findArtifact(artifacts, id);
     if (!original) return null;
+    // An uploaded file: its bytes are copied under the copy's number first.
+    const newId = artifacts.nextId;
+    if (original.file) {
+      try {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        fs.copyFileSync(uploadPath(original), uploadPath(original, newId));
+      } catch {
+        return null;
+      }
+    }
     const result = artifactsModel.createArtifact(
       artifacts,
       {
         kind: original.kind,
         title: `${original.title} (copy)`,
         content: original.content,
+        file: original.file ?? undefined,
         spaceId,
       },
       Date.now(),
     );
-    if (!result.ok) return null;
+    if (!result.ok) {
+      if (original.file)
+        fs.rmSync(uploadPath(original, newId), { force: true });
+      return null;
+    }
     commitArtifacts(result.state);
     return result.artifact.id;
+  };
+
+  // ---- Uploads ---------------------------------------------------------------
+  // (pickAndImport, defined below, asks which files and adds them.)
+  // An uploaded image or PDF is kept as a file in uploads/, named by its artifact's
+  // number. Text files are read straight into text artifacts.
+  const uploadsDir = path.join(app.getPath('userData'), 'uploads');
+  function uploadPath(
+    artifact: { id: number; file: { ext: string } | null },
+    id = artifact.id,
+  ): string {
+    return path.join(uploadsDir, `${id}.${artifact.file?.ext ?? 'bin'}`);
+  }
+  // At start: files whose artifact is gone for good are deleted.
+  const sweepUploads = () => {
+    try {
+      const keep = new Set(
+        [...artifacts.artifacts, ...artifacts.trash]
+          .filter((a) => a.file)
+          .map((a) => path.basename(uploadPath(a))),
+      );
+      for (const name of fs.readdirSync(uploadsDir)) {
+        if (!keep.has(name))
+          fs.rmSync(path.join(uploadsDir, name), { force: true });
+      }
+    } catch {
+      // No uploads folder yet.
+    }
+  };
+  sweepUploads();
+
+  // Add files you chose or dropped, as artifacts in a Space (or in none). Returns
+  // how many were added. Files that cannot be added are listed in one message.
+  const importFiles = async (
+    rawPaths: unknown,
+    spaceId: number | null,
+  ): Promise<number> => {
+    if (!Array.isArray(rawPaths)) return 0;
+    if (spaceId !== null && !model.findSpace(state, spaceId)) spaceId = null;
+    const paths = rawPaths
+      .filter((p): p is string => typeof p === 'string' && p !== '')
+      .slice(0, MAX_UPLOAD_FILES);
+    const refused: string[] = [];
+    let first: number | null = null;
+    let added = 0;
+    for (const file of paths) {
+      const name = path.basename(file);
+      try {
+        const stat = fs.statSync(file);
+        if (!stat.isFile()) {
+          refused.push(`${name}: that is not a file.`);
+          continue;
+        }
+        const handle = fs.openSync(file, 'r');
+        const head = Buffer.alloc(16);
+        try {
+          fs.readSync(handle, head, 0, 16, 0);
+        } finally {
+          fs.closeSync(handle);
+        }
+        const plan = planUpload(name, stat.size, head);
+        if (plan.type === 'refused') {
+          refused.push(`${name}: ${plan.reason}`);
+          continue;
+        }
+        if (plan.type === 'text') {
+          const content = fs.readFileSync(file, 'utf8');
+          const made = artifactsModel.createArtifact(
+            artifacts,
+            { kind: plan.kind, title: plan.title, content, spaceId },
+            Date.now(),
+          );
+          if (!made.ok) {
+            refused.push(
+              `${name}: ${made.reason === 'too-long' ? 'it is too long.' : 'it could not be added.'}`,
+            );
+            continue;
+          }
+          commitArtifacts(made.state);
+          first ??= made.artifact.id;
+          added++;
+          continue;
+        }
+        const id = artifacts.nextId;
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        const target = path.join(uploadsDir, `${id}.${plan.ext}`);
+        fs.copyFileSync(file, target);
+        const made = artifactsModel.createArtifact(
+          artifacts,
+          {
+            kind: 'file',
+            title: plan.title,
+            spaceId,
+            file: {
+              name: plan.title,
+              mime: plan.mime,
+              ext: plan.ext,
+              bytes: stat.size,
+            },
+          },
+          Date.now(),
+        );
+        if (!made.ok) {
+          fs.rmSync(target, { force: true });
+          refused.push(`${name}: it could not be added.`);
+          continue;
+        }
+        commitArtifacts(made.state);
+        first ??= made.artifact.id;
+        added++;
+      } catch (error) {
+        refused.push(`${name}: ${(error as Error).message}`);
+      }
+    }
+    if (rawPaths.length > MAX_UPLOAD_FILES) {
+      refused.push(`Only the first ${MAX_UPLOAD_FILES} files were looked at.`);
+    }
+    if (first !== null) openArtifact(first);
+    if (refused.length > 0) {
+      void dialog.showMessageBox(win, {
+        type: 'info',
+        message:
+          added > 0
+            ? 'Some files were not added.'
+            : 'The files were not added.',
+        detail: refused.join('\n'),
+      });
+    }
+    return added;
   };
 
   // Put an artifact in a Space (or none, with null).
@@ -3213,6 +3359,9 @@ export async function createTabs(
     switch (choice.action) {
       case 'page':
         openTab(newTabUrl(), spaceId);
+        break;
+      case 'upload':
+        void pickAndImport(spaceId);
         break;
       case 'new-artifact': {
         const result = artifactsModel.createArtifact(
@@ -4945,6 +5094,10 @@ export async function createTabs(
         (choice) => {
           const parsed = parseNewArtifactChoice(choice);
           if (!parsed) return;
+          if ('upload' in parsed) {
+            void pickAndImport(currentSpaceId());
+            return;
+          }
           const result = artifactsModel.createArtifact(
             artifacts,
             { kind: parsed.kind, title: '', spaceId: currentSpaceId() },
@@ -5478,6 +5631,12 @@ export async function createTabs(
       if (found) void manager.remove(found.key);
     }, 20_000);
   }
+  if (!app.isPackaged && process.env.AIB_TEST_UPLOADS) {
+    // For testing only: add files at start (a test cannot use the file picker).
+    setTimeout(() => {
+      void importFiles(process.env.AIB_TEST_UPLOADS?.split('|') ?? [], null);
+    }, 8000);
+  }
   if (!app.isPackaged && process.env.AIB_TEST_STORE_EXTENSION) {
     void manager.installStoreForTest(process.env.AIB_TEST_STORE_EXTENSION);
   }
@@ -5874,7 +6033,8 @@ ${artifact.content.slice(0, 1500)}`;
         return { ok: false, reason: 'failed' };
       }
       const current = artifactsModel.findArtifact(artifacts, id);
-      if (!current) return { ok: false, reason: 'failed' };
+      if (!current || current.kind === 'file')
+        return { ok: false, reason: 'failed' };
       // The text changed since the editor loaded it (the assistant edited it):
       // saving now would overwrite that, so refuse and let the editor ask.
       if (current.revision !== revision) {
@@ -5891,6 +6051,89 @@ ${artifact.content.slice(0, 1500)}`;
       if (!result.ok) return { ok: false, reason: 'failed' };
       commitArtifacts(result.state);
       return { ok: true, revision: result.artifact.revision };
+    },
+  );
+  // "Upload files…": pick files, and add them to a Space (or the one you are in).
+  const pickAndImport = async (spaceId: number | null) => {
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Add files',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Text, code, images and PDFs',
+          extensions: [
+            'md',
+            'markdown',
+            'txt',
+            'text',
+            'html',
+            'htm',
+            'css',
+            'js',
+            'ts',
+            'tsx',
+            'jsx',
+            'json',
+            'py',
+            'sh',
+            'csv',
+            'xml',
+            'yml',
+            'yaml',
+            'sql',
+            'png',
+            'jpg',
+            'jpeg',
+            'gif',
+            'webp',
+            'bmp',
+            'pdf',
+          ],
+        },
+      ],
+    });
+    if (picked.canceled) return 0;
+    return importFiles(picked.filePaths, spaceId);
+  };
+  ipcMain.handle('uploads:pick', (event, spaceId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return pickAndImport(isId(spaceId) ? spaceId : currentSpaceId());
+  });
+  // Files dropped on the Artifacts panel or a Space's overview.
+  ipcMain.handle('uploads:drop', (event, paths: unknown, spaceId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return importFiles(paths, isId(spaceId) ? spaceId : currentSpaceId());
+  });
+  // The bytes of an uploaded image or PDF, for the viewer.
+  ipcMain.handle('artifact:file', async (event, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const found = isId(id)
+      ? artifactsModel.findArtifact(artifacts, id)
+      : undefined;
+    if (!found?.file) return null;
+    try {
+      const data = await fs.promises.readFile(uploadPath(found));
+      return { mime: found.file.mime, data: new Uint8Array(data) };
+    } catch {
+      return null;
+    }
+  });
+  // Open an uploaded file with the computer's own app for it, or show where it is.
+  // Only the files the app itself saved from an upload (images and PDFs) can be
+  // reached this way, never an address or a path given by the page.
+  ipcMain.handle(
+    'artifact:open-file',
+    async (event, id: unknown, how: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      const found = isId(id)
+        ? artifactsModel.findArtifact(artifacts, id)
+        : undefined;
+      if (!found?.file || !fs.existsSync(uploadPath(found))) return false;
+      if (how === 'folder') {
+        shell.showItemInFolder(uploadPath(found));
+        return true;
+      }
+      return (await shell.openPath(uploadPath(found))) === '';
     },
   );
   ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
@@ -6076,6 +6319,10 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('tools:reset');
     ipcMain.removeHandler('artifact:create');
     ipcMain.removeHandler('artifact:copy');
+    ipcMain.removeHandler('uploads:pick');
+    ipcMain.removeHandler('uploads:drop');
+    ipcMain.removeHandler('artifact:file');
+    ipcMain.removeHandler('artifact:open-file');
     ipcMain.removeHandler('artifact:read');
     ipcMain.removeHandler('artifact:set-internet');
     ipcMain.removeHandler('artifact:write');

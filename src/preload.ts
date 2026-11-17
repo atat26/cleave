@@ -1,6 +1,6 @@
 // The preload script is the ONLY bridge between the UI page and the app.
 // Expose small, specific functions here -- never whole Electron modules.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action';
 import type {
   BrowserApi,
@@ -262,6 +262,16 @@ const browserApi: BrowserApi = {
     ipcRenderer.invoke('sleep-settings:set', changes),
   spaceBulk: (id, action) => ipcRenderer.send('space:bulk', id, action),
   showNewArtifactMenu: (x, y) => ipcRenderer.send('artifact:new-menu', x, y),
+  uploadPick: (spaceId) => ipcRenderer.invoke('uploads:pick', spaceId),
+  uploadDrop: (files, spaceId) =>
+    ipcRenderer.invoke(
+      'uploads:drop',
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+      spaceId,
+    ),
+  artifactFile: (id) => ipcRenderer.invoke('artifact:file', id),
+  artifactOpenFile: (id, how) =>
+    ipcRenderer.invoke('artifact:open-file', id, how),
   artifactSetInternet: (id, on) =>
     ipcRenderer.invoke('artifact:set-internet', id, on),
   onArtifactInternet: (callback) => {

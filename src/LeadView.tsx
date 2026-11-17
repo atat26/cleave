@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { byteWords } from './artifacts';
 import type { ArtifactKind } from './artifacts';
 import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
+import { hasFileDrag } from './artifactDrag';
 import { MAX_ABOUT_CHARS } from './model';
 import { agoWords, overviewContent, summaryLine } from './overviewModel';
 import { Favicon, labelFor } from './Sidebar';
@@ -24,6 +26,7 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
   text: 'Plain text',
   html: 'HTML',
   code: 'Code',
+  file: 'File',
 };
 
 const sizeWords = (chars: number) =>
@@ -275,6 +278,8 @@ export function LeadView({
   const color = SPACE_COLOR_HEX[space.color];
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState('');
+  // Files from the computer are being dragged over the page.
+  const [dropping, setDropping] = useState(false);
   // "5 min ago" moves on while the page is open.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -311,7 +316,28 @@ export function LeadView({
 
   return (
     <main
-      className="ov"
+      className={dropping ? 'ov files-drop is-dropping' : 'ov'}
+      // Drop files on a Space's overview to add them to it.
+      onDragOver={(event) => {
+        if (!hasFileDrag(event.dataTransfer.types)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropping(false);
+        }
+      }}
+      onDrop={(event) => {
+        setDropping(false);
+        if (!hasFileDrag(event.dataTransfer.types)) return;
+        event.preventDefault();
+        void window.browserApi.uploadDrop(
+          [...event.dataTransfer.files],
+          space.id,
+        );
+      }}
       style={
         {
           // The same rounded card where a web page would be. The app keeps these
@@ -514,7 +540,9 @@ export function LeadView({
                         key={a.id}
                         icon={<ItemEmoji emoji={a.emoji} />}
                         title={a.title}
-                        subtitle={`${KIND_WORDS[a.kind]} · ${sizeWords(a.size)}`}
+                        subtitle={`${a.fileLabel ?? KIND_WORDS[a.kind]} · ${
+                          a.fileLabel ? byteWords(a.size) : sizeWords(a.size)
+                        }`}
                         badge={open ? 'Open' : undefined}
                         onOpen={() => window.browserApi.artifactOpen(a.id)}
                         onMenu={(x, y) =>

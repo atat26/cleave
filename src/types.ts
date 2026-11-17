@@ -141,8 +141,10 @@ export interface ArtifactInfo {
   // The Space it belongs to, or null for one outside every Space.
   spaceId: number | null;
   updatedAt: number;
-  // How many characters it holds.
+  // How many characters it holds (for an uploaded file: how many bytes).
   size: number;
+  // "Image" or "PDF" for an uploaded file, null for a text artifact.
+  fileLabel: string | null;
 }
 
 // An artifact with its text, for the editor.
@@ -637,6 +639,17 @@ export interface BrowserApi {
   // Allow (or stop allowing) the internet in an HTML page's preview. Allowing asks
   // first; the answer is whether it is allowed afterwards.
   artifactSetInternet: (id: number, on: boolean) => Promise<boolean>;
+  // "Upload files…": pick files and add them to a Space (null: to none). The answer
+  // is how many were added.
+  uploadPick: (spaceId: number | null) => Promise<number>;
+  // Add files dropped on the Artifacts panel or a Space's overview.
+  uploadDrop: (files: File[], spaceId: number | null) => Promise<number>;
+  // The bytes of an uploaded image or PDF (null if it is gone).
+  artifactFile: (
+    id: number,
+  ) => Promise<{ mime: string; data: Uint8Array } | null>;
+  // Open an uploaded file with the computer's own app, or show it in its folder.
+  artifactOpenFile: (id: number, how: 'open' | 'folder') => Promise<boolean>;
   // "New" in the Artifacts panel: a menu of kinds (made in the Space you are in).
   showNewArtifactMenu: (x: number, y: number) => void;
   // Close all of a Space's open pages, or reopen all its closed ones.

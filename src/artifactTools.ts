@@ -13,7 +13,11 @@
 //     instructions (it may contain text copied from the web).
 //   - Limits per reply, and the same size limit as the editor.
 // Pure code: the store is passed in, so this is easy to test.
-import { cleanTitle, ARTIFACT_KINDS, MAX_ARTIFACT_CHARS } from './artifacts.ts';
+import {
+  cleanTitle,
+  MAX_ARTIFACT_CHARS,
+  TEXT_ARTIFACT_KINDS,
+} from './artifacts.ts';
 import { cleanEmoji } from './emoji.ts';
 import { SPACE_COLORS } from './model.ts';
 import type { ArtifactKind } from './artifacts.ts';
@@ -94,7 +98,7 @@ const EMOJI_SCHEMA = {
 
 const KIND_SCHEMA = {
   type: 'string',
-  enum: [...ARTIFACT_KINDS],
+  enum: [...TEXT_ARTIFACT_KINDS],
   description:
     'markdown for notes and writing, text for plain text, html for a web page or a small working tool (a calculator, a form, a game), code for source code or data files (end its title with the file ending, like calc.py or app.js, so it is coloured for its language). An html artifact is ONE self-contained file: put the CSS in a <style> tag and the JavaScript in a <script> tag, and draw pictures with inline SVG, canvas or data: addresses. It runs with scripts but with no internet, so do not use outside libraries, CDN links (Tailwind, Bootstrap, Chart.js...), web fonts, fetch or images from web addresses: they are blocked. Data you keep (localStorage) only lasts while the preview is open.',
 };
@@ -241,11 +245,12 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
   text: 'plain text',
   html: 'HTML',
   code: 'code',
+  file: 'file',
 };
 
 const asKind = (value: unknown): ArtifactKind | null =>
   typeof value === 'string' &&
-  (ARTIFACT_KINDS as readonly string[]).includes(value)
+  (TEXT_ARTIFACT_KINDS as readonly string[]).includes(value)
     ? (value as ArtifactKind)
     : null;
 
@@ -568,6 +573,13 @@ export function createArtifactTools(
           `Artifact ${id} no longer exists.`,
         );
       }
+      if (found.kind === 'file') {
+        return failed(
+          "Couldn't read the artifact",
+          'It is an uploaded file (an image or a PDF).',
+          `Artifact ${id} is an uploaded file (an image or a PDF). Its contents cannot be read yet: tell the user, and ask them to paste the text if it matters.`,
+        );
+      }
       reads++;
       const start = Math.min(
         (args.start as number | undefined) ?? 0,
@@ -672,6 +684,13 @@ export function createArtifactTools(
         "Couldn't change the artifact",
         'It no longer exists.',
         `Artifact ${id} no longer exists.`,
+      );
+    }
+    if (current.kind === 'file') {
+      return failed(
+        "Couldn't change the artifact",
+        'It is an uploaded file (an image or a PDF).',
+        `Artifact ${id} is an uploaded file and cannot be edited.`,
       );
     }
     const changes: { title?: string; content?: string; emoji?: string } = {};

@@ -8,8 +8,12 @@ import { blockedLabel } from './popups.ts';
 import type { Answer, AskKind } from './permissions.ts';
 import * as model from './model.ts';
 import type { SavedState } from './model.ts';
-import { ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
-import type { ArtifactKind, ArtifactsState } from './artifacts.ts';
+import { TEXT_ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
+import type {
+  ArtifactKind,
+  ArtifactsState,
+  TextArtifactKind,
+} from './artifacts.ts';
 import { byRecency } from './chats.ts';
 import type { ChatRef, ChatsState } from './chats.ts';
 import { resolveLink } from './chatLinks.ts';
@@ -689,6 +693,7 @@ export function parseArtifactChoice(id: string): ArtifactChoice | null {
 
 export type AddChoice =
   | { action: 'page' }
+  | { action: 'upload' }
   | { action: 'new-artifact'; kind: ArtifactKind }
   | { action: 'move'; artifactId: number }
   | { action: 'copy'; artifactId: number };
@@ -698,6 +703,7 @@ const KIND_LABELS: Record<ArtifactKind, string> = {
   text: 'Plain text',
   html: 'HTML',
   code: 'Code',
+  file: 'File',
 };
 
 // The menu behind the overview's Add button: a new page, a new artifact (by kind)
@@ -715,10 +721,16 @@ export function addMenuItems(
     { type: 'item', id: 'add.page', label: 'New page', icon: 'globe' },
     {
       type: 'item',
+      id: 'add.upload',
+      label: 'Upload files…',
+      icon: 'upload',
+    },
+    {
+      type: 'item',
       id: 'add.artifact',
       label: 'New artifact',
       icon: 'doc',
-      submenu: ARTIFACT_KINDS.map(
+      submenu: TEXT_ARTIFACT_KINDS.map(
         (kind): MenuItem => ({
           type: 'item',
           id: `add.artifact:${kind}`,
@@ -762,9 +774,10 @@ export function addMenuItems(
 
 export function parseAddChoice(id: string): AddChoice | null {
   if (id === 'add.page') return { action: 'page' };
+  if (id === 'add.upload') return { action: 'upload' };
   const created = /^add\.artifact:([a-z]+)$/.exec(id);
   if (created) {
-    const kind = ARTIFACT_KINDS.find((k) => k === created[1]);
+    const kind = TEXT_ARTIFACT_KINDS.find((k) => k === created[1]);
     return kind ? { action: 'new-artifact', kind } : null;
   }
   const other = /^add\.(move|copy):(\d+)$/.exec(id);
@@ -1827,12 +1840,12 @@ export function parseSwitchSpaceChoice(id: string): SwitchSpaceChoice | null {
   return m ? { spaceId: Number(m[1]) } : null;
 }
 
-export type NewArtifactChoice = { kind: ArtifactKind };
+export type NewArtifactChoice = { kind: TextArtifactKind } | { upload: true };
 
 // "New" in the Artifacts panel: what kind of artifact to make.
 export function newArtifactMenuItems(): MenuItem[] {
   const rows: {
-    kind: ArtifactKind;
+    kind: TextArtifactKind;
     label: string;
     icon: 'doc' | 'file' | 'globe' | 'code';
   }[] = [
@@ -1841,19 +1854,29 @@ export function newArtifactMenuItems(): MenuItem[] {
     { kind: 'html', label: 'HTML page', icon: 'globe' },
     { kind: 'code', label: 'Code', icon: 'code' },
   ];
-  return rows.map(
-    (row): MenuItem => ({
+  return [
+    ...rows.map(
+      (row): MenuItem => ({
+        type: 'item',
+        id: `new-artifact.${row.kind}`,
+        label: row.label,
+        icon: row.icon,
+      }),
+    ),
+    { type: 'separator' },
+    {
       type: 'item',
-      id: `new-artifact.${row.kind}`,
-      label: row.label,
-      icon: row.icon,
-    }),
-  );
+      id: 'new-artifact.upload',
+      label: 'Upload files…',
+      icon: 'upload',
+    },
+  ];
 }
 
 export function parseNewArtifactChoice(id: string): NewArtifactChoice | null {
+  if (id === 'new-artifact.upload') return { upload: true };
   const m = /^new-artifact\.([a-z]+)$/.exec(id);
-  const kind = ARTIFACT_KINDS.find((k) => k === m?.[1]);
+  const kind = TEXT_ARTIFACT_KINDS.find((k) => k === m?.[1]);
   return kind ? { kind } : null;
 }
 

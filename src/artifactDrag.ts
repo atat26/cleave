@@ -16,6 +16,12 @@ export const hasArtifactDrag = (
   types: readonly string[] | null | undefined,
 ): boolean => (types ? Array.from(types).includes(ARTIFACT_DRAG) : false);
 
+// Is this drag one of files from the computer (rather than something inside the
+// app)? While dragging, a page can see only the types, and files show as "Files".
+export const hasFileDrag = (
+  types: readonly string[] | null | undefined,
+): boolean => (types ? Array.from(types).includes('Files') : false);
+
 // The artifact's number from dropped data, or null if it is not a plain number.
 export function readArtifactDrag(raw: unknown): number | null {
   if (typeof raw !== 'string' || !/^[0-9]{1,9}$/.test(raw)) return null;

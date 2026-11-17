@@ -1400,7 +1400,13 @@ test('the New artifact menu offers each kind, and only a real kind is read back'
     'new-artifact.text',
     'new-artifact.html',
     'new-artifact.code',
+    'new-artifact.upload',
   ]);
+  assert.deepEqual(parseNewArtifactChoice('new-artifact.upload'), {
+    upload: true,
+  });
+  // "file" is not something you can make empty.
+  assert.equal(parseNewArtifactChoice('new-artifact.file'), null);
   assert.deepEqual(parseNewArtifactChoice('new-artifact.html'), {
     kind: 'html',
   });

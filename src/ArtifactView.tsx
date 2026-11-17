@@ -10,6 +10,7 @@ import {
 } from './artifactRender';
 import type { PreviewMessage } from './artifactRender';
 import { detectLanguage, languageName } from './highlight';
+import { FileArtifactView } from './FileView';
 import { HighlightedEditor } from './HighlightedEditor';
 import { NameButton } from './NameButton';
 import { Markdown } from './MarkdownView';
@@ -27,6 +28,7 @@ const KIND_WORDS: Record<ArtifactTabInfo['kind'], string> = {
   text: 'Plain text',
   html: 'HTML',
   code: 'Code',
+  file: 'File',
 };
 
 const SAVE_DELAY_MS = 500;
@@ -45,7 +47,17 @@ const sizeWords = (chars: number) =>
 //     fresh typing, shows a banner and pauses saving until you choose;
 //   - a reload that would land on top of something you typed while it was on its
 //     way is treated as a conflict too.
+// An open artifact: an uploaded image or PDF is viewed, anything else is a text
+// artifact with an editor.
 export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
+  return tab.kind === 'file' ? (
+    <FileArtifactView tab={tab} />
+  ) : (
+    <TextArtifactView tab={tab} />
+  );
+}
+
+function TextArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   const [doc, setDoc] = useState<ArtifactDocument | null>(null);
   const [missing, setMissing] = useState(false);
   const [text, setText] = useState('');
@@ -214,7 +226,8 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   // the start of the text changes.)
   const head = text.slice(0, 2000);
   const language = useMemo(
-    () => detectLanguage(tab.kind, tab.title, text),
+    () =>
+      detectLanguage(tab.kind === 'file' ? 'text' : tab.kind, tab.title, text),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tab.kind, tab.title, head],
   );

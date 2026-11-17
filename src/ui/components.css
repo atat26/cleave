@@ -2680,3 +2680,10 @@ button {
     padding: 0 var(--s-2);
   }
 }
+
+/* Files from the computer are being dragged over a place that takes them. */
+.files-drop.is-dropping {
+  outline: 2px dashed var(--c-accent);
+  outline-offset: -4px;
+  border-radius: var(--r-lg);
+}
