@@ -4,6 +4,7 @@ import { AppearanceSettings } from './AppearanceSettings';
 import { DownloadsSection } from './DownloadsSection';
 import { PrivacySection } from './PrivacySection';
 import { SearchEngineSection } from './SearchEngineSection';
+import { ShortcutsSection } from './ShortcutsSection';
 import { LibrarySection } from './LibrarySection';
 import { NamingSection } from './NamingSection';
 import { WebSearchSettings } from './WebSearchSettings';
@@ -82,6 +83,11 @@ const SECTIONS = [
     id: 'search-engine',
     label: 'Search engine',
     about: 'Where address-bar searches go',
+  },
+  {
+    id: 'shortcuts',
+    label: 'Keyboard shortcuts',
+    about: 'Every shortcut, with a search',
   },
   {
     id: 'privacy',
@@ -620,6 +626,7 @@ export function SettingsPanel() {
       {section === 'downloads' && <DownloadsSection />}
       {section === 'privacy' && <PrivacySection />}
       {section === 'search-engine' && <SearchEngineSection />}
+      {section === 'shortcuts' && <ShortcutsSection />}
 
       {section === 'prompt' && (
         <>

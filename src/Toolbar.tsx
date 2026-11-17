@@ -200,6 +200,16 @@ export function Toolbar({
   const [text, setText] = useState(url);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Ctrl+L (or Alt+D): the keyboard goes to the address bar, with it all selected.
+  useEffect(
+    () =>
+      window.browserApi.onFocusAddress(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }),
+    [],
+  );
+
   // Follow the active tab's address, unless the user is typing in the box.
   useEffect(() => {
     if (document.activeElement !== inputRef.current) setText(url);

@@ -31,6 +31,13 @@ const browserApi: BrowserApi = {
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
   showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
   showSiteMenu: (x, y) => ipcRenderer.send('site:menu', x, y),
+  onFocusAddress: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('toolbar:focus-address', listener);
+    return () => {
+      ipcRenderer.removeListener('toolbar:focus-address', listener);
+    };
+  },
   showPopupsMenu: (x, y) => ipcRenderer.send('popups:menu', x, y),
   libraryBookmarks: (query) => ipcRenderer.invoke('library:bookmarks', query),
   libraryRemoveBookmark: (id) =>
