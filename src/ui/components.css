@@ -1193,6 +1193,7 @@ button {
 
 /* ---- The message box (from the design) -------------------------------------- */
 .composer {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: var(--s-1);
@@ -2856,4 +2857,32 @@ button {
   color: var(--c-on-accent);
   font-size: var(--fs-xs);
   pointer-events: none;
+}
+
+/* The "+" in the message box: the text starts at the left edge, and the button pops
+   out (pushing the text right) while the pointer or the keyboard is on that side. */
+.composer-add {
+  position: absolute;
+  left: var(--s-1);
+  bottom: var(--s-1);
+  width: var(--h-md);
+  height: var(--h-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  cursor: text;
+}
+.composer-add > .btn {
+  opacity: 0;
+  pointer-events: none;
+}
+.composer-add:hover > .btn,
+.composer-add:focus-within > .btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.composer:has(.composer-add:hover) .composer-text,
+.composer:has(.composer-add:focus-within) .composer-text {
+  margin-left: var(--h-md);
 }

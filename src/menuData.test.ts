@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   addMenuItems,
   artifactMenuItems,
+  addToChatMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
   emojiPickerItems,
@@ -45,6 +46,7 @@ import {
   parseLibraryChoice,
   zoomChipMenuItems,
   parseLinkChoice,
+  parseAddToChatChoice,
   parseMessageChoice,
   parseModelChoice,
   parseSpaceChoice,
@@ -1512,4 +1514,22 @@ test('the Space menu can put its pages to sleep, greyed when none can', async ()
     false,
   );
   assert.deepEqual(parseSpaceChoice('space.sleep'), { action: 'sleep' });
+});
+
+test('the "+" menu in the message box offers a page, a Space, an artifact and a file', () => {
+  const items = addToChatMenuItems();
+  assert.deepEqual(menuIds(items), [
+    'addchat.page',
+    'addchat.space',
+    'addchat.artifact',
+    'addchat.file',
+  ]);
+  assert.equal(entry(items, 'addchat.space').label, 'Add a Space…');
+  assert.deepEqual(parseAddToChatChoice('addchat.space'), { action: 'space' });
+  assert.deepEqual(parseAddToChatChoice('addchat.page'), { action: 'page' });
+  assert.deepEqual(parseAddToChatChoice('addchat.artifact'), {
+    action: 'artifact',
+  });
+  assert.deepEqual(parseAddToChatChoice('addchat.file'), { action: 'file' });
+  assert.equal(parseAddToChatChoice('addchat.nope'), null);
 });

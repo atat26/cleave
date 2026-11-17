@@ -3,9 +3,9 @@ import type { ReactNode } from 'react';
 import { MAX_LINKS, MAX_USER_CHARS } from './chats';
 import type { LinkKind } from './chats';
 import { onInsert } from './composerBus';
-import { Banner, Button } from './ui/controls';
+import { Banner, Button, IconButton } from './ui/controls';
 import { Icon } from './ui/Icon';
-import { AddMenuButton, LinkChips, LinkPicker, pickerItems } from './LinkChips';
+import { LinkChips, LinkPicker, pickerItems } from './LinkChips';
 import type { PickerItem } from './LinkChips';
 import type {
   ArtifactInfo,
@@ -147,8 +147,8 @@ export function ChatComposer({
     query: string;
     node: Text | null;
     start: number;
-    // From the "+" menu: list only pages (and Spaces), or only artifacts.
-    only?: 'page' | 'artifact';
+    // From the "+" menu: list only pages, only Spaces, or only artifacts.
+    only?: 'page' | 'space' | 'artifact';
   } | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
   // Where the text box is on screen, and how much room there is above it inside
@@ -263,12 +263,22 @@ export function ChatComposer({
     [],
   );
 
-  const openFromButton = (only: 'page' | 'artifact') => {
+  const openFromButton = (only: 'page' | 'space' | 'artifact') => {
     box.current?.focus();
     placeAnchor();
     setPickerIndex(0);
     setPicker({ query: '', node: null, start: 0, only });
   };
+  // The "+" menu is a popup menu (made by the app); what it picks opens the list here.
+  const openAdd = useRef(openFromButton);
+  openAdd.current = openFromButton;
+  useEffect(
+    () =>
+      window.browserApi.onComposerAdd((chatId, kind) => {
+        if (chatId === chat.id) openAdd.current(kind);
+      }),
+    [chat.id],
+  );
 
   // Choose something from the list: attach it to the chat. From "@", the typed
   // "@..." is swapped for a pill.
@@ -420,12 +430,37 @@ export function ChatComposer({
       )}
       <div className="composer reveal-host">
         {before}
+        {/* The "+" stays out of the way: the text starts at the left edge, and the
+            button pops out when the pointer is on the left side of the bar (or the
+            keyboard is on it). */}
         {!compact && (
-          <AddMenuButton
-            onAddPage={() => openFromButton('page')}
-            onAddArtifact={() => openFromButton('artifact')}
-            onAttachFile={() => void window.browserApi.chatAttachPick(chat.id)}
-          />
+          <span
+            className="composer-add"
+            onMouseDown={(event) => {
+              // A click on the empty strip puts the cursor in the message box.
+              if (event.target === event.currentTarget) {
+                event.preventDefault();
+                box.current?.focus();
+              }
+            }}
+          >
+            <IconButton
+              icon="plus"
+              size="sm"
+              label="Add a page, Space, artifact or file to the chat"
+              aria-haspopup="menu"
+              // Keep the text box focused.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                const edge = event.currentTarget.getBoundingClientRect();
+                window.browserApi.showAddToChatMenu(
+                  chat.id,
+                  edge.left,
+                  edge.top - 4,
+                );
+              }}
+            />
+          </span>
         )}
         {compact && refs.length > 0 && (
           <button
@@ -437,7 +472,10 @@ export function ChatComposer({
             {refs.length} link{refs.length === 1 ? '' : 's'}
           </button>
         )}
-        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+        <div
+          className="composer-text"
+          style={{ position: 'relative', flex: 1, minWidth: 0 }}
+        >
           {empty && (
             <span aria-hidden="true" className="composer-hint">
               Ask anything, or type @ to link a tab, Space or artifact

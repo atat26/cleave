@@ -514,6 +514,55 @@ export function parseChatChoice(id: string): ChatChoice | null {
   };
 }
 
+// ---- The "+" menu in the chat's message box ----------------------------------------
+
+export type AddToChatChoice =
+  | { action: 'page' }
+  | { action: 'space' }
+  | { action: 'artifact' }
+  | { action: 'file' };
+
+// What can be added to a chat from the "+" in its message box: a page, a Space or an
+// artifact (picked from a list), or a file from the computer.
+export function addToChatMenuItems(): MenuItem[] {
+  return [
+    { type: 'item', id: 'addchat.page', label: 'Add a page…', icon: 'globe' },
+    {
+      type: 'item',
+      id: 'addchat.space',
+      label: 'Add a Space…',
+      icon: 'folder',
+    },
+    {
+      type: 'item',
+      id: 'addchat.artifact',
+      label: 'Add an artifact…',
+      icon: 'doc',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'addchat.file',
+      label: 'Attach a file…',
+      icon: 'upload',
+    },
+  ];
+}
+
+export function parseAddToChatChoice(id: string): AddToChatChoice | null {
+  switch (id) {
+    case 'addchat.page':
+      return { action: 'page' };
+    case 'addchat.space':
+      return { action: 'space' };
+    case 'addchat.artifact':
+      return { action: 'artifact' };
+    case 'addchat.file':
+      return { action: 'file' };
+  }
+  return null;
+}
+
 // ---- The model menu --------------------------------------------------------------
 
 export type ModelChoice =

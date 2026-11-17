@@ -340,77 +340,6 @@ export function MentionToken({
   );
 }
 
-// "+ Add page": opens the same list as typing "@", but only attaches the page
-// (it adds nothing to your text).
-// A "+" that opens two choices in place (not a floating menu, which a web page
-// could cover): add a page, or add an artifact.
-export function AddMenuButton({
-  onAddPage,
-  onAddArtifact,
-  onAttachFile,
-}: {
-  onAddPage: () => void;
-  onAddArtifact: () => void;
-  onAttachFile: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  // Keep the text box focused, so the list's arrow keys work.
-  const keepFocus = (e: React.MouseEvent) => e.preventDefault();
-  return (
-    <>
-      <IconButton
-        icon="plus"
-        size="sm"
-        className={open ? 'reveal is-on' : 'reveal'}
-        label="Add a page, an artifact or a file to the chat"
-        aria-expanded={open}
-        onMouseDown={keepFocus}
-        onClick={() => setOpen(!open)}
-      />
-      {open && (
-        <>
-          <Button
-            size="sm"
-            icon="globe"
-            onMouseDown={keepFocus}
-            onClick={() => {
-              setOpen(false);
-              onAddPage();
-            }}
-            title="Attach a tab or Space to the chat (the assistant can read it, and act on it with your approval)"
-          >
-            Page
-          </Button>
-          <Button
-            size="sm"
-            icon="doc"
-            onMouseDown={keepFocus}
-            onClick={() => {
-              setOpen(false);
-              onAddArtifact();
-            }}
-            title="Attach an artifact to the chat (the assistant gets its title and kind)"
-          >
-            Artifact
-          </Button>
-          <Button
-            size="sm"
-            icon="upload"
-            onMouseDown={keepFocus}
-            onClick={() => {
-              setOpen(false);
-              onAttachFile();
-            }}
-            title="Attach images, PDFs or text files from your computer (they are also kept in your artifacts)"
-          >
-            File
-          </Button>
-        </>
-      )}
-    </>
-  );
-}
-
 // ---- The "@" list ----------------------------------------------------------------------
 
 export interface PickerItem {
@@ -435,8 +364,8 @@ export function pickerItems(
   artifacts: ArtifactInfo[],
   activeTabId: number | null,
   limit = 8,
-  // Only pages and Spaces, or only artifacts (from the "+" menu); "@" shows all.
-  only?: 'page' | 'artifact',
+  // Only pages, only Spaces, or only artifacts (from the "+" menu); "@" shows all.
+  only?: 'page' | 'space' | 'artifact',
 ): PickerItem[] {
   const linked = (kind: LinkKind, id: number) =>
     refs.some((r) => r.kind === kind && r.id === id);
@@ -447,7 +376,7 @@ export function pickerItems(
   const items: PickerItem[] = [];
   const active = tabs.find((t) => t.id === activeTabId);
   if (
-    only !== 'artifact' &&
+    (only === undefined || only === 'page') &&
     active &&
     !linked('tab', active.id) &&
     matches(`this page ${labelFor(active)}`)
@@ -463,7 +392,7 @@ export function pickerItems(
       emoji: null,
     });
   }
-  for (const space of only === 'artifact' ? [] : spaces) {
+  for (const space of only === undefined || only === 'space' ? spaces : []) {
     if (linked('space', space.id) || !matches(space.name)) continue;
     items.push({
       key: `space:${space.id}`,
@@ -476,7 +405,7 @@ export function pickerItems(
       emoji: space.emoji,
     });
   }
-  for (const tab of only === 'artifact' ? [] : tabs) {
+  for (const tab of only === undefined || only === 'page' ? tabs : []) {
     if (
       tab.id === active?.id ||
       tab.closed ||
@@ -495,7 +424,9 @@ export function pickerItems(
       emoji: null,
     });
   }
-  for (const artifact of only === 'page' ? [] : artifacts) {
+  for (const artifact of only === undefined || only === 'artifact'
+    ? artifacts
+    : []) {
     if (linked('artifact', artifact.id) || !matches(artifact.title)) continue;
     items.push({
       key: `artifact:${artifact.id}`,

@@ -258,6 +258,7 @@ import {
 import {
   addMenuItems,
   artifactMenuItems,
+  addToChatMenuItems,
   chatRowMenuItems,
   emojiPickerItems,
   parseEmojiChoice,
@@ -301,6 +302,7 @@ import {
   starMenuItems,
   parseAddChoice,
   parseArtifactChoice,
+  parseAddToChatChoice,
   parseChatChoice,
   parseEditChoice,
   parseLinkChoice,
@@ -5353,6 +5355,26 @@ export async function createTabs(
       if (isId(id)) void deleteChat(id);
     },
     // The chat-name menu (no id) or the menu of one chat in the list.
+    // The "+" in the chat's message box: add a page, a Space, an artifact or a file.
+    'chat:add-menu': (chatId, x, y) => {
+      if (!isId(chatId) || !isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        addToChatMenuItems(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseAddToChatChoice(choice);
+          if (!parsed) return;
+          if (parsed.action === 'file') {
+            void pickAndImport(currentSpaceId(), chatId);
+          } else if (!win.webContents.isDestroyed()) {
+            // The message box opens its list for it.
+            win.webContents.send('composer:add', chatId, parsed.action);
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     'chats:menu': (id, x, y, alignCenter) => {
       if (!isNumber(x) || !isNumber(y)) return;
       const items =

@@ -3,13 +3,8 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { byRecency } from './chats';
 import type { ChatMatch } from './chats';
 import { PinButton } from './PinButton';
-import { ItemEmoji } from './ui/controls';
-import {
-  ellipsis,
-  iconButtonStyle,
-  rowStyle,
-  stripButton,
-} from './sidebarStyles';
+import { IconButton, ItemEmoji } from './ui/controls';
+import { ellipsis, rowStyle, stripButton } from './sidebarStyles';
 import type { ChatInfo, ChatsInfo } from './types';
 
 // The chat history and manager. When only the chat is open (the page is
@@ -60,6 +55,7 @@ function ChatRow({
 
   return (
     <div
+      className="reveal-host"
       onClick={() => window.browserApi.selectChat(chat.id)}
       onDoubleClick={() => setEditing(true)}
       onContextMenu={openMenu(chat)}
@@ -129,18 +125,19 @@ function ChatRow({
       ) : (
         <span style={ellipsis}>{chat.title}</span>
       )}
-      <button
-        type="button"
-        aria-label={`Delete ${chat.title}`}
+      {/* Only shown while the pointer (or the keyboard) is on the row. "Delete
+          chat" is also in the row's right-click menu. */}
+      <IconButton
+        icon="x"
+        size="sm"
+        className="reveal"
+        label={`Delete ${chat.title}`}
         title="Delete chat"
         onClick={(event) => {
           event.stopPropagation(); // Don't also select this chat.
           window.browserApi.deleteChat(chat.id);
         }}
-        style={iconButtonStyle}
-      >
-        ×
-      </button>
+      />
     </div>
   );
 }
@@ -213,15 +210,12 @@ export function ChatList({
         }}
       >
         {/* The new-chat "+" is in the same place (top left) as in the narrow strip. */}
-        <button
-          type="button"
-          aria-label="New chat"
+        <IconButton
+          icon="plus"
+          label="New chat"
           title="New chat"
           onClick={() => window.browserApi.newChat()}
-          style={iconButtonStyle}
-        >
-          +
-        </button>
+        />
         <span style={{ flex: 1, paddingLeft: 4 }}>Chats</span>
         <PinButton pinned={pinned} />
       </div>
@@ -283,15 +277,12 @@ export function ChatStrip({ chats }: { chats: ChatsInfo }) {
           justifyContent: 'center',
         }}
       >
-        <button
-          type="button"
-          aria-label="New chat"
+        <IconButton
+          icon="plus"
+          label="New chat"
           title="New chat"
           onClick={() => window.browserApi.newChat()}
-          style={iconButtonStyle}
-        >
-          +
-        </button>
+        />
       </div>
       <div style={{ overflowY: 'hidden', flex: 1, paddingBottom: 12 }}>
         {newestFirst(chats).map((chat) => (

@@ -665,6 +665,12 @@ export interface BrowserApi {
   newTabDropFiles: (
     files: File[],
   ) => Promise<{ id: number; title: string; emoji: string }[]>;
+  // The "+" in the message box: a menu to add a page, a Space, an artifact or a file.
+  showAddToChatMenu: (chatId: number, x: number, y: number) => void;
+  // A page, Space or artifact was chosen from that menu: the message box lists them.
+  onComposerAdd: (
+    callback: (chatId: number, kind: 'page' | 'space' | 'artifact') => void,
+  ) => () => void;
   // Find chats by name or by what was said in them.
   searchChats: (query: string) => Promise<ChatMatch[]>;
   // "Search chats…" was chosen: put the keyboard in the chat list's search box.

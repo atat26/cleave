@@ -294,6 +294,19 @@ const browserApi: BrowserApi = {
   },
   chatEdit: (chatId, messageId, text) =>
     ipcRenderer.invoke('chat:edit', chatId, messageId, text),
+  showAddToChatMenu: (chatId, x, y) =>
+    ipcRenderer.send('chat:add-menu', chatId, x, y),
+  onComposerAdd: (callback) => {
+    const listener = (
+      _event: unknown,
+      chatId: number,
+      kind: 'page' | 'space' | 'artifact',
+    ) => callback(chatId, kind);
+    ipcRenderer.on('composer:add', listener);
+    return () => {
+      ipcRenderer.removeListener('composer:add', listener);
+    };
+  },
   chatAttachPick: (chatId) => ipcRenderer.invoke('chat:attach-pick', chatId),
   // Files that are on the computer go by their place; a pasted picture (a screenshot,
   // say) has none, so its bytes are sent instead.
