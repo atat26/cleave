@@ -43,3 +43,45 @@ export function modeLabel(mode: BoxMode, engineName: string): string {
       ? `Search ${engineName}`
       : 'Ask';
 }
+
+// ---- "@" in the box --------------------------------------------------------------
+// Typing "@" and a few letters opens the same list the chat has (open tabs, Spaces,
+// artifacts). What you pick becomes a chip under the box ("The assistant can see")
+// instead of text, and goes with the request when you Ask.
+
+// The "@..." just before the cursor, if there is one: where it starts and what has
+// been typed after the "@".
+export function findMention(
+  text: string,
+  caret: number,
+): { start: number; query: string } | null {
+  const before = text.slice(0, caret);
+  const m = /(^|\s)@([^\s@]*)$/.exec(before);
+  return m ? { start: before.length - m[2].length - 1, query: m[2] } : null;
+}
+
+// The text with the "@..." that was being typed taken out (the pick replaces it).
+export function withoutMention(
+  text: string,
+  start: number,
+  caret: number,
+): string {
+  return (text.slice(0, start) + text.slice(caret)).replace(/ {2,}/g, ' ');
+}
+
+export interface MentionChip {
+  kind: 'tab' | 'space' | 'artifact';
+  id: number;
+  // What it is called in the message ("@Route planning").
+  tag: string;
+}
+
+// The "@name" tag for something picked.
+export const mentionTag = (label: string): string =>
+  `@${label.replace(/\s+/g, ' ').trim().slice(0, 60)}`;
+
+// The text sent when you Ask: the tags of the chips, then what was typed, so each
+// chip is in the message the way a pill is in the chat.
+export function askText(chips: readonly MentionChip[], typed: string): string {
+  return [...chips.map((c) => c.tag), typed.trim()].filter(Boolean).join(' ');
+}

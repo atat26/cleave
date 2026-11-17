@@ -66,7 +66,7 @@ export interface ChatService {
   // Stop a chat's reply (used when the chat is deleted).
   stop(chatId: number): void;
   // Send a message in a chat from inside the app (the new-tab page's Ask).
-  sendMessage(chatId: number, text: string): ChatSendResult;
+  sendMessage(chatId: number, text: string, mentions?: unknown): ChatSendResult;
   // Send the UI the messages that have @ mentions or attached pages again (their
   // tokens changed, for example after a closed page was reopened).
   refreshMentions(): void;
@@ -706,8 +706,11 @@ export function createChatService(options: {
 
   return {
     runningChats: () => runner.runningChats(),
-    sendMessage: (chatId: number, text: string): ChatSendResult =>
-      sendMessage(chatId, text, []),
+    sendMessage: (
+      chatId: number,
+      text: string,
+      mentions: unknown = [],
+    ): ChatSendResult => sendMessage(chatId, text, mentions),
     nameChat: (chatId) => nameChat(chatId, true),
     stop: (chatId) => runner.stop(chatId),
     refreshMentions() {

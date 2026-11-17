@@ -2169,3 +2169,37 @@ button {
   border-style: dashed;
   border-color: var(--c-border-strong);
 }
+
+/* An item picked with "@" on the new-tab page (under the box). */
+.nt-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nt-chip-pill button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--c-text-2);
+  cursor: pointer;
+  padding: 0;
+}
+.nt-chip-pill button:hover {
+  background: var(--c-hover);
+}

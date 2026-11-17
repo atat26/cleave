@@ -7,12 +7,24 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPACE_COLOR_HEX } from './colors';
 import { greetingFor } from './greetings';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
-import { autoMode, cycleMode, MODES, modeLabel } from './newTabBox';
-import type { BoxMode } from './newTabBox';
+import { LinkPicker, pickerItems } from './LinkChips';
+import type { PickerItem } from './LinkChips';
+import { isNewTabPage } from './model';
+import {
+  askText,
+  autoMode,
+  cycleMode,
+  findMention,
+  MODES,
+  mentionTag,
+  modeLabel,
+  withoutMention,
+} from './newTabBox';
+import type { BoxMode, MentionChip } from './newTabBox';
 import { timeAgo } from './pickUp';
 import { activeEngine } from './searchEngine';
 import type { Suggestion } from './suggest';
-import type { NewTabInfo, SpaceInfo, TabInfo } from './types';
+import type { ArtifactInfo, NewTabInfo, SpaceInfo, TabInfo } from './types';
 import { Pill } from './ui/controls';
 import { Icon } from './ui/Icon';
 import type { IconName } from './ui/iconData';
@@ -26,18 +38,40 @@ const MODE_ICONS: Record<BoxMode, IconName> = {
   ask: 'sparkle',
 };
 
+// What was picked with "@" in each new tab (shown as chips under the box).
+type Chip = MentionChip & { label: string; emoji: string | null };
+const draftChips = new Map<number, Chip[]>();
+
 const PICK_ICONS = { chat: 'chat', artifact: 'doc', page: 'globe' } as const;
 
 export function NewTabView({
   tab,
   space,
   info,
+  tabs,
+  spaces,
+  artifacts,
 }: {
   tab: TabInfo;
   space: SpaceInfo | undefined;
   info: NewTabInfo;
+  // What "@" can offer.
+  tabs: TabInfo[];
+  spaces: SpaceInfo[];
+  artifacts: ArtifactInfo[];
 }) {
   const [text, setText] = useState(() => drafts.get(tab.id) ?? '');
+  // The items picked with "@", and the "@..." being typed now.
+  const [chips, setChips] = useState<Chip[]>(
+    () => draftChips.get(tab.id) ?? [],
+  );
+  const [mention, setMention] = useState<{
+    start: number;
+    query: string;
+  } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const dismissedAt = useRef<number | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   // The mode the user chose with Tab or a click; it lasts until the box is emptied.
   const [manual, setManual] = useState<BoxMode | null>(null);
   const [engine, setEngine] = useState('your search engine');
@@ -57,7 +91,83 @@ export function NewTabView({
   );
 
   const typing = text.trim() !== '';
-  const mode: BoxMode = manual ?? (info.autoMode ? autoMode(text) : 'search');
+  // Something picked with "@" is for the assistant, so Ask is the default then.
+  const mode: BoxMode =
+    manual ??
+    (chips.length > 0 ? 'ask' : info.autoMode ? autoMode(text) : 'search');
+
+  // What the "@" list offers: open tabs, Spaces and artifacts not picked yet.
+  const mentionItems: PickerItem[] = useMemo(
+    () =>
+      mention
+        ? pickerItems(
+            mention.query,
+            chips.map((c) => ({
+              kind: c.kind,
+              id: c.id,
+              title: c.label,
+              url: null,
+            })),
+            tabs.filter((t) => !isNewTabPage(t.url) && !t.closed),
+            spaces,
+            artifacts,
+            null,
+            8,
+          )
+        : [],
+    [mention, chips, tabs, spaces, artifacts],
+  );
+
+  // Look at the text before the cursor to open or close the "@" list.
+  const updateMention = (value: string, caret: number) => {
+    const found = findMention(value, caret);
+    if (found && found.start === dismissedAt.current) {
+      setMention(null);
+      return;
+    }
+    if (!found) dismissedAt.current = null;
+    setMention(found);
+    setMentionIndex(0);
+  };
+
+  // Choose something from the "@" list: it becomes a chip and the "@..." goes.
+  const pickMention = (item: PickerItem) => {
+    if (!mention) return;
+    const caret = input.current?.selectionStart ?? text.length;
+    const next = withoutMention(text, mention.start, caret);
+    const added: Chip = {
+      kind: item.kind,
+      id: item.id,
+      tag: mentionTag(item.label),
+      label: item.label,
+      emoji: item.emoji,
+    };
+    const chipsNow = chips.some(
+      (c) => c.kind === added.kind && c.id === added.id,
+    )
+      ? chips
+      : [...chips, added];
+    setChips(chipsNow);
+    draftChips.set(tab.id, chipsNow);
+    setText(next);
+    drafts.set(tab.id, next);
+    setMention(null);
+    dismissedAt.current = null;
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(mention.start, mention.start);
+    });
+  };
+
+  const removeChip = (chip: Chip) => {
+    const rest = chips.filter(
+      (c) => !(c.kind === chip.kind && c.id === chip.id),
+    );
+    setChips(rest);
+    if (rest.length === 0) draftChips.delete(tab.id);
+    else draftChips.set(tab.id, rest);
+    input.current?.focus();
+  };
   const label = modeLabel(mode, engine);
 
   // The box has the keyboard as soon as the page is there.
@@ -97,7 +207,16 @@ export function NewTabView({
     const typed = text.trim();
     if (typed === '') return;
     drafts.delete(tab.id);
-    window.browserApi.newTabRun(typed, mode);
+    draftChips.delete(tab.id);
+    if (mode === 'ask') {
+      window.browserApi.newTabRun(
+        askText(chips, typed),
+        'ask',
+        chips.map(({ kind, id, tag }) => ({ kind, id, tag })),
+      );
+    } else {
+      window.browserApi.newTabRun(typed, mode);
+    }
   };
 
   const pick = (row: Suggestion) => {
@@ -148,7 +267,7 @@ export function NewTabView({
       )}
       <div className={info.secondInRow ? 'nt-col nt-second' : 'nt-col'}>
         {!info.secondInRow && <h1>{greeting}</h1>}
-        <div className="nt-box">
+        <div className="nt-box" ref={boxRef}>
           {typing ? (
             <span className="nt-chip">
               <Icon name={MODE_ICONS[mode]} />
@@ -160,7 +279,9 @@ export function NewTabView({
             </span>
           )}
           <input
-            ref={input}
+            ref={(el) => {
+              input.current = el;
+            }}
             role="combobox"
             aria-expanded={rows.length > 0}
             aria-controls="nt-suggestions"
@@ -171,8 +292,53 @@ export function NewTabView({
               drafts.set(tab.id, event.target.value);
               // A choice made with Tab lasts until the box is emptied.
               if (event.target.value.trim() === '') setManual(null);
+              updateMention(
+                event.target.value,
+                event.target.selectionStart ?? event.target.value.length,
+              );
+            }}
+            onSelect={(event) => {
+              const el = event.currentTarget;
+              updateMention(el.value, el.selectionStart ?? el.value.length);
             }}
             onKeyDown={(event) => {
+              // The "@" list takes the keys while it is open.
+              if (mention && mentionItems.length > 0) {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  setMentionIndex((mentionIndex + 1) % mentionItems.length);
+                  return;
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  setMentionIndex(
+                    (mentionIndex - 1 + mentionItems.length) %
+                      mentionItems.length,
+                  );
+                  return;
+                }
+                if (event.key === 'Enter' || event.key === 'Tab') {
+                  event.preventDefault();
+                  const chosen = mentionItems[mentionIndex];
+                  if (chosen) pickMention(chosen);
+                  return;
+                }
+              }
+              if (event.key === 'Escape' && mention) {
+                event.preventDefault();
+                dismissedAt.current = mention.start;
+                setMention(null);
+                return;
+              }
+              if (
+                event.key === 'Backspace' &&
+                text === '' &&
+                chips.length > 0
+              ) {
+                event.preventDefault();
+                removeChip(chips[chips.length - 1]);
+                return;
+              }
               if (event.key === 'Tab' && typing) {
                 event.preventDefault();
                 setManual(cycleMode(mode, event.shiftKey ? -1 : 1));
@@ -219,6 +385,22 @@ export function NewTabView({
           {typing ? `Enter will ${label}` : ''}
         </div>
 
+        {mention && boxRef.current && (
+          <LinkPicker
+            items={mentionItems}
+            index={mentionIndex}
+            anchor={{
+              left: boxRef.current.getBoundingClientRect().left,
+              top: boxRef.current.getBoundingClientRect().top,
+              below: boxRef.current.getBoundingClientRect().bottom,
+              width: boxRef.current.getBoundingClientRect().width,
+              room: 300,
+            }}
+            onPick={pickMention}
+            onHover={setMentionIndex}
+          />
+        )}
+
         {typing && (
           <div className="nt-hint">
             <span>Enter will</span>
@@ -234,6 +416,9 @@ export function NewTabView({
                   }}
                 >
                   {modeLabel(m, engine)}
+                  {m === 'ask' && mode !== 'ask' && chips.length > 0
+                    ? ` (${chips.length})`
+                    : ''}
                 </button>
               ))}
             </div>
@@ -267,14 +452,35 @@ export function NewTabView({
           </div>
         )}
 
-        {space && !info.firstRun && !info.secondInRow && (
+        {((space && !info.firstRun && !info.secondInRow) ||
+          (mode === 'ask' && chips.length > 0)) && (
           <div className="nt-ctx">
             <span>The assistant can see</span>
-            <Pill
-              color={space.color === 'grey' ? 'blue' : (space.color as never)}
-            >
-              {space.emoji} {space.name}
-            </Pill>
+            {space && !info.firstRun && !info.secondInRow && (
+              <Pill
+                color={space.color === 'grey' ? 'blue' : (space.color as never)}
+              >
+                {space.emoji} {space.name}
+              </Pill>
+            )}
+            {/* The pick stays with the box, but only Ask can use it. */}
+            {(mode === 'ask' ? chips : []).map((chip) => (
+              <span
+                key={`${chip.kind}:${chip.id}`}
+                className="nt-chip-pill reveal-host"
+                title={chip.tag}
+              >
+                {chip.emoji ?? ''} {chip.label}
+                <button
+                  type="button"
+                  className="reveal"
+                  aria-label={`Remove ${chip.label}`}
+                  onClick={() => removeChip(chip)}
+                >
+                  <Icon name="x" />
+                </button>
+              </span>
+            ))}
           </div>
         )}
 

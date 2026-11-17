@@ -156,6 +156,9 @@ export function App() {
           tab={activeTab}
           space={state.spaces.find((s) => s.id === activeTab.spaceId)}
           info={state.newTab}
+          tabs={state.tabs}
+          spaces={state.spaces}
+          artifacts={state.artifacts}
         />
       )}
       {activeArtifact && (

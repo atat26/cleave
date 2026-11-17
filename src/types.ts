@@ -348,7 +348,16 @@ export interface BrowserApi {
   // The lock chip's menu: what this site may do.
   showSiteMenu: (x: number, y: number) => void;
   // The new-tab page's box: do what Enter was going to do.
-  newTabRun: (text: string, mode: 'go' | 'search' | 'ask') => void;
+  // With Ask, the items picked with "@" go along (they are linked to the new chat).
+  newTabRun: (
+    text: string,
+    mode: 'go' | 'search' | 'ask',
+    mentions?: {
+      kind: 'tab' | 'space' | 'artifact';
+      id: number;
+      tag: string;
+    }[],
+  ) => void;
   // The new-tab page: open a Pick up item, hide one, click a Space pill (a Space id,
   // or 'new' for a new Space), or show all of the Space's items.
   newTabResume: (kind: 'chat' | 'artifact' | 'page', id: number) => void;

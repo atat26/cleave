@@ -509,8 +509,15 @@ export function LinkPicker({
 }: {
   items: PickerItem[];
   index: number;
-  // Where the text box is on screen.
-  anchor: { left: number; top: number; width: number; room: number };
+  // Where the text box is on screen. With `below` (the box's bottom edge), the list
+  // opens under the box instead of above it.
+  anchor: {
+    left: number;
+    top: number;
+    width: number;
+    room: number;
+    below?: number;
+  };
   onPick: (item: PickerItem) => void;
   onHover: (index: number) => void;
 }) {
@@ -521,7 +528,9 @@ export function LinkPicker({
       className="pick-list"
       style={{
         left: anchor.left,
-        bottom: window.innerHeight - anchor.top + 6,
+        ...(anchor.below !== undefined
+          ? { top: anchor.below + 6 }
+          : { bottom: window.innerHeight - anchor.top + 6 }),
         width: Math.min(360, Math.max(240, anchor.width)),
         // Never taller than the room inside the chat: anything above it would be
         // hidden behind the web page.
