@@ -2281,3 +2281,77 @@ button {
 .nt-chip-pill button:hover {
   background: var(--c-hover);
 }
+
+/* ---- Syntax highlighting and the code editor -------------------------------------- */
+.hl-comment {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.hl-string {
+  color: var(--hl-string);
+}
+.hl-number {
+  color: var(--hl-number);
+}
+.hl-keyword {
+  color: var(--hl-keyword);
+}
+.hl-literal {
+  color: var(--hl-literal);
+}
+.hl-type {
+  color: var(--hl-type);
+}
+.hl-function {
+  color: var(--hl-function);
+}
+.hl-attr {
+  color: var(--hl-attr);
+}
+.hl-tag {
+  color: var(--hl-tag);
+}
+.hl-punct {
+  color: var(--hl-punct);
+}
+/* The editor: a coloured copy of the text sits under a see-through text box, both
+   with exactly the same font and wrapping, so the colours line up with the text. */
+.hl-editor {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.hl-layer,
+.hl-input {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--s-4) var(--s-5);
+  border: none;
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+.hl-layer {
+  color: var(--c-text);
+  pointer-events: none;
+}
+.hl-input {
+  background: transparent;
+  color: transparent;
+  caret-color: var(--c-text);
+  outline: none;
+  resize: none;
+}
+.hl-input::selection {
+  background: var(--c-accent-tint);
+  color: transparent;
+}

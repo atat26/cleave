@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_ARTIFACT_CHARS } from './artifacts';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import type { ArtifactDocument, ArtifactTabInfo } from './types';
@@ -9,6 +9,8 @@ import {
   previewNote,
 } from './artifactRender';
 import type { PreviewMessage } from './artifactRender';
+import { detectLanguage, languageName } from './highlight';
+import { HighlightedEditor } from './HighlightedEditor';
 import { NameButton } from './NameButton';
 import { Markdown } from './MarkdownView';
 import { Badge, Banner, Button, ItemEmoji, Segmented } from './ui/controls';
@@ -198,6 +200,15 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   };
 
   const mono = tab.kind === 'html' || tab.kind === 'code';
+  // What the text is written in, for its colours: from the kind, the ending of its
+  // name ("calc.py"), or what it looks like. (Looked up again only when the name or
+  // the start of the text changes.)
+  const head = text.slice(0, 2000);
+  const language = useMemo(
+    () => detectLanguage(tab.kind, tab.title, text),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tab.kind, tab.title, head],
+  );
 
   const [renaming, setRenaming] = useState(false);
   const finishRename = (value: string) => {
@@ -365,7 +376,9 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             Allow internet
           </Button>
         )}
-        <Badge>{KIND_WORDS[tab.kind]}</Badge>
+        <Badge>
+          {tab.kind === 'code' ? languageName(language) : KIND_WORDS[tab.kind]}
+        </Badge>
         <span
           role="status"
           className={
@@ -466,7 +479,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             }}
           />
         </>
-      ) : (
+      ) : tab.kind === 'text' ? (
         <textarea
           aria-label={`Edit ${tab.title}`}
           value={text}
@@ -499,6 +512,27 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             lineHeight: 1.55,
             fontFamily: mono ? 'var(--font-mono)' : 'var(--font)',
             tabSize: 2,
+          }}
+        />
+      ) : (
+        <HighlightedEditor
+          label={`Edit ${tab.title}`}
+          value={text}
+          language={language}
+          mono={mono}
+          maxLength={MAX_ARTIFACT_CHARS}
+          onChange={change}
+          onBlur={() => void save()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            const box = event.currentTarget;
+            window.browserApi.showEditMenu(
+              'editor',
+              event.clientX,
+              event.clientY,
+              box.selectionStart !== box.selectionEnd,
+              box.value.slice(box.selectionStart, box.selectionEnd),
+            );
           }}
         />
       )}
