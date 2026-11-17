@@ -351,6 +351,9 @@ export async function createTabs(
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
   let chats: ChatsState = await loadChats(chatsFile);
+  // Empty chats left behind by an earlier version are not kept (only the one you
+  // are on may be empty: it is the "new chat" screen).
+  chats = chatsModel.dropUntouched(chats, chats.activeId);
   // Documents made inside the browser (not uploads).
   const artifactsFile = path.join(app.getPath('userData'), 'artifacts.json');
   let artifacts: ArtifactsState = await loadArtifacts(artifactsFile);
@@ -3052,9 +3055,8 @@ export async function createTabs(
   };
 
   const chatMenuActions: ChatMenuActions = {
-    selectChat: (id) =>
-      commitChats(chatsModel.setActiveConversation(chats, id)),
-    newChat: () => commitChats(chatsModel.newConversation(chats).state),
+    selectChat: (id) => commitChats(chatsModel.selectConversation(chats, id)),
+    newChat: () => commitChats(chatsModel.startNewChat(chats).state),
     // The chat's name becomes a text box. With only the chat open, the chat list
     // is in the sidebar (which must be open to show the box); otherwise the
     // title is in the chat bar.
@@ -4089,7 +4091,13 @@ export async function createTabs(
       reopenLastClosed();
     } else if (key === 't') {
       event.preventDefault();
-      openTab(newTabUrl(), currentSpaceId());
+      // With only the chat showing, a new "tab" is a new chat.
+      if (state.settings.viewMode === 'chat') {
+        chatMenuActions.newChat();
+        win.webContents.focus();
+      } else {
+        openTab(newTabUrl(), currentSpaceId());
+      }
     } else if (key === 'a' && input.shift) {
       event.preventDefault();
       openTabSearch();
@@ -4162,7 +4170,7 @@ export async function createTabs(
     // This new tab has been used: a new tab opened after it is not "second in a row".
     const used = activeTabId();
     if (used !== null) usedNewTabs.add(used);
-    const created = chatsModel.newConversation(chats);
+    const created = chatsModel.startNewChat(chats);
     commitChats(created.state);
     // Everything picked with "@" is linked to the chat, like the chat's own "@".
     const lookup = snapshotLookup(workspace());
@@ -4453,6 +4461,11 @@ export async function createTabs(
     // Show the page alone (chat closed), both, or the chat alone (page hidden).
     'view:set': (mode) => {
       if (!model.VIEW_MODES.includes(mode as model.ViewMode)) return;
+      // Leaving a new-tab page for the chat alone: the chat starts from its own new
+      // chat screen, not from whatever chat was open before.
+      if (mode === 'chat' && state.settings.viewMode !== 'chat') {
+        if (onNewTabPage()) chatMenuActions.newChat();
+      }
       commitAndShow(model.setViewMode(state, mode as model.ViewMode));
     },
     'panel:open': (panel) => {
@@ -5205,7 +5218,16 @@ export async function createTabs(
         ),
       );
     },
-    'chats:new': () => chatMenuActions.newChat(),
+    // The "+" on the chat. With only the chat showing it is the new chat screen. With
+    // the page showing too (or alone) it is a new tab, whose page has its own box.
+    'chats:new': () => {
+      if (state.settings.viewMode === 'chat') {
+        chatMenuActions.newChat();
+        win.webContents.focus();
+      } else {
+        openTab(newTabUrl(), currentSpaceId());
+      }
+    },
     'chats:select': (id) => {
       if (isId(id)) chatMenuActions.selectChat(id);
     },

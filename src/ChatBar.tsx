@@ -8,6 +8,7 @@ import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
 import { ChatComposer } from './ChatComposer';
 import { MessageList, useChatMessages } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
+import { NewChatView } from './NewChatView';
 import { PAGE_INSET, RAIL_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ResizeHandle } from './ResizeHandle';
@@ -103,6 +104,62 @@ export function ChatBar({
     />
   );
 
+  // The message box. On the new chat screen it sits in the middle of the screen.
+  const composer = chat ? (
+    <ChatComposer
+      chat={chat}
+      llm={llm}
+      refs={chats.refs}
+      tabs={tabs}
+      spaces={spaces}
+      artifacts={artifacts}
+      activeTabId={activeTabId}
+      compact={!full}
+      before={
+        !full ? (
+          <ChatSwitcher
+            chats={chats}
+            renameRequest={renameRequest}
+            onRenameHandled={onRenameHandled}
+            compact
+          />
+        ) : undefined
+      }
+      after={
+        !full ? (
+          <>
+            {/* Expand stays in view (it is the bar's one way to open up). Close
+                  takes no room until the pointer is on the bar. */}
+            <IconButton
+              icon="chev-u"
+              size="sm"
+              label="Expand chat (Ctrl+J)"
+              onClick={() => window.browserApi.toggleChat()}
+            />
+            <span className="chat-close-slot">
+              <IconButton
+                icon="x"
+                size="sm"
+                label="Close chat (show only the page)"
+                onClick={() => window.browserApi.setViewMode('page')}
+              />
+            </span>
+          </>
+        ) : undefined
+      }
+      // The "@" list needs room: open the chat up from the one-row bar.
+      onNeedRoom={() => {
+        if (!full && viewMode === 'both') window.browserApi.toggleChat();
+      }}
+      // Sending from the one-row bar opens the chat so the reply is visible.
+      onSent={() => {
+        if (!full && viewMode === 'both') window.browserApi.toggleChat();
+      }}
+    />
+  ) : null;
+  // Only the chat is showing and nothing has been said yet.
+  const showNew = chatOnly && chat !== undefined && chat.messageCount === 0;
+
   return (
     <section
       ref={regionRef}
@@ -172,7 +229,15 @@ export function ChatBar({
             {closeChat}
           </div>
         )}
-        {full && (
+        {showNew && chat && (
+          <NewChatView
+            chats={chats}
+            chat={chat}
+            spaces={spaces}
+            box={composer}
+          />
+        )}
+        {full && !showNew && (
           <MessageList
             chatId={chats.activeId}
             generating={chat?.generating ?? false}
@@ -201,58 +266,7 @@ export function ChatBar({
             </button>
           </div>
         )}
-        {chat && (
-          <ChatComposer
-            chat={chat}
-            llm={llm}
-            refs={chats.refs}
-            tabs={tabs}
-            spaces={spaces}
-            artifacts={artifacts}
-            activeTabId={activeTabId}
-            compact={!full}
-            before={
-              !full ? (
-                <ChatSwitcher
-                  chats={chats}
-                  renameRequest={renameRequest}
-                  onRenameHandled={onRenameHandled}
-                  compact
-                />
-              ) : undefined
-            }
-            after={
-              !full ? (
-                <>
-                  {/* Expand stays in view (it is the bar's one way to open up). Close
-                      takes no room until the pointer is on the bar. */}
-                  <IconButton
-                    icon="chev-u"
-                    size="sm"
-                    label="Expand chat (Ctrl+J)"
-                    onClick={() => window.browserApi.toggleChat()}
-                  />
-                  <span className="chat-close-slot">
-                    <IconButton
-                      icon="x"
-                      size="sm"
-                      label="Close chat (show only the page)"
-                      onClick={() => window.browserApi.setViewMode('page')}
-                    />
-                  </span>
-                </>
-              ) : undefined
-            }
-            // The "@" list needs room: open the chat up from the one-row bar.
-            onNeedRoom={() => {
-              if (!full && viewMode === 'both') window.browserApi.toggleChat();
-            }}
-            // Sending from the one-row bar opens the chat so the reply is visible.
-            onSent={() => {
-              if (!full && viewMode === 'both') window.browserApi.toggleChat();
-            }}
-          />
-        )}
+        {!showNew && composer}
       </div>
       {viewMode === 'both' && (
         <ResizeHandle

@@ -508,6 +508,42 @@ export function newConversation(
   };
 }
 
+// A chat nothing has happened in: no messages and nothing linked. It is shown as
+// the "new chat" screen, and is not worth keeping when you move on from it.
+export const isUntouched = (c: Conversation): boolean =>
+  c.messages.length === 0 && c.refs.length === 0 && !c.titleByUser;
+
+// Throw away every untouched chat except the one to keep (there is never more than
+// one of them lying around, so pressing "new chat" again and again fills nothing up).
+export function dropUntouched(state: ChatsState, keepId: number): ChatsState {
+  const kept = state.conversations.filter(
+    (c) => c.id === keepId || !isUntouched(c),
+  );
+  return kept.length === state.conversations.length
+    ? state
+    : { ...state, conversations: kept };
+}
+
+// "New chat": show the new chat screen. If the chat you are on is untouched it is
+// reused; otherwise a new one is made. Either way no other empty chat is left over.
+export function startNewChat(
+  state: ChatsState,
+  now = Date.now(),
+): { state: ChatsState; id: number } {
+  const current = findConversation(state, state.activeId);
+  if (current && isUntouched(current)) {
+    return { state: dropUntouched(state, current.id), id: current.id };
+  }
+  const added = newConversation(state, now);
+  return { state: dropUntouched(added.state, added.id), id: added.id };
+}
+
+// Go to a chat. Leaving an untouched chat behind throws it away.
+export function selectConversation(state: ChatsState, id: number): ChatsState {
+  const next = setActiveConversation(state, id);
+  return next === state ? state : dropUntouched(next, id);
+}
+
 // Chats as they are listed: the one used most recently first, so a message sent to
 // an old chat brings it back to the top. Chats at the same moment: newest made first.
 export function byRecency<T extends { id: number; updatedAt: number }>(
