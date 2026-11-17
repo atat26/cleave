@@ -67,6 +67,13 @@ import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import { registerDownloads } from './downloadManager';
+import { registerExtensions } from './extensionManager';
+import type { ExtensionManager } from './extensionManager';
+import {
+  defaultExtensions,
+  describePermissions,
+  parseExtensions,
+} from './extensionList';
 import {
   clearFinished,
   defaultDownloads,
@@ -480,6 +487,16 @@ export async function createTabs(
   const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
   let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
   const closedSaver = createSaver(closedFile, () => closedTabs);
+  // The browser extensions you added (see extensionList.ts).
+  const extensionsFile = path.join(app.getPath('userData'), 'extensions.json');
+  let extensionList = await loadJson(
+    extensionsFile,
+    parseExtensions,
+    defaultExtensions,
+  );
+  const extensionsSaver = createSaver(extensionsFile, () => extensionList);
+  // Set once the window exists (see registerExtensions below).
+  let extensions: ExtensionManager | null = null;
 
   // The Spaces and tabs as the chat sees them (titles and addresses).
   const workspace = (): Workspace => ({
@@ -1418,6 +1435,8 @@ export async function createTabs(
     view.setVisible(false);
 
     const contents = view.webContents;
+    // Tell the extensions about this page.
+    extensions?.addTab(contents);
     // Links that want a new window (target="_blank") open as a new tab in the
     // same Space. Only normal web addresses are allowed.
     // A page may open a window only when you just clicked or pressed a key on it.
@@ -1909,6 +1928,10 @@ export async function createTabs(
     }
     syncFind();
     hideSuggest();
+    if (id !== null) {
+      const shown = pageContents(id);
+      if (shown) extensions?.selectTab(shown);
+    }
     // Keyboard focus goes to the page, unless it is hidden (chat-only mode). A
     // new-tab page is drawn by the window itself, which takes the keyboard.
     if (id !== null && pageIsShown() && !onNewTabPage()) {
@@ -1993,6 +2016,8 @@ export async function createTabs(
     const view = views.get(id);
     if (!view) return;
     views.delete(id);
+    if (!view.webContents.isDestroyed())
+      extensions?.removeTab(view.webContents);
     win.contentView.removeChildView(view);
     view.webContents.close();
   };
@@ -4741,6 +4766,82 @@ export async function createTabs(
     },
     confirm,
   });
+  // Extensions: added from a folder, loaded at every start (see extensionManager.ts).
+  const manager = registerExtensions({
+    session: session.defaultSession,
+    window: win,
+    getList: () => extensionList,
+    setList: (next) => {
+      extensionList = next;
+      extensionsSaver.schedule();
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('extensions:changed');
+      }
+    },
+    createTab: async (url) => {
+      const from = activeTabId();
+      openTab(
+        url,
+        (from !== null && model.findTab(state, from)?.spaceId) || null,
+      );
+      const id = activeTabId();
+      if (id === null) return null;
+      const tab = model.findTab(state, id);
+      if (tab) ensureView(tab);
+      return pageContents(id) ?? null;
+    },
+    selectTab: (contents) => {
+      for (const [id, view] of views) {
+        if (view.webContents === contents) select({ kind: 'tab', id });
+      }
+    },
+    removeTab: (contents) => {
+      for (const [id, view] of views) {
+        if (view.webContents === contents) closeTab(id);
+      }
+    },
+    confirm,
+  });
+  extensions = manager;
+  // Pages that were already open when the extensions were switched on.
+  for (const view of views.values()) manager.addTab(view.webContents);
+  void manager.loadAll();
+  ipcMain.handle('extensions:list', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return extensionList.items.map((record) => ({
+      ...record,
+      words: describePermissions(record),
+      loaded: manager.isLoaded(record),
+    }));
+  });
+  ipcMain.handle('extensions:add-folder', async (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Choose the folder of an unpacked extension',
+      properties: ['openDirectory'],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return { ok: false, error: 'Cancelled.' };
+    }
+    return manager.installFolder(picked.filePaths[0]);
+  });
+  ipcMain.handle(
+    'extensions:set-enabled',
+    async (event, key: unknown, enabled: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (typeof key !== 'string' || typeof enabled !== 'boolean') return;
+      await manager.setEnabled(key, enabled);
+    },
+  );
+  ipcMain.handle('extensions:remove', (event, key: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (typeof key === 'string') manager.remove(key);
+  });
+  // For testing only (never in a packaged app): add an extension from a folder at
+  // start, since a native folder picker cannot be driven by a test.
+  if (!app.isPackaged && process.env.AIB_TEST_EXTENSION) {
+    void manager.installFolder(process.env.AIB_TEST_EXTENSION, true);
+  }
   ipcMain.handle('downloads:list', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return downloads.items;
@@ -5264,6 +5365,7 @@ ${artifact.content.slice(0, 1500)}`;
     faviconsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
+    extensionsSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();

@@ -6,6 +6,15 @@ import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
 import type { SiteDataRow, SiteGroup } from './siteData';
 import type { SearchEngineSettings } from './searchEngine';
 import type { NewTabSettings } from './newTabSettings';
+import type { ExtensionRecord } from './extensionList';
+
+// An extension as the Extensions panel shows it.
+export interface ExtensionRow extends ExtensionRecord {
+  // What it asks for, in plain words.
+  words: string[];
+  // Is it running now?
+  loaded: boolean;
+}
 
 // A main site with its cookies, for Settings (icons are remembered from pages).
 export interface SiteDataGroup extends Omit<SiteGroup, 'hosts'> {
@@ -370,6 +379,14 @@ export interface BrowserApi {
   newTabSettingsGet: () => Promise<NewTabSettings>;
   newTabSettingsSet: (changes: unknown) => Promise<NewTabSettings>;
   newTabShowHidden: () => Promise<NewTabSettings>;
+  // Extensions (the list; the Extensions panel comes in the next step).
+  extensionsList: () => Promise<ExtensionRow[]>;
+  extensionsAddFolder: () => Promise<
+    { ok: true; name: string } | { ok: false; error: string }
+  >;
+  extensionsSetEnabled: (key: string, enabled: boolean) => Promise<void>;
+  extensionsRemove: (key: string) => Promise<void>;
+  onExtensionsChanged: (callback: () => void) => () => void;
   // Ctrl+L: the app asks the toolbar to put the keyboard in the address bar.
   onFocusAddress: (callback: () => void) => () => void;
   // The "pop-up blocked" chip's card.
