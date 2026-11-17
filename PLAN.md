@@ -8,7 +8,7 @@
 - [x] M4c-1: Working chat: streaming replies with Stop and Retry, per-chat history, error messages, pinned models with a model chip, system prompt in Settings, cost line
 - [x] M4c-2: Link Spaces and tabs to a chat with `@` (pills in the message box) or "+ Add page"; link chips; links shown as tokens in sent messages (kept after a link is removed; closed tabs can be reopened, which updates every chat that used them); only titles and cleaned addresses reach the model (no query strings)
 - [x] M5: Read-only agent: linked pages can be read by the assistant (read_page / list_linked_tabs tools, linked tabs only, 8 reads and 6 rounds per reply, pages treated as untrusted data, no acting or file tools), each read shown in the chat; models record whether they support tools and images, with a note when a model cannot read pages; dev startup watchdog reloads a page that fails to start
-- [ ] M5b: Web search tool for the agent (OpenRouter built-in web search first; optional own-key providers or a user-supplied SearXNG address later; results treated as untrusted)
+- [-] M5b: Web search by OpenRouter built-in search. Dropped: the app runs its own Brave search tool instead (Tools step 3), and no other provider is planned.
 - [x] M6 timeline: a reply keeps thinking, tool calls and answer text in the order they happened; tool calls expand to show exactly what was called
 - [x] M6a: look_at_page, a read-only tool that lists a linked page's buttons, links, fields and headings as numbered controls (names cleaned, typed text never shown, password/card fields marked sensitive, capped in size)
 - [x] M6b: Acting agent: click, type, press keys, scroll, choose, go to an address, open new tabs (linked automatically); every action but scrolling is approved on a card in the chat (risky ones always ask); never types in password/card/code fields or accepts terms; linked tabs only, 25 actions per reply; the tab it acts in is focused and marked; choice buttons the assistant can offer (click to send); Retry on the newest message and Branch on older ones
@@ -46,6 +46,8 @@ After the agent (M5/M6), in this order of likelihood:
 - Lead tab whiteboard: replace each Space's overview with a whiteboard you can draft on (choose the drawing approach first; `leadData` is already reserved in the saved model). Skipped for now.
 - OpenCode provider (only OpenRouter is planned for now; the provider interface leaves room)
 - Drag-and-drop tabs between and within Spaces (right-click "Move to Space" covers it for now)
+- Multiple windows (a second browser window; the first step toward incognito)
+- Incognito: a private window that keeps no history, cookies or chats, plus a private chat mode. Needs multiple windows first.
 - Remember window size and position
 - Separate logins per Space (profiles); currently all Spaces share one cookie jar
 - Home page as a centred AI chat prompt / address bar (the new-tab page is one constant, `NEW_TAB_URL`)
