@@ -26,6 +26,7 @@ import {
 } from './chatLinks';
 import type { ArtifactKind } from './artifacts';
 import type { FileReading } from './artifactTools';
+import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import {
   messageMenuItems,
   modelMenuItems,
@@ -87,6 +88,14 @@ export function createChatService(options: {
   readPage(tabId: number, signal: AbortSignal): Promise<PageRead>;
   // Look at a tab's controls (the numbered outline).
   outlinePage(tabId: number, signal: AbortSignal): Promise<OutlineRead>;
+  // More ways to look at a tab (read-only; see pageEyes.ts).
+  screenshotPage(tabId: number, signal: AbortSignal): Promise<ShotRead>;
+  findInPage(
+    tabId: number,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<FindRead>;
+  readTables(tabId: number, signal: AbortSignal): Promise<TablesRead>;
   // The full address a numbered link on a tab goes to (or null).
   linkAddress(
     tabId: number,
@@ -340,6 +349,9 @@ export function createChatService(options: {
             createSpace: (input) => options.spaceStore.create(chatId, input),
             readPage: options.readPage,
             outlinePage: options.outlinePage,
+            screenshotPage: options.screenshotPage,
+            findInPage: options.findInPage,
+            readTables: options.readTables,
             linkAddress: options.linkAddress,
             readLink: (url, signal) => readLinkText(url, signal),
             rememberedAddresses: () => rememberedAddresses(chatId),

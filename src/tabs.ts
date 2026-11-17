@@ -51,6 +51,8 @@ import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { chatMarkdown } from './chatExport';
 import { exportFileName, spaceMarkdown } from './spaceExport';
 import type { FileReading } from './artifactTools';
+import { fitWithin, MAX_SHOT_SIDE } from './pageEyes';
+import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import { parsePdfText } from './pdfTextFormat';
 import type { PdfTextResult } from './pdfTextFormat';
 import {
@@ -96,7 +98,14 @@ import {
 } from './pageActions';
 import type { Cdp, DoneResult } from './pageActions';
 import { buildOutline } from './pageOutline';
-import { readAccessibilityTree, readPageText, withCdp } from './pageReader';
+import {
+  captureScreenshotVia,
+  findInPageVia,
+  readAccessibilityTree,
+  readPageText,
+  readTablesVia,
+  withCdp,
+} from './pageReader';
 import { createNamer } from './aiNamer';
 import { findBarRect } from './findBar';
 import { registerDownloads } from './downloadManager';
@@ -2457,6 +2466,76 @@ export async function createTabs(
     }
   };
 
+  // A picture of what a tab shows (shrunk if it is big), for a model that can see.
+  const screenshotTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<ShotRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const raw = await withCdp(ready.contents, 10_000, captureScreenshotVia);
+      const bytes = Buffer.from(raw, 'base64');
+      const picture = nativeImage.createFromBuffer(bytes);
+      const size = picture.getSize();
+      const fit = fitWithin(size.width, size.height, MAX_SHOT_SIDE);
+      const shrunk =
+        !picture.isEmpty() &&
+        (fit.width !== size.width || fit.height !== size.height);
+      const out = shrunk
+        ? picture.resize({
+            width: fit.width,
+            height: fit.height,
+            quality: 'good',
+          })
+        : picture;
+      return {
+        ok: true,
+        title: ready.contents.getTitle(),
+        url: ready.contents.getURL(),
+        mime: 'image/jpeg',
+        data: shrunk ? out.toJPEG(80).toString('base64') : raw,
+        width: shrunk ? fit.width : size.width,
+        height: shrunk ? fit.height : size.height,
+      };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
+  // Find text in a tab, scrolling to the first match.
+  const findInTab = async (
+    tabId: number,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<FindRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const found = await withCdp(ready.contents, 8000, (cdp) =>
+        findInPageVia(cdp, text),
+      );
+      return { ok: true, ...found };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
+  // The tables of a tab.
+  const tablesInTab = async (
+    tabId: number,
+    signal: AbortSignal,
+  ): Promise<TablesRead> => {
+    const ready = await prepareTab(tabId, signal);
+    if (!ready.ok) return ready;
+    try {
+      const read = await withCdp(ready.contents, 8000, readTablesVia);
+      return { ok: true, ...read };
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+  };
+
   // The outline of a tab: its controls, as a numbered list.
   const outlineTab = async (
     tabId: number,
@@ -2747,6 +2826,9 @@ export async function createTabs(
     getWorkspace: workspace,
     readPage: readTab,
     outlinePage: outlineTab,
+    screenshotPage: screenshotTab,
+    findInPage: findInTab,
+    readTables: tablesInTab,
     // Where a numbered link goes (its full address, read from the page).
     linkAddress: async (tabId, control, signal) => {
       const ready = await prepareTab(tabId, signal);

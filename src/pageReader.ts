@@ -29,6 +29,78 @@ const READ_SCRIPT = `(() => {
   };
 })()`;
 
+// Finds a piece of text in the visible text of the page, collects a few pieces
+// around it, and scrolls to the first match and selects it (so the user sees it too).
+// The text to find is passed in as a JSON string literal, never as code.
+const FIND_SCRIPT = (needle: string) => `((needle) => {
+  const lower = needle.toLowerCase();
+  const root = document.body;
+  if (!root) return { count: 0, snippets: [], scrolled: false };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      const tag = parent.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') return NodeFilter.FILTER_REJECT;
+      const style = getComputedStyle(parent);
+      if (style.display === 'none' || style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let count = 0;
+  const snippets = [];
+  let first = null;
+  while (walker.nextNode() && count < 500) {
+    const node = walker.currentNode;
+    const text = node.nodeValue || '';
+    const low = text.toLowerCase();
+    let at = low.indexOf(lower);
+    while (at >= 0 && count < 500) {
+      count++;
+      if (!first) first = { node, at };
+      if (snippets.length < 8) {
+        const from = Math.max(0, at - 60);
+        const to = Math.min(text.length, at + needle.length + 60);
+        snippets.push(text.slice(from, to).replace(/\\s+/g, ' ').trim());
+      }
+      at = low.indexOf(lower, at + lower.length);
+    }
+  }
+  let scrolled = false;
+  if (first) {
+    try {
+      const range = document.createRange();
+      range.setStart(first.node, first.at);
+      range.setEnd(first.node, first.at + needle.length);
+      first.node.parentElement.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      scrolled = true;
+    } catch (error) {
+      scrolled = false;
+    }
+  }
+  return { count, snippets, scrolled, title: String(document.title || ''), url: String(location.href || '') };
+})(${JSON.stringify(needle)})`;
+
+// The page's visible tables: a few of them, with a limited number of rows and columns.
+const TABLES_SCRIPT = `(() => {
+  const visible = (el) => {
+    const style = getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const all = Array.from(document.querySelectorAll('table')).filter(visible);
+  const tables = all.slice(0, 10).map((table) => ({
+    caption: table.caption ? String(table.caption.innerText).slice(0, 200) : '',
+    totalRows: table.rows.length,
+    rows: Array.from(table.rows).slice(0, 60).map((row) =>
+      Array.from(row.cells).slice(0, 12).map((cell) => String(cell.innerText).replace(/\\s+/g, ' ').trim().slice(0, 200))
+    ),
+  }));
+  return { tables, total: all.length, title: String(document.title || ''), url: String(location.href || '') };
+})()`;
+
 const DEFAULT_LIMIT_MS = 8000;
 
 type Debugger = WebContents['debugger'];
@@ -77,9 +149,12 @@ export function withCdp<T>(
   );
 }
 
-// Read the text of the page that `cdp` is attached to (one fixed script, in an
-// isolated world). Used with a debugger the caller has already attached.
-export async function readPageTextVia(cdp: Cdp): Promise<PageText> {
+// Run one fixed script in an isolated world of the page that `cdp` is attached to,
+// and give back what it returned (untrusted data).
+async function evaluateIsolated(
+  cdp: Cdp,
+  expression: string,
+): Promise<unknown> {
   const tree = (await cdp.send('Page.getFrameTree')) as {
     frameTree?: { frame?: { id?: unknown } };
   };
@@ -95,12 +170,101 @@ export async function readPageTextVia(cdp: Cdp): Promise<PageText> {
   }
 
   const evaluated = (await cdp.send('Runtime.evaluate', {
-    expression: READ_SCRIPT,
+    expression,
     contextId: world.executionContextId,
     returnByValue: true,
     timeout: 4000,
   })) as { result?: { value?: unknown } };
-  const value = evaluated.result?.value;
+  return evaluated.result?.value;
+}
+
+// Find text on the page (and scroll to the first match). See FIND_SCRIPT.
+export async function findInPageVia(
+  cdp: Cdp,
+  needle: string,
+): Promise<{
+  count: number;
+  snippets: string[];
+  scrolled: boolean;
+  title: string;
+  url: string;
+}> {
+  const value = await evaluateIsolated(cdp, FIND_SCRIPT(needle));
+  const v = value as Record<string, unknown> | null;
+  if (
+    typeof v !== 'object' ||
+    v === null ||
+    typeof v.count !== 'number' ||
+    !Array.isArray(v.snippets)
+  ) {
+    throw new Error('unreadable');
+  }
+  return {
+    count: v.count,
+    snippets: v.snippets.filter((s): s is string => typeof s === 'string'),
+    scrolled: v.scrolled === true,
+    title: typeof v.title === 'string' ? v.title : '',
+    url: typeof v.url === 'string' ? v.url : '',
+  };
+}
+
+// The page's tables (see TABLES_SCRIPT).
+export async function readTablesVia(cdp: Cdp): Promise<{
+  tables: { caption: string; rows: string[][]; totalRows: number }[];
+  total: number;
+  title: string;
+  url: string;
+}> {
+  const v = (await evaluateIsolated(cdp, TABLES_SCRIPT)) as Record<
+    string,
+    unknown
+  > | null;
+  if (typeof v !== 'object' || v === null || !Array.isArray(v.tables)) {
+    throw new Error('unreadable');
+  }
+  const tables = v.tables.flatMap((t) => {
+    const table = t as Record<string, unknown>;
+    if (!Array.isArray(table.rows)) return [];
+    return [
+      {
+        caption: typeof table.caption === 'string' ? table.caption : '',
+        totalRows:
+          typeof table.totalRows === 'number'
+            ? table.totalRows
+            : table.rows.length,
+        rows: table.rows.map((row) =>
+          Array.isArray(row)
+            ? row.filter((cell): cell is string => typeof cell === 'string')
+            : [],
+        ),
+      },
+    ];
+  });
+  return {
+    tables,
+    total: typeof v.total === 'number' ? v.total : tables.length,
+    title: typeof v.title === 'string' ? v.title : '',
+    url: typeof v.url === 'string' ? v.url : '',
+  };
+}
+
+// A picture of what the page shows (the visible part), as base64 JPEG bytes.
+export async function captureScreenshotVia(cdp: Cdp): Promise<string> {
+  const shot = (await cdp.send('Page.captureScreenshot', {
+    format: 'jpeg',
+    quality: 80,
+    fromSurface: true,
+  })) as { data?: unknown };
+  if (typeof shot.data !== 'string' || shot.data === '') {
+    throw new Error('no-screenshot');
+  }
+  return shot.data;
+}
+
+// Read the text of the page that `cdp` is attached to (one fixed script, in an
+// isolated world). Used with a debugger the caller has already attached.
+export async function readPageTextVia(cdp: Cdp): Promise<PageText> {
+  const value = await evaluateIsolated(cdp, READ_SCRIPT);
   if (
     typeof value === 'object' &&
     value !== null &&

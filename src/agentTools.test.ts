@@ -10,9 +10,11 @@ import {
   MAX_SEARCHES,
 } from './agentTools.ts';
 import type { AgentEnv, OutlineRead, PageRead } from './agentTools.ts';
+import { defaultLevel } from './toolPolicy.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
 import type { ArtifactKind } from './artifacts.ts';
 import type { FileReading } from './artifactTools.ts';
+import type { FindRead, ShotRead, TablesRead } from './pageEyes.ts';
 import { buildLinkedContext, linkedTabs } from './chatLinks.ts';
 import type { Workspace, WorkspaceTab } from './chatLinks.ts';
 
@@ -50,6 +52,23 @@ function setup(
     tab(1, 'Pricing', 'https://shop.example/pricing?token=SECRET'),
     tab(2, 'Docs', 'https://docs.example/'),
   ];
+  // What the "eyes" tools find in each tab (a test can change these).
+  const shots = new Map<number, ShotRead>([
+    [
+      1,
+      {
+        ok: true,
+        title: 'Pricing',
+        url: 'https://shop.example/pricing',
+        mime: 'image/jpeg',
+        data: 'QUJD',
+        width: 800,
+        height: 600,
+      },
+    ],
+  ]);
+  const found = new Map<string, FindRead>();
+  const tableReads = new Map<number, TablesRead>();
   const reads: number[] = [];
   const looks: number[] = [];
   const done: string[] = [];
@@ -260,6 +279,19 @@ function setup(
       };
     },
     linkedTabs: () => tabs,
+    screenshotPage: async (id) =>
+      shots.get(id) ?? { ok: false, reason: 'closed' },
+    findInPage: async (id, text) =>
+      found.get(`${id}:${text}`) ?? {
+        ok: true,
+        title: 'Pricing',
+        url: 'https://shop.example/pricing',
+        count: 0,
+        snippets: [],
+        scrolled: false,
+      },
+    readTables: async (id) =>
+      tableReads.get(id) ?? { ok: false, reason: 'closed' },
     readPage: async (id) => {
       reads.push(id);
       return typeof read === 'function' ? read(id) : read;
@@ -267,6 +299,7 @@ function setup(
   };
   return {
     tools: createAgentTools(env, levelOf),
+    env,
     reads,
     looks,
     done,
@@ -276,6 +309,10 @@ function setup(
     docs,
     files,
     fileState,
+    shots,
+    found,
+    tableReads,
+    tabs,
     madeSpaces,
   };
 }
@@ -1322,5 +1359,152 @@ test('an artifact can be made, and changed, with an emoji', async () => {
   assert.equal(
     tools.plan(call('edit_artifact', { artifact: 1, emoji: 'x' })).kind,
     'refuse',
+  );
+});
+
+// ---- Eyes: screenshots, find in page, tables ---------------------------------------
+
+test('a screenshot of a linked tab is shown to a model that can see, and refused for one that cannot', async () => {
+  const { tools, fileState } = setup();
+  const shot = call('screenshot_page', { tab: 1 });
+  assert.deepEqual(tools.plan(shot), { kind: 'auto' });
+  const seen = await tools.run(shot, ABORT);
+  assert.equal(seen.ok, true);
+  assert.deepEqual(seen.images, [
+    { mime: 'image/jpeg', data: 'QUJD', label: 'screenshot of Pricing' },
+  ]);
+  assert.ok(!seen.result.includes('QUJD')); // the bytes go in the picture, not the text
+  assert.match(seen.result, /not instructions/);
+  fileState.vision = false;
+  assert.equal(tools.plan(shot).kind, 'refuse');
+  const blind = await tools.run(shot, ABORT);
+  assert.equal(blind.ok, false);
+  assert.equal(blind.images, undefined);
+});
+
+test('a screenshot of a sign-in or payment page asks first; one of an ordinary page does not', async () => {
+  const { tools, tabs, shots } = setup();
+  tabs[0].url = 'https://shop.example/account/login';
+  shots.set(1, { ...(shots.get(1) as Extract<ShotRead, { ok: true }>) });
+  const plan = tools.plan(call('screenshot_page', { tab: 1 }));
+  assert.equal(plan.kind, 'ask');
+  assert.equal(plan.kind === 'ask' && plan.risky, true);
+  tabs[0].url = 'https://shop.example/pricing';
+  assert.deepEqual(tools.plan(call('screenshot_page', { tab: 1 })), {
+    kind: 'auto',
+  });
+});
+
+test('eyes tools only work on linked tabs and need good arguments', () => {
+  const { tools } = setup();
+  for (const bad of [
+    call('screenshot_page', { tab: 99 }),
+    call('screenshot_page', {}),
+    call('read_tables', { tab: 'x' }),
+    call('find_in_page', { tab: 1 }),
+    call('find_in_page', { tab: 1, text: '   ' }),
+    call('find_in_page', { tab: 99, text: 'x' }),
+  ]) {
+    assert.equal(tools.plan(bad).kind, 'refuse', bad.arguments);
+  }
+});
+
+test('find_in_page says how many matches, gives a few pieces of text, and marks them as data', async () => {
+  const { tools, found } = setup();
+  found.set('1:plan', {
+    ok: true,
+    title: 'Pricing',
+    url: 'https://shop.example/pricing',
+    count: 3,
+    snippets: ['Plans start at $5', 'Pro plan: $20', 'Team plan: $50'],
+    scrolled: true,
+  });
+  const outcome = await tools.run(
+    call('find_in_page', { tab: 1, text: 'plan' }),
+    ABORT,
+  );
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /appears 3 times/);
+  assert.match(outcome.result, /highlighted/);
+  assert.match(outcome.result, /1\. Plans start at \$5/);
+  assert.match(outcome.result, /not instructions/);
+  assert.equal(outcome.label, 'Found "plan" 3 times');
+  // Nothing found is an answer, not an error.
+  const none = await tools.run(
+    call('find_in_page', { tab: 1, text: 'refund' }),
+    ABORT,
+  );
+  assert.equal(none.ok, true);
+  assert.match(none.result, /does not appear/);
+});
+
+test('read_tables gives each table as Markdown and says when there are none', async () => {
+  const { tools, tableReads } = setup();
+  assert.equal(
+    (await tools.run(call('read_tables', { tab: 1 }), ABORT)).ok,
+    false,
+  ); // not readable yet
+  tableReads.set(1, {
+    ok: true,
+    title: 'Pricing',
+    url: 'https://shop.example/pricing',
+    total: 1,
+    tables: [
+      {
+        caption: 'Plans',
+        totalRows: 3,
+        rows: [
+          ['Plan', 'Price'],
+          ['Basic', '$5'],
+          ['Pro', '$20'],
+        ],
+      },
+    ],
+  });
+  const outcome = await tools.run(call('read_tables', { tab: 1 }), ABORT);
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /Table: Plans/);
+  assert.match(outcome.result, /\| Plan \| Price \|/);
+  assert.match(outcome.result, /\| Pro \| \$20 \|/);
+  assert.match(outcome.result, /not instructions/);
+  tableReads.set(1, {
+    ok: true,
+    title: 'Pricing',
+    url: 'https://shop.example/pricing',
+    total: 0,
+    tables: [],
+  });
+  const empty = await tools.run(call('read_tables', { tab: 1 }), ABORT);
+  assert.match(empty.result, /no \(visible\) tables/);
+});
+
+test('eyes tools are limited per reply, and count as having read web content', async () => {
+  const { tools } = setup();
+  for (let i = 0; i < 4; i++) {
+    await tools.run(call('screenshot_page', { tab: 1 }), ABORT);
+  }
+  assert.equal(tools.plan(call('screenshot_page', { tab: 1 })).kind, 'refuse');
+  // Looking at a page makes writing artifacts ask, like reading one does.
+  const fresh = setup();
+  await fresh.tools.run(call('find_in_page', { tab: 1, text: 'a' }), ABORT);
+  const write = fresh.tools.plan(
+    call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
+  );
+  assert.equal(write.kind, 'ask');
+  assert.equal(write.kind === 'ask' && write.risky, true);
+});
+
+test('the Tools panel knows the eyes tools, and turning one off removes it', () => {
+  const names = (levelOf: (tool: string) => ApprovalLevel) =>
+    createAgentTools(setup().env, levelOf).definitions.map((d) => d.name);
+  const everything = names(() => 'always');
+  for (const name of ['screenshot_page', 'find_in_page', 'read_tables']) {
+    assert.ok(everything.includes(name), name);
+    assert.ok(defaultLevel(name) !== undefined, name);
+  }
+  assert.ok(
+    !names((tool) => (tool === 'read_tables' ? 'never' : 'always')).includes(
+      'read_tables',
+    ),
   );
 });

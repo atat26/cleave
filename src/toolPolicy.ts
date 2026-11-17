@@ -82,6 +82,31 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     changesThings: false,
   },
   {
+    name: 'screenshot_page',
+    group: 'look',
+    title: 'Take a screenshot',
+    summary:
+      'Look at what a tab shows, as a picture (needs a model that can see images). Asks first on sign-in, account and payment pages.',
+    defaultLevel: 'if-safe',
+    changesThings: false,
+  },
+  {
+    name: 'find_in_page',
+    group: 'look',
+    title: 'Find text on a page',
+    summary: 'Find a word or phrase, scroll to it and highlight it.',
+    defaultLevel: 'always',
+    changesThings: false,
+  },
+  {
+    name: 'read_tables',
+    group: 'look',
+    title: 'Read tables',
+    summary: "Read a page's tables as rows and columns.",
+    defaultLevel: 'always',
+    changesThings: false,
+  },
+  {
     name: 'click',
     group: 'act',
     title: 'Click',
