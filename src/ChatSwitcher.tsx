@@ -5,10 +5,9 @@ import { NameButton } from './NameButton';
 import { Icon } from './ui/Icon';
 
 // The conversation's name, with controls to manage your chats: click the name to
-// switch chats, start a new one, rename or delete the current one. This bar only
-// shows next to the page, where "+" opens a new tab (its page has the box to start a
-// chat from; "New chat" is in the name's menu). Chats are independent of Spaces and
-// tabs.
+// switch chats, start a new one, rename or delete the current one; "+" starts a
+// new chat straight away (an empty chat is reused, never piled up). Chats are
+// independent of Spaces and tabs.
 //
 // `renameRequest` is set when "Rename chat" is chosen from the menu, which turns
 // the name into a text box.
@@ -99,7 +98,7 @@ export function ChatSwitcher({
       <IconButton
         icon="plus"
         className="reveal"
-        label="New tab"
+        label="New chat"
         size="sm"
         onClick={() => window.browserApi.newChat()}
       />

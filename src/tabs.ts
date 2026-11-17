@@ -5218,15 +5218,11 @@ export async function createTabs(
         ),
       );
     },
-    // The "+" on the chat. With only the chat showing it is the new chat screen. With
-    // the page showing too (or alone) it is a new tab, whose page has its own box.
+    // The "+" on the chat: a new chat (the empty one is reused, so pressing it again
+    // and again makes nothing new). Keep the keyboard in the chat to type straight away.
     'chats:new': () => {
-      if (state.settings.viewMode === 'chat') {
-        chatMenuActions.newChat();
-        win.webContents.focus();
-      } else {
-        openTab(newTabUrl(), currentSpaceId());
-      }
+      chatMenuActions.newChat();
+      win.webContents.focus();
     },
     'chats:select': (id) => {
       if (isId(id)) chatMenuActions.selectChat(id);
