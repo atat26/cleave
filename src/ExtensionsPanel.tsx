@@ -71,9 +71,11 @@ function Row({ item }: { item: ExtensionRow }) {
             className="truncate muted"
             style={{ display: 'block', fontSize: 'var(--fs-xs)' }}
           >
-            {item.enabled && !item.loaded
-              ? 'Could not start'
-              : `Version ${item.version}`}
+            {item.review
+              ? item.review
+              : item.enabled && !item.loaded
+                ? 'Could not start'
+                : `Version ${item.version}`}
           </span>
         </span>
         <IconButton
@@ -118,13 +120,11 @@ function Row({ item }: { item: ExtensionRow }) {
   );
 }
 
-// The Extensions panel: the extensions you added. Add one from a folder; switch
-// it off or remove it. (Pinning to the toolbar and the Chrome Web Store come
-// later.)
+// The Extensions panel: the extensions you added. Add one from the Chrome Web Store
+// or from a folder; switch it off, pin it, or remove it.
 export function ExtensionsPanel() {
   const [items, setItems] = useState<ExtensionRow[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,17 +140,8 @@ export function ExtensionsPanel() {
     };
   }, []);
 
-  const add = async () => {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await window.browserApi.extensionsAddFolder();
-      if (result.ok) setMessage(`Added ${result.name}.`);
-      else if (result.error !== 'Cancelled.') setMessage(result.error);
-    } finally {
-      setBusy(false);
-    }
-  };
+  // What came of adding one from a folder.
+  useEffect(() => window.browserApi.onExtensionsMessage(setMessage), []);
 
   return (
     <div>
@@ -161,7 +152,19 @@ export function ExtensionsPanel() {
         <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
           Only add ones you trust.
         </span>
-        <Button size="sm" icon="plus" loading={busy} onClick={() => void add()}>
+        <Button
+          size="sm"
+          icon="plus"
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            setMessage(null);
+            window.browserApi.showExtensionsAddMenu(
+              box.right - 220,
+              box.bottom + 4,
+            );
+          }}
+        >
           Add extension…
         </Button>
       </div>
@@ -175,8 +178,8 @@ export function ExtensionsPanel() {
       )}
       {items === null ? null : items.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>
-          No extensions yet. Choose “Add extension…” and pick the folder of an
-          unpacked extension.
+          No extensions yet. Choose “Add extension…” to get one from the Chrome
+          Web Store or from a folder.
         </p>
       ) : (
         items.map((item) => <Row key={item.key} item={item} />)

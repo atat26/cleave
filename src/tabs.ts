@@ -70,6 +70,11 @@ import { registerDownloads } from './downloadManager';
 import { registerExtensions } from './extensionManager';
 import type { ExtensionManager } from './extensionManager';
 import {
+  defaultExtensionSettings,
+  parseExtensionSettings,
+  withExtensionSettings,
+} from './extensionSettings';
+import {
   defaultExtensions,
   describePermissions,
   parseExtensions,
@@ -235,8 +240,10 @@ import {
   toolsMenuItems,
   zoomChipMenuItems,
   downloadMenuItems,
+  addExtensionMenuItems,
   extensionMenuItems,
   libraryMenuItems,
+  parseAddExtensionChoice,
   parsePuzzleChoice,
   puzzleMenuItems,
   newTabSpacesMenuItems,
@@ -508,6 +515,20 @@ export async function createTabs(
     defaultExtensions,
   );
   const extensionsSaver = createSaver(extensionsFile, () => extensionList);
+  // What you chose about extensions (see extensionSettings.ts).
+  const extensionSettingsFile = path.join(
+    app.getPath('userData'),
+    'extension-settings.json',
+  );
+  let extensionSettings = await loadJson(
+    extensionSettingsFile,
+    parseExtensionSettings,
+    defaultExtensionSettings,
+  );
+  const extensionSettingsSaver = createSaver(
+    extensionSettingsFile,
+    () => extensionSettings,
+  );
   // Set once the window exists (see registerExtensions below).
   let extensions: ExtensionManager | null = null;
 
@@ -4053,6 +4074,28 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
+    // "Add extension…" in the Extensions panel: from the Chrome Web Store (it opens
+    // in a tab) or from a folder.
+    'extensions:add-menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        addExtensionMenuItems(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseAddExtensionChoice(choice);
+          if (parsed?.action === 'store') {
+            openTab(
+              'https://chromewebstore.google.com/',
+              model.findTab(state, activeTabId() ?? -1)?.spaceId ?? null,
+            );
+          } else if (parsed?.action === 'folder') {
+            void addExtensionFromFolder();
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     // The puzzle button in the toolbar: the extensions that have a button. The
     // button's box (in the window) says where a popup opens from.
     'extensions:puzzle': (x, y, box) => {
@@ -4869,6 +4912,7 @@ export async function createTabs(
     session: session.defaultSession,
     window: win,
     getList: () => extensionList,
+    getSettings: () => extensionSettings,
     onPopup: (extensionId) => {
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send('extensions:popup', extensionId);
@@ -4929,18 +4973,38 @@ export async function createTabs(
         'It stops working and the data it saved in this browser is deleted. You can add it again later.',
       button: 'Remove',
     });
-    if (yes) manager.remove(key);
+    if (yes) await manager.remove(key);
   };
-  ipcMain.handle('extensions:add-folder', async (event) => {
-    if (!fromWindow(event)) throw new Error('Not allowed.');
+  // Pick a folder and add the extension in it (the answer is shown in the panel).
+  const addExtensionFromFolder = async () => {
     const picked = await dialog.showOpenDialog(win, {
       title: 'Choose the folder of an unpacked extension',
       properties: ['openDirectory'],
     });
-    if (picked.canceled || picked.filePaths.length === 0) {
-      return { ok: false, error: 'Cancelled.' };
+    if (picked.canceled || picked.filePaths.length === 0) return;
+    const result = await manager.installFolder(picked.filePaths[0]);
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send(
+        'extensions:message',
+        result.ok
+          ? `Added ${result.name}.`
+          : result.error === 'Cancelled.'
+            ? null
+            : result.error,
+      );
     }
-    return manager.installFolder(picked.filePaths[0]);
+  };
+  ipcMain.handle('extension-settings:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return extensionSettings;
+  });
+  ipcMain.handle('extension-settings:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    extensionSettings = withExtensionSettings(extensionSettings, changes);
+    extensionSettingsSaver.schedule();
+    // Switching it on checks straight away.
+    if (extensionSettings.autoUpdate) void manager.checkForUpdates();
+    return extensionSettings;
   });
   ipcMain.handle(
     'extensions:set-enabled',
@@ -4958,6 +5022,19 @@ export async function createTabs(
   // start, since a native folder picker cannot be driven by a test.
   if (!app.isPackaged && process.env.AIB_TEST_EXTENSION) {
     void manager.installFolder(process.env.AIB_TEST_EXTENSION, true);
+  }
+  if (!app.isPackaged && process.env.AIB_TEST_REMOVE_EXTENSION_ID) {
+    // For testing only: remove an extension by its id, a while after start, with
+    // no question (a test cannot click a native window).
+    setTimeout(() => {
+      const found = extensionList.items.find(
+        (e) => e.id === process.env.AIB_TEST_REMOVE_EXTENSION_ID,
+      );
+      if (found) void manager.remove(found.key);
+    }, 20_000);
+  }
+  if (!app.isPackaged && process.env.AIB_TEST_STORE_EXTENSION) {
+    void manager.installStoreForTest(process.env.AIB_TEST_STORE_EXTENSION);
   }
   ipcMain.handle('downloads:list', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
@@ -5483,6 +5560,7 @@ ${artifact.content.slice(0, 1500)}`;
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
     extensionsSaver.flushSync();
+    extensionSettingsSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();

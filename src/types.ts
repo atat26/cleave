@@ -7,6 +7,7 @@ import type { SiteDataRow, SiteGroup } from './siteData';
 import type { SearchEngineSettings } from './searchEngine';
 import type { NewTabSettings } from './newTabSettings';
 import type { ExtensionRecord } from './extensionList';
+import type { ExtensionSettings } from './extensionSettings';
 
 // A button's box on the window.
 export interface ExtensionBox {
@@ -428,9 +429,17 @@ export interface BrowserApi {
   newTabShowHidden: () => Promise<NewTabSettings>;
   // Extensions (the list; the Extensions panel comes in the next step).
   extensionsList: () => Promise<ExtensionRow[]>;
-  extensionsAddFolder: () => Promise<
-    { ok: true; name: string } | { ok: false; error: string }
-  >;
+  // The Add extension menu: from the Chrome Web Store or from a folder. What came
+  // of a folder (a line to show, or null to clear it) arrives as a message.
+  showExtensionsAddMenu: (x: number, y: number) => void;
+  onExtensionsMessage: (
+    callback: (message: string | null) => void,
+  ) => () => void;
+  // Settings > Extensions.
+  extensionSettingsGet: () => Promise<ExtensionSettings>;
+  extensionSettingsSet: (changes: {
+    autoUpdate?: boolean;
+  }) => Promise<ExtensionSettings>;
   extensionsSetEnabled: (key: string, enabled: boolean) => Promise<void>;
   // Asks first (a native question), then removes.
   extensionsRemove: (key: string) => Promise<void>;

@@ -1704,6 +1704,36 @@ export function parseExtensionChoice(id: string): ExtensionChoice | null {
   return null;
 }
 
+export type AddExtensionChoice = { action: 'store' } | { action: 'folder' };
+
+// "Add extension…" in the Extensions panel: where to add one from.
+export function addExtensionMenuItems(): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'add-extension.store',
+      label: 'From the Chrome Web Store',
+      icon: 'globe',
+    },
+    {
+      type: 'item',
+      id: 'add-extension.folder',
+      label: 'From a folder…',
+      icon: 'folder',
+    },
+  ];
+}
+
+export function parseAddExtensionChoice(id: string): AddExtensionChoice | null {
+  switch (id) {
+    case 'add-extension.store':
+      return { action: 'store' };
+    case 'add-extension.folder':
+      return { action: 'folder' };
+  }
+  return null;
+}
+
 export type PuzzleChoice =
   | { action: 'open'; key: string }
   | { action: 'pin'; key: string }
