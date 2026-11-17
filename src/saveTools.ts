@@ -213,6 +213,24 @@ export function savedContent(input: {
   return `# ${cleanLabel(input.title, MAX_TITLE_CHARS) || 'Saved page'}\n\n_${kind} ${source} on ${day}._\n\n${input.text}\n`;
 }
 
+// What the right-click "Save ... as artifact" says when it could not save.
+export function saveFailureWords(
+  reason: 'empty' | 'too-long' | 'too-many' | 'unavailable',
+  what: 'page' | 'selection',
+): string {
+  const thing = what === 'selection' ? 'The selection' : 'The page';
+  switch (reason) {
+    case 'empty':
+      return `${thing} has no text to save.`;
+    case 'too-many':
+      return 'There are too many artifacts. Delete some, then try again.';
+    case 'too-long':
+      return `${thing} is too long to save as one artifact.`;
+    default:
+      return `${thing} could not be read.`;
+  }
+}
+
 const tabName = (tab: WorkspaceTab) =>
   cleanLabel(tab.title) || (sanitizeUrl(tab.url) ?? 'Untitled tab');
 

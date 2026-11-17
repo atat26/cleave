@@ -1230,6 +1230,7 @@ export type PageChoice =
   | { action: 'bookmark' }
   | { action: 'save-to-space'; spaceId: number }
   | { action: 'save-to-new-space' }
+  | { action: 'save-as-artifact' }
   | { action: 'zoom-in' }
   | { action: 'zoom-out' }
   | { action: 'zoom-reset' }
@@ -1249,7 +1250,8 @@ export type PageChoice =
   | { action: 'copy-image-address' }
   | { action: 'copy-selection' }
   | { action: 'search-selection' }
-  | { action: 'add-selection-to-chat' };
+  | { action: 'add-selection-to-chat' }
+  | { action: 'save-selection-as-artifact' };
 
 // Right-click on an empty part of a page.
 export function pageMenuItems(options: {
@@ -1314,6 +1316,12 @@ export function pageMenuItems(options: {
         (id) => `page.save-space:${id}`,
         'page.save-new-space',
       ),
+    },
+    {
+      type: 'item',
+      id: 'page.save-as-artifact',
+      label: 'Save page as artifact',
+      icon: 'doc',
     },
     { type: 'separator' },
     {
@@ -1452,6 +1460,12 @@ export function pageSelectionMenuItems(selection: string): MenuItem[] {
       label: 'Add selection to chat',
       icon: 'chat',
     },
+    {
+      type: 'item',
+      id: 'page.save-selection-as-artifact',
+      label: 'Save selection as artifact',
+      icon: 'doc',
+    },
   ];
 }
 
@@ -1467,6 +1481,10 @@ export function parsePageChoice(id: string): PageChoice | null {
       return { action: 'find' };
     case 'page.bookmark':
       return { action: 'bookmark' };
+    case 'page.save-as-artifact':
+      return { action: 'save-as-artifact' };
+    case 'page.save-selection-as-artifact':
+      return { action: 'save-selection-as-artifact' };
     case 'page.save-new-space':
       return { action: 'save-to-new-space' };
     case 'page.zoom-in':

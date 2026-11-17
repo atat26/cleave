@@ -72,7 +72,8 @@ import type { SkillsState } from './skills';
 import { exportFileName, spaceMarkdown } from './spaceExport';
 import type { FileReading } from './artifactTools';
 import { fitWithin, MAX_SHOT_SIDE } from './pageEyes';
-import { cleanSavedText, savedContent } from './saveTools';
+import { cleanSavedText, saveFailureWords, savedContent } from './saveTools';
+import type { SaveResult } from './saveTools';
 import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import { parsePdfText } from './pdfTextFormat';
 import type { PdfTextResult } from './pdfTextFormat';
@@ -2609,6 +2610,98 @@ export async function createTabs(
     return { ok: true, contents };
   };
 
+  // Save a page's text (or just the selected text) as a Markdown artifact. The text is
+  // read straight from the page and never passes through a model. Used by the
+  // assistant's save_page_as_artifact and by the page's right-click menu.
+  const savePageAsArtifact = async (
+    contents: Electron.WebContents,
+    what: 'page' | 'selection',
+    title: string | null,
+    spaceId: number | null,
+    fallbackText = '',
+  ): Promise<SaveResult> => {
+    let page: { title: string; url: string; text: string };
+    try {
+      page =
+        what === 'selection'
+          ? await withCdp(contents, 8000, readSelectionVia)
+          : await readPageText(contents);
+    } catch {
+      return { ok: false, reason: 'unavailable' };
+    }
+    // If the page would not give the selection back, use what the menu was given.
+    const text = cleanSavedText(page.text) || cleanSavedText(fallbackText);
+    if (text === '') return { ok: false, reason: 'empty' };
+    const name = title ?? (cleanLabel(page.title, 80) || 'Saved page');
+    const made = artifactsModel.createArtifact(
+      artifacts,
+      {
+        kind: 'markdown',
+        title: name,
+        content: savedContent({
+          title: name,
+          url: page.url,
+          what,
+          text,
+          now: new Date(),
+        }),
+        spaceId:
+          spaceId !== null && model.findSpace(state, spaceId) ? spaceId : null,
+      },
+      Date.now(),
+    );
+    if (!made.ok) {
+      return {
+        ok: false,
+        reason:
+          made.reason === 'too-long'
+            ? 'too-long'
+            : made.reason === 'too-many'
+              ? 'too-many'
+              : 'unavailable',
+      };
+    }
+    commitArtifacts(made.state);
+    return {
+      ok: true,
+      artifactId: made.artifact.id,
+      title: made.artifact.title,
+      chars: text.length,
+    };
+  };
+
+  // "Save page as artifact" / "Save selection as artifact" in a page's right-click
+  // menu: save it in the page's Space, then show it.
+  const saveFromMenu = async (
+    tabId: number,
+    contents: Electron.WebContents,
+    what: 'page' | 'selection',
+    selectedText: string,
+  ) => {
+    const tab = model.findTab(state, tabId);
+    if (!tab || contents.isDestroyed()) return;
+    const saved = await savePageAsArtifact(
+      contents,
+      what,
+      null,
+      tab.spaceId,
+      selectedText,
+    );
+    if (saved.ok) {
+      openArtifact(saved.artifactId);
+      return;
+    }
+    const reason =
+      saved.reason === 'closed' || saved.reason === 'timeout'
+        ? 'unavailable'
+        : saved.reason;
+    void dialog.showMessageBox(win, {
+      type: 'info',
+      message: 'Nothing was saved.',
+      detail: saveFailureWords(reason, what),
+    });
+  };
+
   // The text of a tab.
   const readTab = async (
     tabId: number,
@@ -3064,64 +3157,23 @@ export async function createTabs(
       savePage: async (chatId, tabId, what, title, spaceId, signal) => {
         const ready = await prepareTab(tabId, signal);
         if (!ready.ok) return ready;
-        let page: { title: string; url: string; text: string };
-        try {
-          page =
-            what === 'selection'
-              ? await withCdp(ready.contents, 8000, readSelectionVia)
-              : await readPageText(ready.contents);
-        } catch {
-          return { ok: false, reason: 'unavailable' };
-        }
-        const text = cleanSavedText(page.text);
-        if (text === '') return { ok: false, reason: 'empty' };
-        const name = title ?? (cleanLabel(page.title, 80) || 'Saved page');
-        const made = artifactsModel.createArtifact(
-          artifacts,
-          {
-            kind: 'markdown',
-            title: name,
-            content: savedContent({
-              title: name,
-              url: page.url,
-              what,
-              text,
-              now: new Date(),
-            }),
-            spaceId:
-              spaceId !== null && model.findSpace(state, spaceId)
-                ? spaceId
-                : null,
-          },
-          Date.now(),
+        const saved = await savePageAsArtifact(
+          ready.contents,
+          what,
+          title,
+          spaceId,
         );
-        if (!made.ok) {
-          return {
-            ok: false,
-            reason:
-              made.reason === 'too-long'
-                ? 'too-long'
-                : made.reason === 'too-many'
-                  ? 'too-many'
-                  : 'unavailable',
-          };
-        }
-        commitArtifacts(made.state);
+        if (!saved.ok) return saved;
         // Link it to the chat, so the assistant can read it.
         commitChats(
           chatsModel.addRef(chats, chatId, {
             kind: 'artifact',
-            id: made.artifact.id,
-            title: made.artifact.title,
+            id: saved.artifactId,
+            title: saved.title,
             url: null,
           }),
         );
-        return {
-          ok: true,
-          artifactId: made.artifact.id,
-          title: made.artifact.title,
-          chars: text.length,
-        };
+        return saved;
       },
       bookmarkPage: async (tabId) => {
         const tab = model.findTab(state, tabId);
@@ -4248,6 +4300,12 @@ export async function createTabs(
         break;
       case 'save-to-new-space':
         saveToNewSpace();
+        break;
+      case 'save-as-artifact':
+        void saveFromMenu(tabId, contents, 'page', '');
+        break;
+      case 'save-selection-as-artifact':
+        void saveFromMenu(tabId, contents, 'selection', params.selectionText);
         break;
       case 'zoom-in':
         changeZoom(1);
