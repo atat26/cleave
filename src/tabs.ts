@@ -4556,6 +4556,10 @@ export async function createTabs(
       if (spaceId !== null && !model.findSpace(state, spaceId)) return;
       // The artifact belongs to one Space: change that first (its open tab follows).
       if (found.spaceId !== spaceId) placeArtifact(artifactId, spaceId);
+      // Dragged in from the Artifacts panel it may not be open yet: open it first.
+      if (!state.artifactTabs.some((t) => t.artifactId === artifactId)) {
+        openArtifact(artifactId);
+      }
       commit(model.placeArtifactTab(state, artifactId, beforeArtifactId));
     },
     'sidebar:move-space': (spaceId, beforeSpaceId) => {

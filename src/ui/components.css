@@ -1009,6 +1009,24 @@ button {
 .chat-card.is-compact {
   justify-content: center;
 }
+/* An artifact is being dragged over the chat: it would be added to it. */
+.chat-card.is-dropping {
+  outline: 2px dashed var(--c-accent);
+  outline-offset: -4px;
+  position: relative;
+}
+.chat-card.is-dropping::after {
+  content: 'Add to chat';
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-3);
+  padding: 2px var(--s-2);
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
 .chat-card.is-compact .chat-foot {
   padding: var(--s-2) var(--s-3);
 }

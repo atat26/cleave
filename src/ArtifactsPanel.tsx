@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ArtifactKind } from './artifacts';
+import { ARTIFACT_DRAG, artifactDragData } from './artifactDrag';
 import { SPACE_COLOR_HEX } from './colors';
 import type { ArtifactInfo, SpaceInfo } from './types';
 import { Button, IconButton, Input, ItemEmoji } from './ui/controls';
@@ -71,6 +72,13 @@ function Row({
       role="button"
       tabIndex={0}
       title={open ? 'Open in a tab' : 'Open'}
+      // Drag it onto the sidebar to open it in a Space, or onto the chat to add it
+      // to the chat. (The right-click menu has both as well.)
+      draggable={!renaming}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(ARTIFACT_DRAG, artifactDragData(item.id));
+        event.dataTransfer.effectAllowed = 'copyMove';
+      }}
       onClick={() => {
         if (!renaming) openIt();
       }}
