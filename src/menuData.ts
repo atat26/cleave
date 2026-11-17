@@ -1640,7 +1640,8 @@ export function downloadMenuItems(download: {
 export type ExtensionChoice =
   | { action: 'toggle' }
   | { action: 'remove' }
-  | { action: 'pin' };
+  | { action: 'pin' }
+  | { action: 'options' };
 
 // The right-click menu of an extension (in the Extensions panel and on its
 // toolbar button).
@@ -1648,19 +1649,28 @@ export function extensionMenuItems(extension: {
   enabled: boolean;
   pinned: boolean;
   hasAction: boolean;
+  // It has a settings page.
+  optionsPage?: string | null;
 }): MenuItem[] {
   const items: MenuItem[] = [];
   if (extension.hasAction) {
-    items.push(
-      {
-        type: 'item',
-        id: 'extension.pin',
-        label: extension.pinned ? 'Unpin from toolbar' : 'Pin to toolbar',
-        icon: 'pin',
-      },
-      { type: 'separator' },
-    );
+    items.push({
+      type: 'item',
+      id: 'extension.pin',
+      label: extension.pinned ? 'Unpin from toolbar' : 'Pin to toolbar',
+      icon: 'pin',
+    });
   }
+  if (extension.optionsPage) {
+    items.push({
+      type: 'item',
+      id: 'extension.options',
+      label: 'Options',
+      icon: 'settings',
+      disabled: !extension.enabled,
+    });
+  }
+  if (items.length > 0) items.push({ type: 'separator' });
   items.push(
     {
       type: 'item',
@@ -1688,6 +1698,8 @@ export function parseExtensionChoice(id: string): ExtensionChoice | null {
       return { action: 'remove' };
     case 'extension.pin':
       return { action: 'pin' };
+    case 'extension.options':
+      return { action: 'options' };
   }
   return null;
 }

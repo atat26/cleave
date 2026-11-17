@@ -4,6 +4,7 @@ import {
   CHAT_DEFAULT_HEIGHT,
   CHAT_MAX_HEIGHT,
   CHAT_MIN_HEIGHT,
+  isExtensionUrl,
   isPanelRelevant,
   PANEL_DEFAULT_WIDTH,
   PANEL_MAX_WIDTH,
@@ -685,4 +686,45 @@ test('a new tab has no web address, survives a restart, and closing it just remo
     ],
   });
   assert.equal(junk.tabs.length, 0);
+});
+
+test("an extension's own page (chrome-extension://<id>/...) is a valid tab address, others are not", () => {
+  const id = 'a'.repeat(32);
+  assert.equal(isExtensionUrl(`chrome-extension://${id}/options.html`), true);
+  assert.equal(isExtensionUrl(`chrome-extension://${id}`), true);
+  for (const bad of [
+    'chrome-extension://short/options.html',
+    `chrome-extension://${'z'.repeat(32)}/x`,
+    `chrome-extension://${id}evil/x`,
+    `file://${id}/x`,
+    `javascript:alert(1)`,
+    5,
+    null,
+  ]) {
+    assert.equal(isExtensionUrl(bad), false, String(bad));
+  }
+  const state = parseState({
+    tabs: [
+      {
+        id: 1,
+        url: `chrome-extension://${id}/options.html`,
+        title: 'Options',
+        favicon: null,
+        spaceId: null,
+        closed: false,
+      },
+      {
+        id: 2,
+        url: 'chrome-extension://nope/x',
+        title: 'x',
+        favicon: null,
+        spaceId: null,
+        closed: false,
+      },
+    ],
+  });
+  assert.deepEqual(
+    state.tabs.map((t) => t.id),
+    [1],
+  );
 });

@@ -1346,3 +1346,32 @@ test('the puzzle menu lists the extensions with a button; each opens or is pinne
     assert.equal(parsePuzzleChoice(bad), null, bad);
   }
 });
+
+test('an extension with a settings page gets an Options row, greyed while it is off', () => {
+  const base = {
+    enabled: true,
+    pinned: true,
+    hasAction: true,
+    optionsPage: 'options.html',
+  };
+  assert.deepEqual(menuIds(extensionMenuItems(base)), [
+    'extension.pin',
+    'extension.options',
+    'extension.toggle',
+    'extension.remove',
+  ]);
+  assert.equal(
+    entry(extensionMenuItems({ ...base, enabled: false }), 'extension.options')
+      .disabled,
+    true,
+  );
+  assert.deepEqual(
+    menuIds(
+      extensionMenuItems({ ...base, hasAction: false, optionsPage: null }),
+    ),
+    ['extension.toggle', 'extension.remove'],
+  );
+  assert.deepEqual(parseExtensionChoice('extension.options'), {
+    action: 'options',
+  });
+});

@@ -165,6 +165,16 @@ export const isWebUrl = (value: unknown): value is string =>
   value.length <= MAX_URL &&
   /^https?:\/\//i.test(value);
 
+// A page that belongs to a browser extension (its options page, for example).
+export const isExtensionUrl = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length <= MAX_URL &&
+  /^chrome-extension:\/\/[a-p]{32}(\/|$)/.test(value);
+
+// What a tab may hold: a web page, the new-tab page, or an extension's own page.
+const isTabUrl = (value: unknown): value is string =>
+  isWebUrl(value) || isNewTabPage(value) || isExtensionUrl(value);
+
 const isId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0;
 
@@ -228,7 +238,7 @@ export function parseState(raw: unknown): SavedState {
         !isRecord(item) ||
         !isId(item.id) ||
         tabIds.has(item.id) ||
-        !(isWebUrl(item.url) || isNewTabPage(item.url))
+        !isTabUrl(item.url)
       ) {
         continue;
       }
@@ -450,8 +460,7 @@ export function updateTab(
       if (tab.id !== id) return tab;
       return {
         ...tab,
-        url:
-          isWebUrl(patch.url) || isNewTabPage(patch.url) ? patch.url : tab.url,
+        url: isTabUrl(patch.url) ? patch.url : tab.url,
         title:
           typeof patch.title === 'string'
             ? patch.title.slice(0, MAX_TITLE)

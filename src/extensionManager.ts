@@ -17,6 +17,10 @@ import type { BrowserWindow, Session, WebContents } from 'electron';
 import { ElectronChromeExtensions } from 'electron-chrome-extensions';
 import fs from 'node:fs';
 import path from 'node:path';
+import { convertExtensionMenu } from './extensionMenus';
+import type { ExtensionMenuNode } from './extensionMenus';
+import { isExtensionUrl } from './model';
+import type { MenuItem } from './menuTypes';
 import {
   addExtension,
   describePermissions,
@@ -111,8 +115,10 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     ),
     createTab: async (details) => {
       const url = typeof details.url === 'string' ? details.url : '';
-      if (!/^https?:\/\//i.test(url)) {
-        throw new Error('Only web pages can be opened from an extension.');
+      if (!/^https?:\/\//i.test(url) && !isOwnPage(url)) {
+        throw new Error(
+          'An extension can only open web pages and its own pages.',
+        );
       }
       const contents = await deps.createTab(url);
       if (!contents) throw new Error('The tab could not be opened.');
@@ -194,6 +200,16 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
   } catch (error) {
     console.error(`[extensions] pictures: ${(error as Error).message}`);
   }
+
+  // An address inside one of the extensions you have switched on (its options
+  // page, for example). Never another extension's, and never a file.
+  const isOwnPage = (url: string): boolean => {
+    if (!isExtensionUrl(url)) return false;
+    const id = /^chrome-extension:\/\/([a-p]{32})/.exec(url)?.[1];
+    return deps
+      .getList()
+      .items.some((e) => e.enabled && e.id !== null && e.id === id);
+  };
 
   // Where an extension is loaded from.
   const folderOf = (record: ExtensionRecord) => path.join(root, record.key);
@@ -345,6 +361,43 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     return { ok: true, name: seen.name };
   }
 
+  // Delete what an extension saved (its settings, and the pages' storage under its
+  // address). Removing an extension must leave nothing of it behind: an extension
+  // added later could get the same id, and would otherwise find the old data.
+  const settingsRoot = path.join(
+    app.getPath('userData'),
+    'Local Extension Settings',
+  );
+  const wipeData = async (id: string): Promise<void> => {
+    if (!/^[a-p]{32}$/.test(id)) return;
+    try {
+      await deps.session.clearStorageData({
+        origin: `chrome-extension://${id}`,
+      });
+    } catch (error) {
+      console.error(`[extensions] storage: ${(error as Error).message}`);
+    }
+    try {
+      fs.rmSync(path.join(settingsRoot, id), { recursive: true, force: true });
+    } catch {
+      // Still in use; it is removed at the next start.
+    }
+  };
+  // At start: data left by extensions that are no longer in the list (for example
+  // when a file could not be deleted while the app was running).
+  const sweepLeftovers = async (): Promise<void> => {
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(settingsRoot);
+    } catch {
+      return;
+    }
+    const known = new Set(deps.getList().items.map((e) => e.id));
+    for (const name of names) {
+      if (/^[a-p]{32}$/.test(name) && !known.has(name)) await wipeData(name);
+    }
+  };
+
   // The extension's own picture as a data address (the biggest PNG up to 128 px
   // that its manifest lists), or null. Kept after the first read.
   const icons = new Map<string, string | null>();
@@ -384,8 +437,44 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     return found;
   };
 
+  // The extensions' own items for a right-click in a page: rows for the menu, and
+  // a way to run the one that was chosen.
+  function contextMenuFor(
+    contents: WebContents,
+    params: Electron.ContextMenuParams,
+  ): { items: MenuItem[]; run(id: string): boolean } {
+    const clickable: ExtensionMenuNode[] = [];
+    let items: MenuItem[] = [];
+    try {
+      const nodes = chrome.getContextMenuItems(contents, params);
+      items = convertExtensionMenu(
+        nodes as unknown as ExtensionMenuNode[],
+        (node) => {
+          clickable.push(node);
+          return `ext:${clickable.length - 1}`;
+        },
+      );
+    } catch (error) {
+      console.error(`[extensions] menu: ${(error as Error).message}`);
+    }
+    return {
+      items,
+      run(id) {
+        const index = /^ext:(\d{1,3})$/.exec(id)?.[1];
+        const node = index === undefined ? undefined : clickable[Number(index)];
+        const click = (
+          node as { click?: (...args: unknown[]) => void } | undefined
+        )?.click;
+        if (!click) return false;
+        click.call(node, undefined, undefined, undefined);
+        return true;
+      },
+    };
+  }
+
   return {
     iconOf,
+    contextMenuFor,
     // The tabs the library should know about.
     addTab: (contents: WebContents) => chrome.addTab(contents, deps.window),
     removeTab: (contents: WebContents) => chrome.removeTab(contents),
@@ -395,6 +484,7 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     // Load every extension that is switched on (at start: Electron does not
     // remember them).
     async loadAll() {
+      await sweepLeftovers();
       for (const record of deps.getList().items) {
         if (record.enabled) await load(record);
       }
@@ -417,6 +507,8 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
       unload(record);
       deps.setList(removeExtension(deps.getList(), key));
       fs.rmSync(folderOf(record), { recursive: true, force: true });
+      // What the extension saved goes with it.
+      if (record.id !== null) void wipeData(record.id);
     },
     // Is it loaded and running now?
     isLoaded: (record: ExtensionRecord) =>

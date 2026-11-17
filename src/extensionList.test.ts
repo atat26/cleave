@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   addExtension,
+  cleanOptionsPath,
   defaultExtensions,
   describePermissions,
   nextFolderKey,
@@ -202,4 +203,61 @@ test('a button in the toolbar: only extensions with an action have one, and pinn
   });
   assert.equal(bare.items[0].pinned, true);
   assert.equal(bare.items[0].hasAction, false);
+});
+
+test('an options page is a plain path inside the extension, never an address or a way out', () => {
+  assert.equal(cleanOptionsPath('options.html'), 'options.html');
+  assert.equal(cleanOptionsPath('./ui/options.html'), 'ui/options.html');
+  assert.equal(cleanOptionsPath('/options.html'), 'options.html');
+  for (const bad of [
+    'https://evil.example/x',
+    'javascript:alert(1)',
+    '../x.html',
+    'a/../../x',
+    'a\\..\\x',
+    '//host/x',
+    '',
+    5,
+    null,
+    'a?b',
+    'a#b',
+  ]) {
+    assert.equal(cleanOptionsPath(bad), null, String(bad));
+  }
+  assert.equal(
+    parseManifest({ manifest_version: 3, name: 'A', options_page: 'o.html' })
+      ?.optionsPage,
+    'o.html',
+  );
+  assert.equal(
+    parseManifest({
+      manifest_version: 3,
+      name: 'A',
+      options_ui: { page: 'ui/o.html' },
+    })?.optionsPage,
+    'ui/o.html',
+  );
+  assert.equal(
+    parseManifest({
+      manifest_version: 3,
+      name: 'A',
+      options_page: 'https://x.y/',
+    })?.optionsPage,
+    null,
+  );
+  const state = addExtension(
+    defaultExtensions(),
+    parseManifest({ manifest_version: 3, name: 'A', options_page: 'o.html' })!,
+    1,
+  )!.state;
+  assert.equal(
+    parseExtensions(JSON.parse(JSON.stringify(state))).items[0].optionsPage,
+    'o.html',
+  );
+  assert.equal(
+    parseExtensions({
+      items: [{ key: 'ext-1', manifestVersion: 3, optionsPage: '../x' }],
+    }).items[0].optionsPage,
+    null,
+  );
 });
