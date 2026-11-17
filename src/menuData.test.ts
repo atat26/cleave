@@ -904,8 +904,18 @@ test('the toolbar "…" menu has Find, Zoom, Print and Developer tools, all grey
     'tools.zoom-out',
     'tools.zoom-reset',
     'tools.print',
+    'tools.fullscreen',
     'tools.devtools',
   ]);
+  // Full screen works with or without a page.
+  assert.equal(entry(items, 'tools.fullscreen').shortcut, 'F11');
+  assert.notEqual(
+    entry(toolsMenuItems({ hasPage: false }), 'tools.fullscreen').disabled,
+    true,
+  );
+  assert.deepEqual(parseToolsChoice('tools.fullscreen'), {
+    action: 'fullscreen',
+  });
   assert.equal(entry(items, 'tools.find').shortcut, 'Ctrl+F');
   assert.equal(entry(items, 'tools.zoom').label, 'Zoom (125%)');
   assert.equal(entry(items, 'tools.print').shortcut, 'Ctrl+P');
