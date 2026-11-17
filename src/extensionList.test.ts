@@ -161,3 +161,45 @@ test('the list on disk is repaired, never trusted', () => {
     assert.deepEqual(parseExtensions(junk), defaultExtensions());
   }
 });
+
+test('a button in the toolbar: only extensions with an action have one, and pinning is kept', () => {
+  assert.equal(
+    parseManifest({ manifest_version: 3, name: 'A', action: {} })?.hasAction,
+    true,
+  );
+  assert.equal(
+    parseManifest({
+      manifest_version: 2,
+      name: 'A',
+      browser_action: { default_popup: 'p.html' },
+    })?.hasAction,
+    true,
+  );
+  assert.equal(
+    parseManifest({ manifest_version: 3, name: 'A' })?.hasAction,
+    false,
+  );
+  assert.equal(
+    parseManifest({ manifest_version: 3, name: 'A', action: 5 })?.hasAction,
+    false,
+  );
+  let state = addExtension(
+    defaultExtensions(),
+    parseManifest({ manifest_version: 3, name: 'A', action: {} })!,
+    1,
+  )!.state;
+  // New ones start pinned.
+  assert.equal(state.items[0].pinned, true);
+  assert.equal(state.items[0].hasAction, true);
+  state = updateExtension(state, 'ext-1', { pinned: false });
+  assert.equal(state.items[0].pinned, false);
+  // Saved and read back, the choice survives; missing means pinned / no action.
+  const back = parseExtensions(JSON.parse(JSON.stringify(state)));
+  assert.equal(back.items[0].pinned, false);
+  assert.equal(back.items[0].hasAction, true);
+  const bare = parseExtensions({
+    items: [{ key: 'ext-1', manifestVersion: 3 }],
+  });
+  assert.equal(bare.items[0].pinned, true);
+  assert.equal(bare.items[0].hasAction, false);
+});

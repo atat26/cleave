@@ -235,7 +235,10 @@ import {
   toolsMenuItems,
   zoomChipMenuItems,
   downloadMenuItems,
+  extensionMenuItems,
   libraryMenuItems,
+  parsePuzzleChoice,
+  puzzleMenuItems,
   newTabSpacesMenuItems,
   parseNewTabSpaceChoice,
   parsePermissionChoice,
@@ -248,6 +251,7 @@ import {
   permissionPromptItems,
   siteMenuItems,
   parseDownloadChoice,
+  parseExtensionChoice,
   parseLibraryChoice,
   parseStarChoice,
   starMenuItems,
@@ -280,6 +284,15 @@ const isIdOrNull = (value: unknown): value is number | null =>
 const isLinkKind = chatsModel.isLinkKind;
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+// A box on the window ({ x, y, width, height }), as a button reports it.
+const isBox = (
+  value: unknown,
+): value is { x: number; y: number; width: number; height: number } =>
+  typeof value === 'object' &&
+  value !== null &&
+  ['x', 'y', 'width', 'height'].every((k) =>
+    isNumber((value as Record<string, unknown>)[k]),
+  );
 const isResizeKind = (value: unknown): value is ResizeKind =>
   value === 'sidebar' || value === 'chat' || value === 'panel';
 const clamp = (min: number, max: number, value: number) =>
@@ -4027,6 +4040,70 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
+    // The puzzle button in the toolbar: the extensions that have a button. The
+    // button's box (in the window) says where a popup opens from.
+    'extensions:puzzle': (x, y, box) => {
+      if (!isNumber(x) || !isNumber(y) || !isBox(box)) return;
+      const shown = extensionList.items.filter(
+        (e) => e.enabled && e.hasAction && extensions?.isLoaded(e),
+      );
+      showMenu(
+        puzzleMenuItems(
+          shown.map((e) => ({
+            key: e.key,
+            name: e.name,
+            pinned: e.pinned,
+            icon: extensions?.iconOf(e) ?? null,
+          })),
+        ),
+        x,
+        y,
+        (choice) => {
+          const parsed = parsePuzzleChoice(choice);
+          if (!parsed) return;
+          if (parsed.action === 'manage') {
+            if (state.settings.rightPanel !== 'extensions') {
+              state = model.setRightPanel(state, 'extensions');
+              saver.schedule();
+              applyLayout(true);
+              sendState();
+            }
+            return;
+          }
+          const found = shown.find((e) => e.key === parsed.key);
+          if (!found) return;
+          if (parsed.action === 'pin') {
+            extensions?.setPinned(found.key, !found.pinned);
+          } else if (found.id !== null && !win.webContents.isDestroyed()) {
+            // The toolbar page asks the extension system to open its popup.
+            win.webContents.send('extensions:activate', found.id, box);
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    // An extension in the Extensions panel or on its toolbar button (right-click).
+    'extensions:menu': (key, x, y) => {
+      if (typeof key !== 'string' || !isNumber(x) || !isNumber(y)) return;
+      const found = extensionList.items.find((e) => e.key === key);
+      if (!found) return;
+      showMenu(
+        extensionMenuItems(found),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseExtensionChoice(choice);
+          if (parsed?.action === 'pin') {
+            extensions?.setPinned(key, !found.pinned);
+          } else if (parsed?.action === 'toggle') {
+            void extensions?.setEnabled(key, !found.enabled);
+          } else if (parsed?.action === 'remove') {
+            void removeExtensionAsk(key);
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     // A site in Settings > Privacy (right-click).
     'privacy:menu': (site, x, y) => {
       if (typeof site !== 'string' || !isNumber(x) || !isNumber(y)) return;
@@ -4771,6 +4848,11 @@ export async function createTabs(
     session: session.defaultSession,
     window: win,
     getList: () => extensionList,
+    onPopup: (extensionId) => {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('extensions:popup', extensionId);
+      }
+    },
     setList: (next) => {
       extensionList = next;
       extensionsSaver.schedule();
@@ -4812,8 +4894,22 @@ export async function createTabs(
       ...record,
       words: describePermissions(record),
       loaded: manager.isLoaded(record),
+      icon: manager.iconOf(record),
     }));
   });
+  // Removing deletes the extension's own saved data too, so ask first.
+  const removeExtensionAsk = async (key: string) => {
+    const record = extensionList.items.find((e) => e.key === key);
+    if (!record) return;
+    const yes = await confirm({
+      title: 'Remove this extension?',
+      message: `Remove “${record.name}”?`,
+      detail:
+        'It stops working and the data it saved in this browser is deleted. You can add it again later.',
+      button: 'Remove',
+    });
+    if (yes) manager.remove(key);
+  };
   ipcMain.handle('extensions:add-folder', async (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     const picked = await dialog.showOpenDialog(win, {
@@ -4833,9 +4929,9 @@ export async function createTabs(
       await manager.setEnabled(key, enabled);
     },
   );
-  ipcMain.handle('extensions:remove', (event, key: unknown) => {
+  ipcMain.handle('extensions:remove', async (event, key: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
-    if (typeof key === 'string') manager.remove(key);
+    if (typeof key === 'string') await removeExtensionAsk(key);
   });
   // For testing only (never in a packaged app): add an extension from a folder at
   // start, since a native folder picker cannot be driven by a test.

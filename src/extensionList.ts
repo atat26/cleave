@@ -11,6 +11,10 @@ export interface ExtensionRecord {
   name: string;
   version: string;
   enabled: boolean;
+  // Its button sits in the toolbar (otherwise it is only in the puzzle menu).
+  pinned: boolean;
+  // It has a button at all (an "action" in its manifest).
+  hasAction: boolean;
   addedAt: number;
   manifestVersion: 2 | 3;
   // What its manifest asks for.
@@ -58,6 +62,8 @@ export interface ParsedManifest {
   hostPermissions: string[];
   // The folder's own default language, for names like "__MSG_extName__".
   defaultLocale: string | null;
+  // Does it have a toolbar button (an "action" or "browser_action")?
+  hasAction: boolean;
 }
 
 // Read an extension's manifest.json (already parsed from text). Only manifest
@@ -79,6 +85,9 @@ export function parseManifest(raw: unknown): ParsedManifest | null {
     manifestVersion: m.manifest_version,
     permissions: all.filter((p) => !isHostPattern(p)),
     hostPermissions: [...new Set(hosts)],
+    hasAction:
+      (typeof m.action === 'object' && m.action !== null) ||
+      (typeof m.browser_action === 'object' && m.browser_action !== null),
     defaultLocale:
       typeof m.default_locale === 'string' &&
       /^[A-Za-z_]{2,10}$/.test(m.default_locale)
@@ -191,6 +200,8 @@ export function parseExtensions(raw: unknown): ExtensionsState {
       name: cleanText(i.name, 'Extension'),
       version: cleanText(i.version, '0'),
       enabled: i.enabled !== false,
+      pinned: i.pinned !== false,
+      hasAction: i.hasAction === true,
       addedAt:
         typeof i.addedAt === 'number' && Number.isFinite(i.addedAt)
           ? i.addedAt
@@ -236,6 +247,9 @@ export function addExtension(
           name: manifest.name,
           version: manifest.version,
           enabled: true,
+          // New extensions start in the toolbar, so they are easy to find.
+          pinned: true,
+          hasAction: manifest.hasAction,
           addedAt: now,
           manifestVersion: manifest.manifestVersion,
           permissions: manifest.permissions,
@@ -257,7 +271,7 @@ export const removeExtension = (
 export function updateExtension(
   state: ExtensionsState,
   key: string,
-  changes: Partial<Pick<ExtensionRecord, 'enabled' | 'id'>>,
+  changes: Partial<Pick<ExtensionRecord, 'enabled' | 'id' | 'pinned'>>,
 ): ExtensionsState {
   if (!state.items.some((e) => e.key === key)) return state;
   return {

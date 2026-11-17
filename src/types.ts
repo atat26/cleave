@@ -8,12 +8,59 @@ import type { SearchEngineSettings } from './searchEngine';
 import type { NewTabSettings } from './newTabSettings';
 import type { ExtensionRecord } from './extensionList';
 
+// A button's box on the window.
+export interface ExtensionBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// What the extension system's toolbar API (injected by its own preload) tells us
+// about an extension's button.
+export interface ExtensionAction {
+  id: string;
+  title?: string;
+  text?: string;
+  color?: string;
+  iconModified?: number;
+  tabs: Record<string, { title?: string; text?: string; color?: string }>;
+}
+export interface BrowserActionApi {
+  addEventListener(
+    name: 'update',
+    listener: (state: {
+      activeTabId?: number;
+      actions: ExtensionAction[];
+    }) => void,
+  ): void;
+  removeEventListener(name: 'update', listener: unknown): void;
+  getState(partition: string): Promise<{
+    activeTabId?: number;
+    actions: ExtensionAction[];
+  }>;
+  activate(
+    partition: string,
+    details: {
+      eventType: 'click' | 'contextmenu';
+      extensionId: string;
+      tabId: number;
+      alignment: string;
+      anchorRect: ExtensionBox;
+    },
+  ): Promise<void>;
+  addObserver(partition: string): void;
+  removeObserver(partition: string): void;
+}
+
 // An extension as the Extensions panel shows it.
 export interface ExtensionRow extends ExtensionRecord {
   // What it asks for, in plain words.
   words: string[];
   // Is it running now?
   loaded: boolean;
+  // Its own picture (a data address), if it has one.
+  icon: string | null;
 }
 
 // A main site with its cookies, for Settings (icons are remembered from pages).
@@ -385,7 +432,20 @@ export interface BrowserApi {
     { ok: true; name: string } | { ok: false; error: string }
   >;
   extensionsSetEnabled: (key: string, enabled: boolean) => Promise<void>;
+  // Asks first (a native question), then removes.
   extensionsRemove: (key: string) => Promise<void>;
+  // Right-click menu of one extension.
+  showExtensionMenu: (key: string, x: number, y: number) => void;
+  // The puzzle button's menu (x, y: where it opens; box: the button).
+  showExtensionsPuzzle: (x: number, y: number, box: ExtensionBox) => void;
+  // Which extension's popup is open now (null: none).
+  onExtensionPopup: (
+    callback: (extensionId: string | null) => void,
+  ) => () => void;
+  // The app asks the toolbar to open an extension's popup from this button.
+  onExtensionActivate: (
+    callback: (extensionId: string, box: ExtensionBox) => void,
+  ) => () => void;
   onExtensionsChanged: (callback: () => void) => () => void;
   // Ctrl+L: the app asks the toolbar to put the keyboard in the address bar.
   onFocusAddress: (callback: () => void) => () => void;
@@ -736,5 +796,7 @@ export interface BrowserApi {
 declare global {
   interface Window {
     browserApi: BrowserApi;
+    // Put there by the extension system's own preload, only in the main window.
+    browserAction?: BrowserActionApi;
   }
 }

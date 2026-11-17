@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { ArtifactsPanel } from './ArtifactsPanel';
+import { ExtensionsPanel } from './ExtensionsPanel';
 import { LibraryPanel } from './LibraryPanel';
 import { PAGE_INSET, RAIL_WIDTH, TOOLBAR_HEIGHT } from './layout';
 import type { RightPanel as RightPanelName } from './model';
@@ -21,7 +22,6 @@ const TITLES: Record<RightPanelName, string> = {
 // Panels that have no content yet. (Settings has its own panel component.)
 const PLACEHOLDERS: Partial<Record<RightPanelName, string>> = {
   skills: 'Reusable skills you can run from here are coming in a later update.',
-  extensions: 'Extensions are coming in a later update.',
 };
 
 // The panel that opens to the left of the rail. It is a card on the frame, and
@@ -96,6 +96,8 @@ export function RightPanel({
             <SettingsPanel />
           ) : panel === 'library' ? (
             <LibraryPanel />
+          ) : panel === 'extensions' ? (
+            <ExtensionsPanel />
           ) : panel === 'tools' ? (
             <ToolsPanel />
           ) : panel === 'artifacts' ? (

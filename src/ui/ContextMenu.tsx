@@ -47,7 +47,9 @@ function MenuList({
   );
   const [open, setOpen] = useState(-1);
   const anyIcon = items.some(
-    (item) => item.type === 'item' && (item.icon || item.swatch || item.emoji),
+    (item) =>
+      item.type === 'item' &&
+      (item.icon || item.swatch || item.emoji || item.image),
   );
   // A long menu scrolls instead of running off the window. (A menu that opens
   // submenus cannot scroll: that would cut the submenus off. They are short.)
@@ -264,6 +266,14 @@ function MenuRow({
         <span aria-hidden="true" className="menu-emoji">
           {item.emoji}
         </span>
+      ) : item.image ? (
+        <img
+          src={item.image}
+          alt=""
+          width={16}
+          height={16}
+          style={{ flex: 'none', borderRadius: 3 }}
+        />
       ) : item.icon ? (
         <Icon name={item.icon} />
       ) : (
