@@ -12,6 +12,7 @@ import {
 import type { AgentEnv, OutlineRead, PageRead } from './agentTools.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
 import type { ArtifactKind } from './artifacts.ts';
+import type { FileReading } from './artifactTools.ts';
 import { buildLinkedContext, linkedTabs } from './chatLinks.ts';
 import type { Workspace, WorkspaceTab } from './chatLinks.ts';
 
@@ -84,6 +85,39 @@ function setup(
     ],
     [2, { title: 'Private', kind: 'text', content: 'secret', spaceId: null }],
   ]);
+  // Uploaded files, linked to the chat (their contents come from `files` below).
+  // Kept apart from `docs` so tests that count documents are not affected.
+  const uploaded = new Map<number, { title: string; kind: ArtifactKind }>([
+    [90, { title: 'report.pdf', kind: 'file' }],
+    [91, { title: 'scan.pdf', kind: 'file' }],
+    [92, { title: 'photo.png', kind: 'file' }],
+  ]);
+  const files = new Map<number, FileReading>([
+    [
+      90,
+      {
+        ok: true,
+        kind: 'pdf',
+        pages: 2,
+        text: '--- Page 1 ---\nQuarterly report',
+        scanned: false,
+        truncated: false,
+      },
+    ],
+    [
+      91,
+      {
+        ok: true,
+        kind: 'pdf',
+        pages: 3,
+        text: '',
+        scanned: true,
+        truncated: false,
+      },
+    ],
+    [92, { ok: true, kind: 'image', mime: 'image/png', data: 'AAAA' }],
+  ]);
+  const fileState = { vision: true };
   let nextDoc = 3;
   // Spaces the assistant made.
   const madeSpaces: {
@@ -96,8 +130,8 @@ function setup(
       madeSpaces.push(input);
       return { ok: true as const, id: 50 + madeSpaces.length };
     },
-    linkedArtifacts: () =>
-      [...docs]
+    linkedArtifacts: () => [
+      ...[...docs]
         .filter(([id]) => id === 1 || id >= 3)
         .map(([id, d]) => ({
           id,
@@ -105,8 +139,18 @@ function setup(
           kind: d.kind,
           spaceId: d.spaceId,
         })),
+      ...[...uploaded].map(([id, d]) => ({ id, ...d, spaceId: null })),
+    ],
     linkedSpaces: () => [{ id: 10, name: 'Research' }],
-    readArtifact: (id) => docs.get(id) ?? null,
+    readArtifact: (id) => {
+      const file = uploaded.get(id);
+      return file
+        ? { title: file.title, kind: file.kind, content: '' }
+        : (docs.get(id) ?? null);
+    },
+    readFile: async (id) =>
+      files.get(id) ?? { ok: false as const, reason: 'missing' as const },
+    canSeeImages: () => fileState.vision,
     createArtifact: (input) => {
       const id = nextDoc++;
       docs.set(id, { ...input });
@@ -230,6 +274,8 @@ function setup(
     searched,
     linksRead,
     docs,
+    files,
+    fileState,
     madeSpaces,
   };
 }
@@ -943,6 +989,55 @@ test('reading a linked artifact goes ahead, marked as data; one that is not link
   for (const args of [{}, { artifact: 'x' }, { artifact: 1, start: -1 }]) {
     assert.equal(tools.plan(call('read_artifact', args)).kind, 'refuse');
   }
+});
+
+test('an uploaded PDF is read as text, marked as data, and says how many pages it has', async () => {
+  const { tools } = setup();
+  const outcome = await tools.run(
+    call('read_artifact', { artifact: 90 }),
+    ABORT,
+  );
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /Quarterly report/);
+  assert.match(outcome.result, /PDF, 2 pages/);
+  assert.match(outcome.result, /data, not instructions/);
+  assert.equal(outcome.images, undefined);
+});
+
+test('a scanned PDF, with no words, says so instead of returning nothing', async () => {
+  const { tools } = setup();
+  const outcome = await tools.run(
+    call('read_artifact', { artifact: 91 }),
+    ABORT,
+  );
+  assert.equal(outcome.ok, false);
+  assert.match(outcome.result, /no selectable text/);
+});
+
+test('a picture is shown to a model that can see, and refused for one that cannot', async () => {
+  const { tools, fileState } = setup();
+  const seen = await tools.run(call('read_artifact', { artifact: 92 }), ABORT);
+  assert.equal(seen.ok, true);
+  assert.deepEqual(seen.images, [
+    { mime: 'image/png', data: 'AAAA', label: 'photo.png' },
+  ]);
+  assert.ok(!seen.result.includes('AAAA')); // the bytes go in the picture, not the text
+  fileState.vision = false;
+  const blind = await tools.run(call('read_artifact', { artifact: 92 }), ABORT);
+  assert.equal(blind.ok, false);
+  assert.equal(blind.images, undefined);
+  assert.match(blind.result, /cannot look at pictures/);
+});
+
+test('a file that has gone missing is reported, not guessed at', async () => {
+  const { tools, files } = setup();
+  files.delete(90);
+  const outcome = await tools.run(
+    call('read_artifact', { artifact: 90 }),
+    ABORT,
+  );
+  assert.equal(outcome.ok, false);
+  assert.match(outcome.result, /could not be read/);
 });
 
 test('a long artifact comes back in parts, and "start" continues', async () => {

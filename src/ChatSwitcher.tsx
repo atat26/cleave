@@ -6,7 +6,8 @@ import { Icon } from './ui/Icon';
 
 // The conversation's name, with controls to manage your chats: click the name to
 // switch chats, start a new one, rename or delete the current one; "+" starts a
-// new chat straight away. Chats are independent of Spaces and tabs.
+// new chat straight away (an empty chat is reused, never piled up). Chats are
+// independent of Spaces and tabs.
 //
 // `renameRequest` is set when "Rename chat" is chosen from the menu, which turns
 // the name into a text box.

@@ -1,4 +1,11 @@
-import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
+import type { PdfTextResult } from './pdfTextFormat';
+import type {
+  ChatMatch,
+  ChatMessage,
+  ChatRef,
+  LinkKind,
+  MessagePart,
+} from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
@@ -8,6 +15,7 @@ import type { SearchEngineSettings } from './searchEngine';
 import type { NewTabSettings } from './newTabSettings';
 import type { ExtensionRecord } from './extensionList';
 import type { ExtensionSettings } from './extensionSettings';
+import type { SleepSettings } from './sleep';
 
 // A button's box on the window.
 export interface ExtensionBox {
@@ -120,6 +128,8 @@ export interface NewTabInfo {
     id: number;
     title: string;
     at: number;
+    // A chat with a reply waiting to be read.
+    unread: boolean;
   }[];
   pickTotal: number;
   // The Spaces for the pills: the current one first, then the most recently used,
@@ -140,8 +150,10 @@ export interface ArtifactInfo {
   // The Space it belongs to, or null for one outside every Space.
   spaceId: number | null;
   updatedAt: number;
-  // How many characters it holds.
+  // How many characters it holds (for an uploaded file: how many bytes).
   size: number;
+  // "Image" or "PDF" for an uploaded file, null for a text artifact.
+  fileLabel: string | null;
 }
 
 // An artifact with its text, for the editor.
@@ -178,6 +190,8 @@ export interface SpaceInfo {
   emoji: string;
   color: SpaceColor;
   collapsed: boolean;
+  // The note you wrote about it.
+  about: string;
 }
 
 // ---- The AI provider (OpenRouter) -------------------------------------------
@@ -271,7 +285,7 @@ export type LibraryList =
 
 // A deleted chat or artifact, as the Library lists it.
 export interface DeletedItemInfo {
-  kind: 'chat' | 'artifact';
+  kind: 'chat' | 'artifact' | 'space';
   id: number;
   title: string;
   emoji: string;
@@ -303,6 +317,10 @@ export interface ChatInfo {
   model: string | null;
   // A reply is being written in this chat right now.
   generating: boolean;
+  // A reply finished while you were not looking at this chat, and is still unread.
+  unread: boolean;
+  // The Spaces this chat is linked to (so a Space's overview can list its chats).
+  spaceIds: number[];
 }
 
 export interface ChatsInfo {
@@ -326,6 +344,8 @@ export interface UiState {
   active: ActiveRef | null;
   // How far the selected page is zoomed (1 = 100%).
   zoom: number;
+  // Whether there is something on screen to zoom (a web page, an image or a PDF).
+  zoomable: boolean;
   // The selected page is bookmarked (the star is filled).
   bookmarked: boolean;
   // What the toolbar's download indicator shows (it is only there when something is
@@ -521,8 +541,11 @@ export interface BrowserApi {
   libraryClosed: () => Promise<ClosedTabInfo[]>;
   // Chats and artifacts deleted lately, newest first, and what to do with them.
   libraryDeleted: () => Promise<DeletedItemInfo[]>;
-  libraryRestore: (kind: 'chat' | 'artifact', id: number) => void;
-  libraryDeleteForever: (kind: 'chat' | 'artifact', id: number) => void;
+  libraryRestore: (kind: 'chat' | 'artifact' | 'space', id: number) => void;
+  libraryDeleteForever: (
+    kind: 'chat' | 'artifact' | 'space',
+    id: number,
+  ) => void;
   // Settings > Library (history and Recently deleted).
   librarySettingsGet: () => Promise<LibrarySettings>;
   librarySettingsSet: (
@@ -540,6 +563,8 @@ export interface BrowserApi {
   onLibraryChanged: (callback: () => void) => () => void;
   // The small menu behind the zoom chip in the address bar.
   showZoomMenu: (x: number, y: number) => void;
+  // One zoom step in (1) or out (-1), or back to 100% (0), for what is on screen.
+  changeZoom: (direction: 1 | -1 | 0) => void;
   // Find in page. Only the find bar's own page uses these.
   findReady: () => void;
   findQuery: (text: string, forward: boolean, again: boolean) => void;
@@ -629,8 +654,60 @@ export interface BrowserApi {
   // Allow (or stop allowing) the internet in an HTML page's preview. Allowing asks
   // first; the answer is whether it is allowed afterwards.
   artifactSetInternet: (id: number, on: boolean) => Promise<boolean>;
+  // "Upload files…": pick files and add them to a Space (null: to none). The answer
+  // is how many were added.
+  uploadPick: (spaceId: number | null) => Promise<number>;
+  // Add files dropped on the Artifacts panel or a Space's overview.
+  uploadDrop: (files: File[], spaceId: number | null) => Promise<number>;
+  // The bytes of an uploaded image or PDF (null if it is gone).
+  // Files dropped on the new-tab page: they are added as artifacts, and these are
+  // returned to show as chips under the box.
+  newTabDropFiles: (
+    files: File[],
+  ) => Promise<{ id: number; title: string; emoji: string }[]>;
+  // The "+" in the message box: a menu to add a page, a Space, an artifact or a file.
+  showAddToChatMenu: (chatId: number, x: number, y: number) => void;
+  // A page, Space or artifact was chosen from that menu: the message box lists them.
+  onComposerAdd: (
+    callback: (chatId: number, kind: 'page' | 'space' | 'artifact') => void,
+  ) => () => void;
+  // Find chats by name or by what was said in them.
+  searchChats: (query: string) => Promise<ChatMatch[]>;
+  // "Search chats…" was chosen: put the keyboard in the chat list's search box.
+  onFocusChatSearch: (callback: () => void) => () => void;
+  // Change one of your messages and send it again. The newest is changed where it
+  // is; an older one is changed in a new chat (this chat stays as it was).
+  chatEdit: (
+    chatId: number,
+    messageId: number,
+    text: string,
+  ) => Promise<ChatSendResult>;
+  // Attach files to a chat (they become artifacts linked to it): choose them in a
+  // dialog, drop them, or paste a picture. Each gives how many were added.
+  chatAttachPick: (chatId: number) => Promise<number>;
+  chatAttachFiles: (chatId: number, files: File[]) => Promise<number>;
+  // Answer the app's requests to read a PDF's text (see pdfText.ts).
+  onPdfExtract: (
+    handler: (data: Uint8Array) => Promise<PdfTextResult>,
+  ) => () => void;
+  artifactFile: (
+    id: number,
+  ) => Promise<{ mime: string; data: Uint8Array } | null>;
+  // Open an uploaded file with the computer's own app, or show it in its folder.
+  artifactOpenFile: (id: number, how: 'open' | 'folder') => Promise<boolean>;
   // "New" in the Artifacts panel: a menu of kinds (made in the Space you are in).
   showNewArtifactMenu: (x: number, y: number) => void;
+  // Close all of a Space's open pages, or reopen all its closed ones.
+  spaceBulk: (id: number, action: 'close-all' | 'reopen-all' | 'sleep') => void;
+  // Settings > Pages and memory.
+  sleepSettingsGet: () => Promise<SleepSettings>;
+  sleepSettingsSet: (changes: {
+    afterMinutes?: number;
+  }) => Promise<SleepSettings>;
+  // The Space switcher menu, at a place in the window.
+  showSpaceSwitcher: (x: number, y: number) => void;
+  // Save the note on a Space's overview.
+  setSpaceAbout: (id: number, text: string) => void;
   // The setting changed (from the menu): its artifact's id.
   onArtifactInternet: (callback: (id: number) => void) => () => void;
   // `revision` is the version the text was based on.
@@ -798,7 +875,7 @@ export interface BrowserApi {
     callback: (action: {
       chatId: number;
       messageId: number;
-      action: 'retry' | 'branch';
+      action: 'retry' | 'branch' | 'edit';
     }) => void,
   ) => () => void;
   // Text to put in the message box (for example a selection from a web page).

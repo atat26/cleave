@@ -1,6 +1,6 @@
 // The preload script is the ONLY bridge between the UI page and the app.
 // Expose small, specific functions here -- never whole Electron modules.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action';
 import type {
   BrowserApi,
@@ -13,6 +13,15 @@ import type {
 // The toolbar page (not the menu, find or suggestion pages that share this
 // preload) gets the extension system's button API.
 if (!location.hash) injectBrowserAction();
+
+// The file ending for each kind of picture that can be pasted (see uploadRules.ts).
+const PASTED_IMAGE_TYPES: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+};
 
 const browserApi: BrowserApi = {
   platform: process.platform,
@@ -178,6 +187,7 @@ const browserApi: BrowserApi = {
     };
   },
   showZoomMenu: (x, y) => ipcRenderer.send('zoom:menu', x, y),
+  changeZoom: (direction) => ipcRenderer.send('zoom:change', direction),
   findReady: () => ipcRenderer.send('find:ready'),
   findQuery: (text, forward, again) =>
     ipcRenderer.send('find:query', text, forward, again),
@@ -255,7 +265,93 @@ const browserApi: BrowserApi = {
   artifactSelect: (id) => ipcRenderer.send('artifact:select', id),
   artifactClose: (id) => ipcRenderer.send('artifact:close', id),
   artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
+  setSpaceAbout: (id, text) => ipcRenderer.send('space:about', id, text),
+  showSpaceSwitcher: (x, y) => ipcRenderer.send('spaces:switcher', x, y),
+  sleepSettingsGet: () => ipcRenderer.invoke('sleep-settings:get'),
+  sleepSettingsSet: (changes) =>
+    ipcRenderer.invoke('sleep-settings:set', changes),
+  spaceBulk: (id, action) => ipcRenderer.send('space:bulk', id, action),
   showNewArtifactMenu: (x, y) => ipcRenderer.send('artifact:new-menu', x, y),
+  uploadPick: (spaceId) => ipcRenderer.invoke('uploads:pick', spaceId),
+  uploadDrop: (files, spaceId) =>
+    ipcRenderer.invoke(
+      'uploads:drop',
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+      spaceId,
+    ),
+  newTabDropFiles: (files) =>
+    ipcRenderer.invoke(
+      'newtab:drop',
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+    ),
+  searchChats: (query) => ipcRenderer.invoke('chats:search', query),
+  onFocusChatSearch: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('chats:focus-search', listener);
+    return () => {
+      ipcRenderer.removeListener('chats:focus-search', listener);
+    };
+  },
+  chatEdit: (chatId, messageId, text) =>
+    ipcRenderer.invoke('chat:edit', chatId, messageId, text),
+  showAddToChatMenu: (chatId, x, y) =>
+    ipcRenderer.send('chat:add-menu', chatId, x, y),
+  onComposerAdd: (callback) => {
+    const listener = (
+      _event: unknown,
+      chatId: number,
+      kind: 'page' | 'space' | 'artifact',
+    ) => callback(chatId, kind);
+    ipcRenderer.on('composer:add', listener);
+    return () => {
+      ipcRenderer.removeListener('composer:add', listener);
+    };
+  },
+  chatAttachPick: (chatId) => ipcRenderer.invoke('chat:attach-pick', chatId),
+  // Files that are on the computer go by their place; a pasted picture (a screenshot,
+  // say) has none, so its bytes are sent instead.
+  chatAttachFiles: async (chatId, files) => {
+    const paths: string[] = [];
+    let added = 0;
+    for (const file of files) {
+      const place = webUtils.getPathForFile(file);
+      const extension = PASTED_IMAGE_TYPES[file.type];
+      if (place) paths.push(place);
+      else if (extension) {
+        added += (await ipcRenderer.invoke(
+          'chat:attach-bytes',
+          chatId,
+          extension,
+          new Uint8Array(await file.arrayBuffer()),
+        )) as number;
+      }
+    }
+    if (paths.length > 0) {
+      added += (await ipcRenderer.invoke(
+        'chat:attach-drop',
+        chatId,
+        paths,
+      )) as number;
+    }
+    return added;
+  },
+  // The app asks this window to read the words of a PDF (PDF.js runs here).
+  onPdfExtract: (handler) => {
+    const listener = async (
+      _event: unknown,
+      requestId: number,
+      data: Uint8Array,
+    ) => {
+      ipcRenderer.send('pdf:extracted', requestId, await handler(data));
+    };
+    ipcRenderer.on('pdf:extract', listener);
+    return () => {
+      ipcRenderer.removeListener('pdf:extract', listener);
+    };
+  },
+  artifactFile: (id) => ipcRenderer.invoke('artifact:file', id),
+  artifactOpenFile: (id, how) =>
+    ipcRenderer.invoke('artifact:open-file', id, how),
   artifactSetInternet: (id, on) =>
     ipcRenderer.invoke('artifact:set-internet', id, on),
   onArtifactInternet: (callback) => {

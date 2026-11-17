@@ -469,15 +469,12 @@ function FullSidebar({
         {/* The new-tab "+" is in the same place (top left) as in the narrow strip.
             Resting the pointer on it brings up "+ Space" beside it. */}
         <div className="sb-add reveal-host">
-          <button
-            type="button"
-            aria-label="New tab"
+          <IconButton
+            icon="plus"
+            label="New tab"
             title="New tab (Ctrl+T)"
             onClick={() => window.browserApi.newTab(null)}
-            style={iconButtonStyle}
-          >
-            +
-          </button>
+          />
           <button
             type="button"
             className="reveal sb-space"
@@ -751,15 +748,12 @@ function Strip({ state }: { state: UiState }) {
           justifyContent: 'center',
         }}
       >
-        <button
-          type="button"
-          aria-label="New tab"
+        <IconButton
+          icon="plus"
+          label="New tab"
           title="New tab (Ctrl+T)"
           onClick={() => window.browserApi.newTab(null)}
-          style={iconButtonStyle}
-        >
-          +
-        </button>
+        />
       </div>
       <div
         {...dnd.backgroundProps()}

@@ -7,6 +7,7 @@ import { NewTabSection } from './NewTabSection';
 import { SearchEngineSection } from './SearchEngineSection';
 import { ShortcutsSection } from './ShortcutsSection';
 import { ExtensionsSection } from './ExtensionsSection';
+import { SleepSection } from './SleepSection';
 import { LibrarySection } from './LibrarySection';
 import { NamingSection } from './NamingSection';
 import { WebSearchSettings } from './WebSearchSettings';
@@ -100,6 +101,11 @@ const SECTIONS = [
     id: 'privacy',
     label: 'Privacy and security',
     about: 'Site permissions and clearing data',
+  },
+  {
+    id: 'sleep',
+    label: 'Pages and memory',
+    about: 'Put pages you are not using to sleep',
   },
   {
     id: 'extensions',
@@ -635,6 +641,7 @@ export function SettingsPanel() {
       {section === 'appearance' && <AppearanceSettings />}
       {section === 'naming' && <NamingSection />}
       {section === 'extensions' && <ExtensionsSection />}
+      {section === 'sleep' && <SleepSection />}
       {section === 'library' && <LibrarySection />}
       {section === 'downloads' && <DownloadsSection />}
       {section === 'privacy' && <PrivacySection />}

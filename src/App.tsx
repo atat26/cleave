@@ -3,6 +3,7 @@ import { ChatBar } from './ChatBar';
 import { CHAT_FULL_MIN_HEIGHT, RAIL_WIDTH } from './layout';
 import { ArtifactView } from './ArtifactView';
 import { pushInsert } from './composerBus';
+import { extractPdfText } from './pdfText';
 import { requestSettingsSection } from './settingsNav';
 import { LeadView } from './LeadView';
 import { isNewTabPage } from './model';
@@ -79,6 +80,11 @@ export function App() {
     () => window.browserApi.onChatRenameRequest(setChatRenameRequest),
     [],
   );
+  // The app asks this window to read the text of a PDF the assistant opens.
+  useEffect(() => {
+    if (IS_SIDEBAR) return;
+    return window.browserApi.onPdfExtract(extractPdfText);
+  }, []);
 
   // The app sends the frame's layout many times a second while it slides. A CSS
   // variable moves everything without re-drawing the whole page each time; only
@@ -131,6 +137,22 @@ export function App() {
       ? state.spaces.find((space) => space.id === active.spaceId)
       : undefined;
 
+  // The Space you are in (a page, its overview, or one of its artifacts), if any.
+  const currentSpaceId = (() => {
+    const a = state.active;
+    if (a?.kind === 'lead') return a.spaceId;
+    if (a?.kind === 'tab') {
+      return state.tabs.find((t) => t.id === a.id)?.spaceId ?? null;
+    }
+    if (a?.kind === 'artifact') {
+      return state.artifactTabs.find((t) => t.id === a.id)?.spaceId ?? null;
+    }
+    return null;
+  })();
+  const currentSpace =
+    currentSpaceId === null
+      ? null
+      : (state.spaces.find((s) => s.id === currentSpaceId) ?? null);
   if (state.rightPanel !== null) lastPanel.current = state.rightPanel;
   const shownPanel = state.rightPanel ?? lastPanel.current;
 
@@ -142,6 +164,7 @@ export function App() {
         canGoForward={state.canGoForward}
         loading={state.loading}
         zoom={state.zoom}
+        zoomable={state.zoomable}
         bookmarked={state.bookmarked}
         downloads={state.downloads}
         certBypassed={state.certBypassed}
@@ -149,6 +172,7 @@ export function App() {
         disabled={activeTab === undefined}
         viewMode={state.viewMode}
         chats={state.chats}
+        space={currentSpace}
       />
       {onNewTab && activeTab && state.newTab && (
         <NewTabView
@@ -162,7 +186,11 @@ export function App() {
         />
       )}
       {activeArtifact && (
-        <ArtifactView key={activeArtifact.id} tab={activeArtifact} />
+        <ArtifactView
+          key={activeArtifact.id}
+          tab={activeArtifact}
+          zoom={state.zoom}
+        />
       )}
       {leadSpace && (
         <LeadView
@@ -170,6 +198,10 @@ export function App() {
           space={leadSpace}
           tabs={state.tabs.filter((tab) => tab.spaceId === leadSpace.id)}
           artifacts={state.artifacts.filter((a) => a.spaceId === leadSpace.id)}
+          chats={state.chats.conversations.filter((c) =>
+            c.spaceIds.includes(leadSpace.id),
+          )}
+          activeChatId={state.chats.activeId}
           openArtifactIds={state.artifactTabs.map((a) => a.id)}
         />
       )}

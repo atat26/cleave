@@ -10,8 +10,9 @@ import {
 } from './artifactRender';
 import type { PreviewMessage } from './artifactRender';
 import { detectLanguage, languageName } from './highlight';
+import { FileArtifactView } from './FileView';
 import { HighlightedEditor } from './HighlightedEditor';
-import { NameButton } from './NameButton';
+import { ArtifactTitle } from './ArtifactTitle';
 import { Markdown } from './MarkdownView';
 import {
   Banner,
@@ -27,6 +28,7 @@ const KIND_WORDS: Record<ArtifactTabInfo['kind'], string> = {
   text: 'Plain text',
   html: 'HTML',
   code: 'Code',
+  file: 'File',
 };
 
 const SAVE_DELAY_MS = 500;
@@ -45,7 +47,23 @@ const sizeWords = (chars: number) =>
 //     fresh typing, shows a banner and pauses saving until you choose;
 //   - a reload that would land on top of something you typed while it was on its
 //     way is treated as a conflict too.
-export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
+// An open artifact: an uploaded image or PDF is viewed, anything else is a text
+// artifact with an editor.
+export function ArtifactView({
+  tab,
+  zoom,
+}: {
+  tab: ArtifactTabInfo;
+  zoom: number;
+}) {
+  return tab.kind === 'file' ? (
+    <FileArtifactView tab={tab} zoom={zoom} />
+  ) : (
+    <TextArtifactView tab={tab} />
+  );
+}
+
+function TextArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   const [doc, setDoc] = useState<ArtifactDocument | null>(null);
   const [missing, setMissing] = useState(false);
   const [text, setText] = useState('');
@@ -214,18 +232,11 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   // the start of the text changes.)
   const head = text.slice(0, 2000);
   const language = useMemo(
-    () => detectLanguage(tab.kind, tab.title, text),
+    () =>
+      detectLanguage(tab.kind === 'file' ? 'text' : tab.kind, tab.title, text),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tab.kind, tab.title, head],
   );
-
-  const [renaming, setRenaming] = useState(false);
-  const finishRename = (value: string) => {
-    setRenaming(false);
-    const name = value.trim();
-    if (name && name !== tab.title)
-      window.browserApi.artifactRename(tab.id, name);
-  };
 
   // Markdown and HTML can be shown as a finished page (the default) or edited.
   const canRender = tab.kind === 'markdown' || tab.kind === 'html';
@@ -308,46 +319,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       >
         <ItemEmoji emoji={tab.emoji} />
         <div className="art-title">
-          <div className="art-title-row">
-            {renaming ? (
-              <input
-                className="input"
-                autoFocus
-                defaultValue={tab.title}
-                maxLength={80}
-                aria-label="Artifact name"
-                onFocus={(e) => e.target.select()}
-                onBlur={(e) => finishRename(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') finishRename(e.currentTarget.value);
-                  if (e.key === 'Escape') setRenaming(false);
-                }}
-                style={{
-                  fontSize: 'var(--fs-xl)',
-                  fontWeight: 600,
-                  flex: 1,
-                  minWidth: 0,
-                  height: 36,
-                }}
-              />
-            ) : (
-              <h1
-                className="truncate"
-                onClick={() => setRenaming(true)}
-                title="Click to rename"
-                style={{
-                  margin: 0,
-                  fontSize: 'var(--fs-xl)',
-                  fontWeight: 600,
-                  minWidth: 0,
-                  cursor: 'text',
-                }}
-              >
-                {tab.title}
-              </h1>
-            )}
-            <NameButton kind="artifact" id={tab.id} />
-          </div>
+          <ArtifactTitle id={tab.id} title={tab.title} />
           <div className="art-meta">
             <span>
               {tab.kind === 'code'

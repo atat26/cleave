@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
+import { SPACE_COLOR_HEX } from './colors';
 import { PAGE_INSET, TOOLBAR_HEIGHT, WINDOW_CONTROLS_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ExtensionActions } from './ExtensionActions';
@@ -8,7 +9,7 @@ import { describeSite } from './site';
 import { zoomLabel } from './zoom';
 import type { DownloadSummary } from './downloadList';
 import type { Suggestion } from './suggest';
-import type { ChatsInfo } from './types';
+import type { ChatsInfo, SpaceInfo } from './types';
 import { IconButton, ItemEmoji, Segmented } from './ui/controls';
 import { Icon } from './ui/Icon';
 
@@ -22,6 +23,8 @@ interface ToolbarProps {
   loading: boolean;
   // How far the page is zoomed (1 = 100%); a chip shows when it is not.
   zoom: number;
+  // Whether anything on screen can be zoomed (a web page, an image or a PDF).
+  zoomable: boolean;
   // The page is bookmarked (the star is filled).
   bookmarked: boolean;
   // Downloads going on, or one that just finished (the indicator shows only then).
@@ -34,6 +37,8 @@ interface ToolbarProps {
   viewMode: ViewMode;
   // The chats (the active one's name is shown here when only the chat is open).
   chats: ChatsInfo;
+  // The Space you are in, if any (shown as a chip that opens the Space switcher).
+  space: SpaceInfo | null;
 }
 
 // The active chat's name, as plain text on the frame (not in a box like the
@@ -191,12 +196,14 @@ export function Toolbar({
   disabled,
   loading,
   zoom,
+  zoomable,
   bookmarked,
   downloads,
   certBypassed,
   blockedPopups,
   viewMode,
   chats,
+  space,
 }: ToolbarProps) {
   const [text, setText] = useState(url);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -329,6 +336,27 @@ export function Toolbar({
                 }
               />
             </div>
+            {space && (
+              <button
+                type="button"
+                className="tb-space"
+                aria-haspopup="menu"
+                aria-label={`Space: ${space.name}. Switch Space (Ctrl+Shift+S)`}
+                title={`In the Space “${space.name}”. Switch Space (Ctrl+Shift+S)`}
+                style={
+                  { '--sp': SPACE_COLOR_HEX[space.color] } as CSSProperties
+                }
+                onClick={(event) => {
+                  const box = event.currentTarget.getBoundingClientRect();
+                  window.browserApi.showSpaceSwitcher(box.left, box.bottom + 4);
+                }}
+              >
+                <span aria-hidden="true" className="tb-space-emoji">
+                  {space.emoji}
+                </span>
+                <span className="tb-space-name truncate">{space.name}</span>
+              </button>
+            )}
             <div ref={barRef} className="addressbar" role="search">
               {site && (
                 <button
@@ -400,7 +428,7 @@ export function Toolbar({
                 }
                 spellCheck={false}
               />
-              {zoom !== 1 && !disabled && (
+              {zoom !== 1 && zoomable && (
                 <button
                   type="button"
                   className="zoom-chip"

@@ -365,7 +365,8 @@ export function LibraryPanel() {
           </span>
         ) : (
           <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
-            Recently deleted chats and artifacts. Click one to bring it back.
+            Recently deleted chats, artifacts and Spaces. Click one to bring it
+            back.
           </span>
         )}
         {section !== 'bookmarks' && (

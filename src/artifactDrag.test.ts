@@ -4,6 +4,7 @@ import {
   ARTIFACT_DRAG,
   artifactDragData,
   hasArtifactDrag,
+  hasFileDrag,
   readArtifactDrag,
 } from './artifactDrag.ts';
 
@@ -54,4 +55,13 @@ test('a drag is recognised by its type', () => {
     } as unknown as string[]),
     true,
   );
+});
+
+test('files dragged in from the computer are told apart from drags inside the app', () => {
+  assert.equal(hasFileDrag(['Files']), true);
+  assert.equal(hasFileDrag(['text/plain', 'Files']), true);
+  assert.equal(hasFileDrag([ARTIFACT_DRAG]), false);
+  assert.equal(hasFileDrag(['text/plain']), false);
+  assert.equal(hasFileDrag(null), false);
+  assert.equal(hasFileDrag(undefined), false);
 });

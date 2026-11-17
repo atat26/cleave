@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { byteWords } from './artifacts';
 import type { ArtifactKind } from './artifacts';
-import { ARTIFACT_DRAG, artifactDragData } from './artifactDrag';
+import { ARTIFACT_DRAG, artifactDragData, hasFileDrag } from './artifactDrag';
 import { SPACE_COLOR_HEX } from './colors';
 import type { ArtifactInfo, SpaceInfo } from './types';
 import { Button, IconButton, Input, ItemEmoji } from './ui/controls';
@@ -10,6 +11,7 @@ const KIND_WORDS: Record<ArtifactKind, string> = {
   text: 'Plain text',
   html: 'HTML',
   code: 'Code',
+  file: 'File',
 };
 
 const sizeWords = (chars: number) =>
@@ -121,7 +123,8 @@ function Row({
               className="truncate muted"
               style={{ display: 'block', fontSize: 'var(--fs-xs)' }}
             >
-              {KIND_WORDS[item.kind]} · {sizeWords(item.size)}
+              {item.fileLabel ?? KIND_WORDS[item.kind]} ·{' '}
+              {item.fileLabel ? byteWords(item.size) : sizeWords(item.size)}
             </span>
           </span>
           <IconButton
@@ -168,6 +171,8 @@ export function ArtifactsPanel({
   onRenameHandled: () => void;
 }) {
   const [renaming, setRenaming] = useState<number | null>(null);
+  // Files from the computer are being dragged over the panel.
+  const [dropping, setDropping] = useState(false);
 
   useEffect(() => {
     if (renameRequest !== null) {
@@ -194,13 +199,33 @@ export function ArtifactsPanel({
   ];
 
   return (
-    <div>
+    <div
+      className={dropping ? 'files-drop is-dropping' : 'files-drop'}
+      // Drop files here to add them (text, code, web pages, images and PDFs).
+      onDragOver={(event) => {
+        if (!hasFileDrag(event.dataTransfer.types)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropping(false);
+        }
+      }}
+      onDrop={(event) => {
+        setDropping(false);
+        if (!hasFileDrag(event.dataTransfer.types)) return;
+        event.preventDefault();
+        void window.browserApi.uploadDrop([...event.dataTransfer.files], null);
+      }}
+    >
       <div
         className="row-flex"
         style={{ gap: 'var(--s-2)', margin: '0 0 var(--s-3)' }}
       >
         <span className="muted grow" style={{ fontSize: 'var(--fs-sm)' }}>
-          Documents made in the browser.
+          Documents made in the browser. Drop files here to add them.
         </span>
         <Button
           size="sm"

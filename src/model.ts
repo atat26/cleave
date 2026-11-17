@@ -45,8 +45,30 @@ export interface SavedSpace {
   emoji: string | null;
   // Collapsed in the sidebar (its tabs are hidden, like a Chrome tab group).
   collapsed: boolean;
+  // A short note you wrote about the Space (its goal, a budget, what to keep in
+  // mind). Shown on its overview, and told to the assistant when the Space is linked
+  // to a chat. Only ever text you wrote yourself.
+  about: string;
   // Reserved for the Space's whiteboard (milestone M3b). Unused for now.
   leadData: null;
+}
+
+export const MAX_ABOUT_CHARS = 1000;
+
+// A note as it is kept: line breaks tidied, other control characters removed, no
+// blank lines at the ends, and not longer than the limit.
+export function cleanAbout(text: unknown): string {
+  if (typeof text !== 'string') return '';
+  return (
+    text
+      .replace(/\r\n?/g, '\n')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .slice(0, MAX_ABOUT_CHARS)
+      .trim()
+  );
 }
 
 // What is currently showing: a web tab, a Lead (summary) tab of a Space, or an
@@ -225,6 +247,7 @@ export function parseState(raw: unknown): SavedState {
         color: SPACE_COLORS.find((c) => c === item.color) ?? 'grey',
         emoji: cleanEmoji(item.emoji),
         collapsed: item.collapsed === true,
+        about: cleanAbout(item.about),
         leadData: null,
       });
     }
@@ -640,6 +663,7 @@ export function addSpace(
     color: SPACE_COLORS[(state.spaces.length + 1) % SPACE_COLORS.length],
     emoji: null,
     collapsed: false,
+    about: '',
     leadData: null,
   };
   return {
@@ -685,6 +709,21 @@ export function setSpaceEmoji(
   return {
     ...state,
     spaces: state.spaces.map((s) => (s.id === id ? { ...s, emoji: clean } : s)),
+  };
+}
+
+// Change a Space's note ('' clears it).
+export function setSpaceAbout(
+  state: SavedState,
+  id: number,
+  text: unknown,
+): SavedState {
+  const about = cleanAbout(text);
+  const found = state.spaces.find((s) => s.id === id);
+  if (!found || found.about === about) return state;
+  return {
+    ...state,
+    spaces: state.spaces.map((s) => (s.id === id ? { ...s, about } : s)),
   };
 }
 

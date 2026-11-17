@@ -6,7 +6,7 @@ import type {
 } from 'react';
 import { MentionToken } from './LinkChips';
 import { Markdown } from './MarkdownView';
-import { Badge, Banner, Button } from './ui/controls';
+import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import type {
@@ -466,10 +466,29 @@ function MessageView({
     const result = await window.browserApi.chatBranch(chatId, message.id);
     if (!result.ok) setRetryNote(result.error);
   };
-  // Retry or Branch chosen from this message's right-click menu: do it here, so
+  // Change this message and send it again. Your newest message is changed where it
+  // is; an older one is changed in a new chat (this chat stays as it was).
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const startEdit = () => {
+    setRetryNote('');
+    setDraft(message.content);
+    setEditing(true);
+  };
+  const saveEdit = async () => {
+    const result = await window.browserApi.chatEdit(chatId, message.id, draft);
+    if (result.ok) setEditing(false);
+    else setRetryNote(result.error);
+  };
+  // Retry, Edit or Branch chosen from this message's right-click menu: do it here, so
   // the result (or an error) shows the same way as from the buttons.
-  const doAction = useRef<(action: 'retry' | 'branch') => void>(() => {});
-  doAction.current = (action) => void (action === 'retry' ? retry() : branch());
+  const doAction = useRef<(action: 'retry' | 'branch' | 'edit') => void>(
+    () => {},
+  );
+  doAction.current = (action) =>
+    action === 'edit'
+      ? startEdit()
+      : void (action === 'retry' ? retry() : branch());
   useEffect(
     () =>
       window.browserApi.onMessageAction((chosen) => {
@@ -510,12 +529,80 @@ function MessageView({
           margin: '10px 0',
         }}
       >
-        <div className="msg-user">
-          {withTokens(message, chatId, tabs, spaces, artifacts)}
-        </div>
+        {editing ? (
+          <div className="msg-edit">
+            <Textarea
+              autoFocus
+              rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+              value={draft}
+              aria-label="Edit your message"
+              onChange={(e) => setDraft(e.target.value)}
+              onFocus={(e) =>
+                e.currentTarget.setSelectionRange(draft.length, draft.length)
+              }
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void saveEdit();
+                } else if (e.key === 'Escape') {
+                  setEditing(false);
+                  setRetryNote('');
+                }
+              }}
+            />
+            <div className="msg-edit-row">
+              {retryNote && (
+                <span style={{ color: 'var(--c-danger)' }}>{retryNote}</span>
+              )}
+              <span style={{ flex: 1 }} />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setEditing(false);
+                  setRetryNote('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={draft.trim() === ''}
+                title={
+                  isNewestUser
+                    ? 'Send this instead. The reply is written again.'
+                    : 'Send this in a new chat that starts from before this message. This chat stays as it is.'
+                }
+                onClick={() => void saveEdit()}
+              >
+                {isNewestUser ? 'Resend' : 'Resend in a new chat'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="msg-user">
+            {withTokens(message, chatId, tabs, spaces, artifacts)}
+          </div>
+        )}
         <div className="msg-actions">
-          {retryNote && (
+          {!editing && retryNote && (
             <span style={{ color: 'var(--c-danger)' }}>{retryNote}</span>
+          )}
+          {!(isNewestUser && busy) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="pencil"
+              title={
+                isNewestUser
+                  ? 'Change this message and send it again'
+                  : 'Change this message and send it in a new chat'
+              }
+              onClick={startEdit}
+            >
+              Edit
+            </Button>
           )}
           {isNewestUser && !busy && (
             <Button

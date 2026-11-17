@@ -8,8 +8,12 @@ import { blockedLabel } from './popups.ts';
 import type { Answer, AskKind } from './permissions.ts';
 import * as model from './model.ts';
 import type { SavedState } from './model.ts';
-import { ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
-import type { ArtifactKind, ArtifactsState } from './artifacts.ts';
+import { TEXT_ARTIFACT_KINDS, findArtifact } from './artifacts.ts';
+import type {
+  ArtifactKind,
+  ArtifactsState,
+  TextArtifactKind,
+} from './artifacts.ts';
 import { byRecency } from './chats.ts';
 import type { ChatRef, ChatsState } from './chats.ts';
 import { resolveLink } from './chatLinks.ts';
@@ -226,6 +230,10 @@ export type SpaceChoice =
   | { action: 'toggle-collapse' }
   | { action: 'ungroup' }
   | { action: 'close-all' }
+  | { action: 'reopen-all' }
+  | { action: 'duplicate' }
+  | { action: 'export' }
+  | { action: 'sleep' }
   | { action: 'delete' };
 
 const capitalize = (text: string) =>
@@ -235,11 +243,14 @@ const capitalize = (text: string) =>
 export function spaceMenuItems(
   state: SavedState,
   spaceId: number,
+  // How many of its pages could be put to sleep now (the menu item is greyed if none).
+  sleepable = 0,
 ): MenuItem[] | null {
   const space = model.findSpace(state, spaceId);
   if (!space) return null;
   const inSpace = state.tabs.filter((tab) => tab.spaceId === spaceId);
   const open = inSpace.filter((tab) => !tab.closed).length;
+  const closedCount = inSpace.length - open;
   return [
     { type: 'item', id: 'space.open', label: 'Open overview', icon: 'layers' },
     {
@@ -298,6 +309,32 @@ export function spaceMenuItems(
       icon: 'x',
       disabled: open === 0,
     },
+    {
+      type: 'item',
+      id: 'space.sleep',
+      label: 'Put pages to sleep',
+      icon: 'moon',
+      disabled: sleepable === 0,
+    },
+    {
+      type: 'item',
+      id: 'space.duplicate',
+      label: 'Duplicate Space',
+      icon: 'copy',
+    },
+    {
+      type: 'item',
+      id: 'space.export',
+      label: 'Export as Markdown…',
+      icon: 'download',
+    },
+    {
+      type: 'item',
+      id: 'space.reopen-all',
+      label: 'Reopen closed pages',
+      icon: 'undo',
+      disabled: closedCount === 0,
+    },
     { type: 'separator' },
     {
       type: 'item',
@@ -332,6 +369,14 @@ export function parseSpaceChoice(id: string): SpaceChoice | null {
       return { action: 'ungroup' };
     case 'space.close-all':
       return { action: 'close-all' };
+    case 'space.reopen-all':
+      return { action: 'reopen-all' };
+    case 'space.duplicate':
+      return { action: 'duplicate' };
+    case 'space.sleep':
+      return { action: 'sleep' };
+    case 'space.export':
+      return { action: 'export' };
     case 'space.delete':
       return { action: 'delete' };
   }
@@ -348,6 +393,8 @@ export type ChatChoice =
   | { action: 'rename'; chatId: number }
   | { action: 'icon'; chatId: number }
   | { action: 'name-ai'; chatId: number }
+  | { action: 'export'; chatId: number }
+  | { action: 'search' }
   | { action: 'delete'; chatId: number };
 
 const shortTitle = (title: string) =>
@@ -378,6 +425,12 @@ export function chatRowMenuItems(
       id: `chat.name-ai:${chatId}`,
       label: 'Name with AI',
       icon: 'sparkle',
+    },
+    {
+      type: 'item',
+      id: `chat.export:${chatId}`,
+      label: 'Export as Markdown…',
+      icon: 'upload',
     },
     { type: 'separator' },
     {
@@ -417,6 +470,13 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     {
       type: 'item',
+      id: `chat.export:${active}`,
+      label: 'Export as Markdown…',
+      icon: 'upload',
+    },
+    { type: 'item', id: 'chat.search', label: 'Search chats…', icon: 'search' },
+    {
+      type: 'item',
       id: `chat.delete:${active}`,
       label: 'Delete chat',
       icon: 'trash',
@@ -439,12 +499,68 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
 
 export function parseChatChoice(id: string): ChatChoice | null {
   if (id === 'chat.new') return { action: 'new' };
-  const m = /^chat\.(select|rename|icon|name-ai|delete):(\d+)$/.exec(id);
+  if (id === 'chat.search') return { action: 'search' };
+  const m = /^chat\.(select|rename|icon|name-ai|export|delete):(\d+)$/.exec(id);
   if (!m) return null;
   return {
-    action: m[1] as 'select' | 'rename' | 'icon' | 'name-ai' | 'delete',
+    action: m[1] as
+      | 'select'
+      | 'rename'
+      | 'icon'
+      | 'name-ai'
+      | 'export'
+      | 'delete',
     chatId: Number(m[2]),
   };
+}
+
+// ---- The "+" menu in the chat's message box ----------------------------------------
+
+export type AddToChatChoice =
+  | { action: 'page' }
+  | { action: 'space' }
+  | { action: 'artifact' }
+  | { action: 'file' };
+
+// What can be added to a chat from the "+" in its message box: a page, a Space or an
+// artifact (picked from a list), or a file from the computer.
+export function addToChatMenuItems(): MenuItem[] {
+  return [
+    { type: 'item', id: 'addchat.page', label: 'Add a page…', icon: 'globe' },
+    {
+      type: 'item',
+      id: 'addchat.space',
+      label: 'Add a Space…',
+      icon: 'folder',
+    },
+    {
+      type: 'item',
+      id: 'addchat.artifact',
+      label: 'Add an artifact…',
+      icon: 'doc',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'addchat.file',
+      label: 'Attach a file…',
+      icon: 'upload',
+    },
+  ];
+}
+
+export function parseAddToChatChoice(id: string): AddToChatChoice | null {
+  switch (id) {
+    case 'addchat.page':
+      return { action: 'page' };
+    case 'addchat.space':
+      return { action: 'space' };
+    case 'addchat.artifact':
+      return { action: 'artifact' };
+    case 'addchat.file':
+      return { action: 'file' };
+  }
+  return null;
 }
 
 // ---- The model menu --------------------------------------------------------------
@@ -648,6 +764,7 @@ export function parseArtifactChoice(id: string): ArtifactChoice | null {
 
 export type AddChoice =
   | { action: 'page' }
+  | { action: 'upload' }
   | { action: 'new-artifact'; kind: ArtifactKind }
   | { action: 'move'; artifactId: number }
   | { action: 'copy'; artifactId: number };
@@ -657,6 +774,7 @@ const KIND_LABELS: Record<ArtifactKind, string> = {
   text: 'Plain text',
   html: 'HTML',
   code: 'Code',
+  file: 'File',
 };
 
 // The menu behind the overview's Add button: a new page, a new artifact (by kind)
@@ -674,10 +792,16 @@ export function addMenuItems(
     { type: 'item', id: 'add.page', label: 'New page', icon: 'globe' },
     {
       type: 'item',
+      id: 'add.upload',
+      label: 'Upload files…',
+      icon: 'upload',
+    },
+    {
+      type: 'item',
       id: 'add.artifact',
       label: 'New artifact',
       icon: 'doc',
-      submenu: ARTIFACT_KINDS.map(
+      submenu: TEXT_ARTIFACT_KINDS.map(
         (kind): MenuItem => ({
           type: 'item',
           id: `add.artifact:${kind}`,
@@ -721,9 +845,10 @@ export function addMenuItems(
 
 export function parseAddChoice(id: string): AddChoice | null {
   if (id === 'add.page') return { action: 'page' };
+  if (id === 'add.upload') return { action: 'upload' };
   const created = /^add\.artifact:([a-z]+)$/.exec(id);
   if (created) {
-    const kind = ARTIFACT_KINDS.find((k) => k === created[1]);
+    const kind = TEXT_ARTIFACT_KINDS.find((k) => k === created[1]);
     return kind ? { action: 'new-artifact', kind } : null;
   }
   const other = /^add\.(move|copy):(\d+)$/.exec(id);
@@ -825,11 +950,13 @@ export function parseLinkChoice(id: string): LinkChoice | null {
 export type MessageChoice =
   | { action: 'copy' }
   | { action: 'retry' }
+  | { action: 'edit' }
   | { action: 'branch' };
 
 // Copy (the selected text, else the whole message), and for one of your own
-// messages Retry (only the newest, when no reply is being written) and Branch
-// (any of them).
+// messages Retry (only the newest, when no reply is being written), Edit (change it
+// and send it again: in place for the newest, in a new chat for an older one) and
+// Branch (any of them).
 export function messageMenuItems(options: {
   role: 'user' | 'assistant';
   hasSelection: boolean;
@@ -857,6 +984,14 @@ export function messageMenuItems(options: {
       },
       {
         type: 'item',
+        id: 'msg.edit',
+        label: 'Edit and resend…',
+        icon: 'pencil',
+        // The newest is changed where it is, which cannot happen mid-reply.
+        disabled: options.isNewestUser && options.busy,
+      },
+      {
+        type: 'item',
         id: 'msg.branch',
         label: 'Branch from here',
         icon: 'branch',
@@ -872,6 +1007,8 @@ export function parseMessageChoice(id: string): MessageChoice | null {
       return { action: 'copy' };
     case 'msg.retry':
       return { action: 'retry' };
+    case 'msg.edit':
+      return { action: 'edit' };
     case 'msg.branch':
       return { action: 'branch' };
   }
@@ -1357,6 +1494,8 @@ export function toolsMenuItems(options: {
   hasPage: boolean;
   // The current page's zoom, as text like "125%" (shown in the Zoom entry).
   zoomText?: string;
+  // Something other than a web page can be zoomed (an uploaded image or PDF).
+  zoomable?: boolean;
 }): MenuItem[] {
   const off = !options.hasPage;
   return [
@@ -1381,7 +1520,7 @@ export function toolsMenuItems(options: {
       id: 'tools.zoom',
       label: options.zoomText ? `Zoom (${options.zoomText})` : 'Zoom',
       icon: 'zoom',
-      disabled: off,
+      disabled: off && !options.zoomable,
       submenu: zoomItems('tools'),
     },
     {
@@ -1749,12 +1888,49 @@ export function parseAddExtensionChoice(id: string): AddExtensionChoice | null {
   return null;
 }
 
-export type NewArtifactChoice = { kind: ArtifactKind };
+export type SwitchSpaceChoice = { spaceId: number } | { action: 'new-space' };
+
+// The Space switcher: every Space in the order of the sidebar, the current one
+// ticked, with what is in it, and the keys that go to the first nine.
+export function spaceSwitcherItems(
+  state: SavedState,
+  currentId: number | null,
+): MenuItem[] {
+  const items: MenuItem[] = state.spaces.map((space, index): MenuItem => {
+    const pages = state.tabs.filter((t) => t.spaceId === space.id);
+    const open = pages.filter((t) => !t.closed).length;
+    return {
+      type: 'item',
+      id: `switch-space:${space.id}`,
+      label: space.name,
+      emoji: spaceEmoji(space),
+      detail: `${pages.length} ${pages.length === 1 ? 'page' : 'pages'} (${open} open)`,
+      checked: space.id === currentId,
+      ...(index < 9 ? { shortcut: `Alt+${index + 1}` } : {}),
+    };
+  });
+  if (items.length > 0) items.push({ type: 'separator' });
+  items.push({
+    type: 'item',
+    id: 'switch-space.new',
+    label: 'New Space',
+    icon: 'plus',
+  });
+  return items;
+}
+
+export function parseSwitchSpaceChoice(id: string): SwitchSpaceChoice | null {
+  if (id === 'switch-space.new') return { action: 'new-space' };
+  const m = /^switch-space:(\d{1,9})$/.exec(id);
+  return m ? { spaceId: Number(m[1]) } : null;
+}
+
+export type NewArtifactChoice = { kind: TextArtifactKind } | { upload: true };
 
 // "New" in the Artifacts panel: what kind of artifact to make.
 export function newArtifactMenuItems(): MenuItem[] {
   const rows: {
-    kind: ArtifactKind;
+    kind: TextArtifactKind;
     label: string;
     icon: 'doc' | 'file' | 'globe' | 'code';
   }[] = [
@@ -1763,19 +1939,29 @@ export function newArtifactMenuItems(): MenuItem[] {
     { kind: 'html', label: 'HTML page', icon: 'globe' },
     { kind: 'code', label: 'Code', icon: 'code' },
   ];
-  return rows.map(
-    (row): MenuItem => ({
+  return [
+    ...rows.map(
+      (row): MenuItem => ({
+        type: 'item',
+        id: `new-artifact.${row.kind}`,
+        label: row.label,
+        icon: row.icon,
+      }),
+    ),
+    { type: 'separator' },
+    {
       type: 'item',
-      id: `new-artifact.${row.kind}`,
-      label: row.label,
-      icon: row.icon,
-    }),
-  );
+      id: 'new-artifact.upload',
+      label: 'Upload files…',
+      icon: 'upload',
+    },
+  ];
 }
 
 export function parseNewArtifactChoice(id: string): NewArtifactChoice | null {
+  if (id === 'new-artifact.upload') return { upload: true };
   const m = /^new-artifact\.([a-z]+)$/.exec(id);
-  const kind = ARTIFACT_KINDS.find((k) => k === m?.[1]);
+  const kind = TEXT_ARTIFACT_KINDS.find((k) => k === m?.[1]);
   return kind ? { kind } : null;
 }
 

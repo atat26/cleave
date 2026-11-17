@@ -4,12 +4,14 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  nativeImage,
   nativeTheme,
   screen,
   session,
   shell,
   WebContentsView,
 } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   blendSizes,
@@ -42,8 +44,38 @@ import {
   SIDEBAR_CLOSE_MARGIN,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_SNAP_WIDTH,
+  TOOLBAR_HEIGHT,
 } from './layout';
 import * as artifactsModel from './artifacts';
+import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
+import { chatMarkdown } from './chatExport';
+import { exportFileName, spaceMarkdown } from './spaceExport';
+import type { FileReading } from './artifactTools';
+import { parsePdfText } from './pdfTextFormat';
+import type { PdfTextResult } from './pdfTextFormat';
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_FILES,
+  PASTED_IMAGE_EXTENSIONS,
+  planUpload,
+} from './uploadRules';
+import {
+  defaultSleepSettings,
+  idleSleepers,
+  parseSleepSettings,
+  spaceSleepers,
+  withSleepSettings,
+} from './sleep';
+import type { SleepTab } from './sleep';
+import {
+  defaultSpaceTrash,
+  emptySpaceTrash,
+  parseSpaceTrash,
+  purgeOldTrashedSpaces,
+  purgeTrashedSpace,
+  takeTrashedSpace,
+  trashSpace,
+} from './spaceTrash';
 import { setPreviewInternetCheck } from './previewGuard';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
@@ -226,6 +258,7 @@ import {
 import {
   addMenuItems,
   artifactMenuItems,
+  addToChatMenuItems,
   chatRowMenuItems,
   emojiPickerItems,
   parseEmojiChoice,
@@ -243,6 +276,8 @@ import {
   downloadMenuItems,
   addExtensionMenuItems,
   extensionMenuItems,
+  parseSwitchSpaceChoice,
+  spaceSwitcherItems,
   newArtifactMenuItems,
   parseNewArtifactChoice,
   libraryMenuItems,
@@ -267,6 +302,7 @@ import {
   starMenuItems,
   parseAddChoice,
   parseArtifactChoice,
+  parseAddToChatChoice,
   parseChatChoice,
   parseEditChoice,
   parseLinkChoice,
@@ -327,6 +363,9 @@ export async function createTabs(
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
   let chats: ChatsState = await loadChats(chatsFile);
+  // Empty chats left behind by an earlier version are not kept (only the one you
+  // are on may be empty: it is the "new chat" screen).
+  chats = chatsModel.dropUntouched(chats, chats.activeId);
   // Documents made inside the browser (not uploads).
   const artifactsFile = path.join(app.getPath('userData'), 'artifacts.json');
   let artifacts: ArtifactsState = await loadArtifacts(artifactsFile);
@@ -510,6 +549,31 @@ export async function createTabs(
   const closedFile = path.join(app.getPath('userData'), 'closed-tabs.json');
   let closedTabs = await loadJson(closedFile, parseClosed, defaultClosed);
   const closedSaver = createSaver(closedFile, () => closedTabs);
+  // Deleted Spaces, kept for a while so they can be brought back (see spaceTrash.ts).
+  const deletedSpacesFile = path.join(
+    app.getPath('userData'),
+    'deleted-spaces.json',
+  );
+  let spaceTrash = await loadJson(
+    deletedSpacesFile,
+    parseSpaceTrash,
+    defaultSpaceTrash,
+  );
+  const spaceTrashSaver = createSaver(deletedSpacesFile, () => spaceTrash);
+  // Whether unused pages go to sleep by themselves (see sleep.ts).
+  const sleepSettingsFile = path.join(
+    app.getPath('userData'),
+    'sleep-settings.json',
+  );
+  let sleepSettings = await loadJson(
+    sleepSettingsFile,
+    parseSleepSettings,
+    defaultSleepSettings,
+  );
+  const sleepSettingsSaver = createSaver(
+    sleepSettingsFile,
+    () => sleepSettings,
+  );
   // The browser extensions you added (see extensionList.ts).
   const extensionsFile = path.join(app.getPath('userData'), 'extensions.json');
   let extensionList = await loadJson(
@@ -544,11 +608,16 @@ export async function createTabs(
       spaceId: t.spaceId,
       closed: t.closed,
     })),
-    spaces: state.spaces.map((s) => ({ id: s.id, name: s.name })),
+    spaces: state.spaces.map((s) => ({
+      id: s.id,
+      name: s.name,
+      about: s.about,
+    })),
     artifacts: artifacts.artifacts.map((a) => ({
       id: a.id,
       title: a.title,
       kind: a.kind,
+      fileLabel: artifactsModel.fileLabel(a),
       spaceId: a.spaceId,
     })),
   });
@@ -590,6 +659,16 @@ export async function createTabs(
 
   const activeTabId = () =>
     state.active?.kind === 'tab' ? state.active.id : null;
+  // How far each uploaded image or PDF is zoomed while the app is open (1 = 100%). They
+  // use the same steps and menu as web pages.
+  const fileZooms = new Map<number, number>();
+  // The uploaded image or PDF on screen, if that is what is open.
+  const activeFileId = (): number | null => {
+    const active = state.active;
+    if (active?.kind !== 'artifact') return null;
+    const found = artifactsModel.findArtifact(artifacts, active.id);
+    return found?.file ? found.id : null;
+  };
   // The active tab's live page, if it has one.
   const activePage = () => {
     const id = state.active?.kind === 'tab' ? state.active.id : null;
@@ -871,6 +950,7 @@ export async function createTabs(
       artifacts: artifacts.artifacts,
       chats: chats.conversations,
       history: history.entries,
+      unread: unreadChats,
     };
     const picked = pickUpRows(spaceId, from, newTabSettings.hidden);
     const ordered = recentSpaceIds(
@@ -904,6 +984,7 @@ export async function createTabs(
                 emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
                 color: s.color,
                 collapsed: s.collapsed,
+                about: s.about,
               },
             ]
           : [];
@@ -913,20 +994,51 @@ export async function createTabs(
     };
   };
 
+  // Chats with a reply that finished while you were not looking at that chat ("Reply
+  // waiting"). Kept while the app is open. A chat is being looked at when it is the
+  // open chat and the chat is showing in full (alone, or tall enough in the bar).
+  const unreadChats = new Set<number>();
+  let wasGenerating = new Set<number>();
+  const watching = (chatId: number) =>
+    chats.activeId === chatId &&
+    (state.settings.viewMode === 'chat' ||
+      (state.settings.viewMode === 'both' && state.settings.chatExpanded));
+  const trackUnread = (generating: number[]) => {
+    const now = new Set(generating);
+    for (const id of wasGenerating) {
+      if (
+        !now.has(id) &&
+        chats.conversations.some((c) => c.id === id) &&
+        !watching(id)
+      ) {
+        unreadChats.add(id);
+      }
+    }
+    wasGenerating = now;
+    if (watching(chats.activeId)) unreadChats.delete(chats.activeId);
+    for (const id of unreadChats) {
+      if (!chats.conversations.some((c) => c.id === id)) unreadChats.delete(id);
+    }
+  };
+
   const sendState = () => {
     if (win.isDestroyed()) return;
     const id = activeTabId();
     const history =
       id === null ? undefined : pageContents(id)?.navigationHistory;
     const generating = chatService?.runningChats() ?? [];
+    trackUnread(generating);
     const ui: UiState = {
-      spaces: state.spaces.map(({ id, name, color, emoji, collapsed }) => ({
-        id,
-        name,
-        emoji: emojiOr(emoji, DEFAULT_SPACE_EMOJI),
-        color,
-        collapsed,
-      })),
+      spaces: state.spaces.map(
+        ({ id, name, color, emoji, collapsed, about }) => ({
+          about,
+          id,
+          name,
+          emoji: emojiOr(emoji, DEFAULT_SPACE_EMOJI),
+          color,
+          collapsed,
+        }),
+      ),
       artifactTabs: state.artifactTabs.flatMap((t) => {
         const a = artifactsModel.findArtifact(artifacts, t.artifactId);
         return a
@@ -946,9 +1058,10 @@ export async function createTabs(
         title: a.title,
         emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
         kind: a.kind,
+        fileLabel: artifactsModel.fileLabel(a),
         spaceId: a.spaceId,
         updatedAt: a.updatedAt,
-        size: a.content.length,
+        size: a.file ? a.file.bytes : a.content.length,
       })),
       tabs: state.tabs.map((tab) => ({
         id: tab.id,
@@ -963,7 +1076,13 @@ export async function createTabs(
         muted: pageContents(tab.id)?.isAudioMuted() ?? false,
       })),
       active: state.active,
-      zoom: Math.round((activePage()?.getZoomFactor() ?? 1) * 100) / 100,
+      zoom:
+        Math.round(
+          (activeFileId() === null
+            ? (activePage()?.getZoomFactor() ?? 1)
+            : (fileZooms.get(activeFileId() as number) ?? 1)) * 100,
+        ) / 100,
+      zoomable: activeFileId() !== null || activePage() !== undefined,
       bookmarked: isBookmarked(bookmarks, activePage()?.getURL()),
       certBypassed: certBypassed(activePage()?.getURL()),
       blockedPopups:
@@ -985,6 +1104,8 @@ export async function createTabs(
           messageCount: c.messages.length,
           model: c.model,
           generating: generating.includes(c.id),
+          unread: unreadChats.has(c.id),
+          spaceIds: c.refs.filter((r) => r.kind === 'space').map((r) => r.id),
         })),
         activeId: chats.activeId,
         // The links on the chat you are looking at.
@@ -1892,6 +2013,15 @@ export async function createTabs(
   // Zoom the active page one step in (1) or out (-1), or back to 100% (0). The
   // site remembers it, and every open page of that site follows.
   const changeZoom = (direction: 1 | -1 | 0) => {
+    const fileId = activeFileId();
+    if (fileId !== null) {
+      const next =
+        direction === 0 ? 1 : stepZoom(fileZooms.get(fileId) ?? 1, direction);
+      if (next === 1) fileZooms.delete(fileId);
+      else fileZooms.set(fileId, next);
+      sendState();
+      return;
+    }
     const contents = activePage();
     if (!contents) return;
     const host = zoomHost(contents.getURL());
@@ -1958,6 +2088,10 @@ export async function createTabs(
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
     if (tab && !model.isNewTabPage(tab.url)) ensureView(tab);
+    if (tab && tab.spaceId !== null && !tab.closed) {
+      lastInSpace.set(tab.spaceId, tab.id);
+    }
+    if (tab) lastUsed.set(tab.id, Date.now());
     for (const [tabId, view] of views) {
       // Hidden pages are not resized while the layout slides, so catch up now.
       if (tabId === id) view.setBounds(pageBounds());
@@ -2204,7 +2338,7 @@ export async function createTabs(
       !(await confirm({
         title: 'Delete Space',
         message: `Delete “${space.name}”?`,
-        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It cannot be undone.`,
+        detail: `This closes its ${count} tab${count === 1 ? '' : 's'}. It waits in Recently deleted in the Library, where you can bring it back.`,
         button: 'Delete Space and close tabs',
       }))
     ) {
@@ -2212,6 +2346,30 @@ export async function createTabs(
     }
     // The Space may have changed while the dialog was open.
     syncLinkSnapshots(); // Chats' links to this Space and its tabs remember them.
+    // It waits in Recently deleted (its pages as links, and which artifacts it held),
+    // unless there was nothing in it.
+    const pages = state.tabs
+      .filter((t) => t.spaceId === id && model.isWebUrl(t.url))
+      .map((t) => ({ title: t.title, url: t.url }));
+    const artifactIds = artifacts.artifacts
+      .filter((a) => a.spaceId === id)
+      .map((a) => a.id);
+    if (pages.length > 0 || artifactIds.length > 0 || space.about !== '') {
+      spaceTrash = trashSpace(
+        spaceTrash,
+        {
+          name: space.name,
+          color: space.color,
+          emoji: space.emoji,
+          about: space.about,
+          pages,
+          artifactIds,
+        },
+        Date.now(),
+      );
+      spaceTrashSaver.schedule();
+      libraryChanged();
+    }
     const result = model.deleteSpace(state, id);
     // Its artifacts are kept, just no longer in a Space.
     commitArtifacts(artifactsModel.releaseSpace(artifacts, id));
@@ -2603,6 +2761,7 @@ export async function createTabs(
     },
     actions: actionEnv,
     artifactStore: {
+      readFile: (id) => readUploadedFile(id),
       read: (id) => {
         const found = artifactsModel.findArtifact(artifacts, id);
         return found
@@ -2802,6 +2961,167 @@ export async function createTabs(
         librarySettings.trashDays,
       ),
     );
+    const keptSpaces = purgeOldTrashedSpaces(
+      spaceTrash,
+      now,
+      librarySettings.trashDays,
+    );
+    if (keptSpaces !== spaceTrash) {
+      spaceTrash = keptSpaces;
+      spaceTrashSaver.schedule();
+    }
+  };
+
+  // Make a Space with a name, colour, picture and note, and its pages as links
+  // (closed ones stay closed; the rest are sleeping tabs). Returns its id.
+  const buildSpace = (input: {
+    name: string;
+    color: string;
+    emoji: string | null;
+    about: string;
+    pages: { title: string; url: string; closed: boolean }[];
+  }): number | null => {
+    if (state.spaces.length >= model.MAX_SPACES) return null;
+    const created = model.addSpace(state, input.name);
+    let next = created.state;
+    const color = model.SPACE_COLORS.find((c) => c === input.color);
+    if (color) next = model.setSpaceColor(next, created.id, color);
+    if (input.emoji !== null) {
+      next = model.setSpaceEmoji(next, created.id, input.emoji);
+    }
+    next = model.setSpaceAbout(next, created.id, input.about);
+    for (const page of input.pages) {
+      if (!model.isWebUrl(page.url)) continue;
+      const added = model.addTab(next, {
+        url: page.url,
+        spaceId: created.id,
+        activate: false,
+      });
+      next = model.updateTab(added.state, added.id, { title: page.title });
+      if (page.closed) next = model.closeTab(next, added.id);
+    }
+    commit(next);
+    return created.id;
+  };
+
+  // Bring a deleted Space back from Recently deleted: its pages come back as closed
+  // links, and its artifacts that are still around and in no Space move back in.
+  const restoreDeletedSpace = (trashId: number) => {
+    const taken = takeTrashedSpace(spaceTrash, trashId);
+    if (!taken) return;
+    const id = buildSpace({
+      ...taken.item,
+      pages: taken.item.pages.map((p) => ({ ...p, closed: true })),
+    });
+    if (id === null) return;
+    spaceTrash = taken.trash;
+    spaceTrashSaver.schedule();
+    let kept = artifacts;
+    for (const artifactId of taken.item.artifactIds) {
+      const found = artifactsModel.findArtifact(kept, artifactId);
+      if (!found || found.spaceId !== null) continue;
+      const moved = artifactsModel.updateArtifact(
+        kept,
+        artifactId,
+        { spaceId: id },
+        Date.now(),
+      );
+      if (moved.ok) kept = moved.state;
+    }
+    commitArtifacts(kept);
+    libraryChanged();
+    select({ kind: 'lead', spaceId: id });
+  };
+
+  // A copy of a Space: same colour, picture and note, its pages as sleeping tabs
+  // (the closed ones stay closed), and copies of its artifacts. Chats are not copied.
+  const duplicateSpace = (spaceId: number) => {
+    const source = model.findSpace(state, spaceId);
+    if (!source) return;
+    const id = buildSpace({
+      name: `${source.name} copy`,
+      color: source.color,
+      emoji: source.emoji,
+      about: source.about,
+      pages: state.tabs
+        .filter((t) => t.spaceId === spaceId)
+        .map((t) => ({ title: t.title, url: t.url, closed: t.closed })),
+    });
+    if (id === null) return;
+    for (const a of artifacts.artifacts.filter((x) => x.spaceId === spaceId)) {
+      copyArtifact(a.id, id);
+    }
+    select({ kind: 'lead', spaceId: id });
+  };
+
+  // Save a Space as a Markdown file (its pages and artifact titles, not their text).
+  const exportSpace = async (spaceId: number) => {
+    const space = model.findSpace(state, spaceId);
+    if (!space) return;
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export Space',
+      defaultPath: path.join(
+        app.getPath('documents'),
+        exportFileName(space.name),
+      ),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (picked.canceled || !picked.filePath) return;
+    const text = spaceMarkdown({
+      name: space.name,
+      about: space.about,
+      pages: state.tabs
+        .filter((t) => t.spaceId === spaceId)
+        .map((t) => ({ title: t.title, url: t.url, closed: t.closed })),
+      artifacts: artifacts.artifacts
+        .filter((a) => a.spaceId === spaceId)
+        .map((a) => ({ title: a.title, kind: a.kind })),
+    });
+    try {
+      fs.writeFileSync(picked.filePath, text, 'utf8');
+    } catch (error) {
+      void dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'The Space could not be saved.',
+        detail: (error as Error).message,
+      });
+    }
+  };
+
+  // Save a chat as a Markdown file you choose the place for.
+  const exportChat = async (chatId: number) => {
+    const chat = chatsModel.findConversation(chats, chatId);
+    if (!chat) return;
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export chat',
+      defaultPath: path.join(
+        app.getPath('documents'),
+        exportFileName(chat.title, 'Chat'),
+      ),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (picked.canceled || !picked.filePath) return;
+    try {
+      fs.writeFileSync(picked.filePath, chatMarkdown(chat, new Date()), 'utf8');
+    } catch (error) {
+      void dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'The chat could not be saved.',
+        detail: (error as Error).message,
+      });
+    }
+  };
+
+  // "Search chats…": show only the chat (whose list is in the sidebar) and put the
+  // keyboard in the list's search box.
+  const openChatSearch = () => {
+    if (state.settings.viewMode !== 'chat') {
+      commitAndShow(model.setViewMode(state, 'chat'));
+    }
+    if (!pinnedNow()) setHover(true);
+    if (sidebar.isDestroyed()) return;
+    sidebar.send('chats:focus-search');
+    sidebar.focus(); // So the box can take keyboard input.
   };
 
   const deleteChat = (id: number) => {
@@ -2815,9 +3135,8 @@ export async function createTabs(
   };
 
   const chatMenuActions: ChatMenuActions = {
-    selectChat: (id) =>
-      commitChats(chatsModel.setActiveConversation(chats, id)),
-    newChat: () => commitChats(chatsModel.newConversation(chats).state),
+    selectChat: (id) => commitChats(chatsModel.selectConversation(chats, id)),
+    newChat: () => commitChats(chatsModel.startNewChat(chats).state),
     // The chat's name becomes a text box. With only the chat open, the chat list
     // is in the sidebar (which must be open to show the box); otherwise the
     // title is in the chat bar.
@@ -2903,19 +3222,196 @@ export async function createTabs(
     if (spaceId !== null && !model.findSpace(state, spaceId)) return null;
     const original = artifactsModel.findArtifact(artifacts, id);
     if (!original) return null;
+    // An uploaded file: its bytes are copied under the copy's number first.
+    const newId = artifacts.nextId;
+    if (original.file) {
+      try {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        fs.copyFileSync(uploadPath(original), uploadPath(original, newId));
+      } catch {
+        return null;
+      }
+    }
     const result = artifactsModel.createArtifact(
       artifacts,
       {
         kind: original.kind,
         title: `${original.title} (copy)`,
         content: original.content,
+        file: original.file ?? undefined,
         spaceId,
       },
       Date.now(),
     );
-    if (!result.ok) return null;
+    if (!result.ok) {
+      if (original.file)
+        fs.rmSync(uploadPath(original, newId), { force: true });
+      return null;
+    }
     commitArtifacts(result.state);
     return result.artifact.id;
+  };
+
+  // ---- Uploads ---------------------------------------------------------------
+  // (pickAndImport, defined below, asks which files and adds them.)
+  // An uploaded image or PDF is kept as a file in uploads/, named by its artifact's
+  // number. Text files are read straight into text artifacts.
+  const uploadsDir = path.join(app.getPath('userData'), 'uploads');
+  function uploadPath(
+    artifact: { id: number; file: { ext: string } | null },
+    id = artifact.id,
+  ): string {
+    return path.join(uploadsDir, `${id}.${artifact.file?.ext ?? 'bin'}`);
+  }
+  // At start: files whose artifact is gone for good are deleted.
+  const sweepUploads = () => {
+    try {
+      const keep = new Set(
+        [...artifacts.artifacts, ...artifacts.trash]
+          .filter((a) => a.file)
+          .map((a) => path.basename(uploadPath(a))),
+      );
+      for (const name of fs.readdirSync(uploadsDir)) {
+        if (!keep.has(name))
+          fs.rmSync(path.join(uploadsDir, name), { force: true });
+      }
+    } catch {
+      // No uploads folder yet.
+    }
+  };
+  sweepUploads();
+
+  // Add files you chose or dropped, as artifacts in a Space (or in none). Returns
+  // how many were added. Files that cannot be added are listed in one message.
+  // With a chat given (`chatId`), the files are attached to that chat (linked to it)
+  // and nothing is opened.
+  const importFiles = async (
+    rawPaths: unknown,
+    spaceId: number | null,
+    chatId: number | null = null,
+    // When given, the new artifacts' numbers are added here and nothing is opened.
+    collect?: number[],
+  ): Promise<number> => {
+    if (!Array.isArray(rawPaths)) return 0;
+    if (spaceId !== null && !model.findSpace(state, spaceId)) spaceId = null;
+    const paths = rawPaths
+      .filter((p): p is string => typeof p === 'string' && p !== '')
+      .slice(0, MAX_UPLOAD_FILES);
+    const refused: string[] = [];
+    let first: number | null = null;
+    let added = 0;
+    // Link a new artifact to the chat the files are for.
+    const attach = (artifactId: number, name: string) => {
+      collect?.push(artifactId);
+      if (chatId === null) return;
+      const found = snapshotLookup(workspace())('artifact', artifactId);
+      const count = () =>
+        chatsModel.findConversation(chats, chatId)?.refs.length ?? 0;
+      const before = count();
+      if (found) {
+        commitChats(
+          chatsModel.addRef(chats, chatId, {
+            kind: 'artifact',
+            id: artifactId,
+            title: found.title,
+            url: found.url,
+          }),
+        );
+      }
+      if (count() === before) {
+        refused.push(
+          `${name}: it is in your artifacts, but this chat has as many links as it can hold.`,
+        );
+      }
+    };
+    for (const file of paths) {
+      const name = path.basename(file);
+      try {
+        const stat = fs.statSync(file);
+        if (!stat.isFile()) {
+          refused.push(`${name}: that is not a file.`);
+          continue;
+        }
+        const handle = fs.openSync(file, 'r');
+        const head = Buffer.alloc(16);
+        try {
+          fs.readSync(handle, head, 0, 16, 0);
+        } finally {
+          fs.closeSync(handle);
+        }
+        const plan = planUpload(name, stat.size, head);
+        if (plan.type === 'refused') {
+          refused.push(`${name}: ${plan.reason}`);
+          continue;
+        }
+        if (plan.type === 'text') {
+          const content = fs.readFileSync(file, 'utf8');
+          const made = artifactsModel.createArtifact(
+            artifacts,
+            { kind: plan.kind, title: plan.title, content, spaceId },
+            Date.now(),
+          );
+          if (!made.ok) {
+            refused.push(
+              `${name}: ${made.reason === 'too-long' ? 'it is too long.' : 'it could not be added.'}`,
+            );
+            continue;
+          }
+          commitArtifacts(made.state);
+          first ??= made.artifact.id;
+          added++;
+          attach(made.artifact.id, name);
+          continue;
+        }
+        const id = artifacts.nextId;
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        const target = path.join(uploadsDir, `${id}.${plan.ext}`);
+        fs.copyFileSync(file, target);
+        const made = artifactsModel.createArtifact(
+          artifacts,
+          {
+            kind: 'file',
+            title: plan.title,
+            spaceId,
+            file: {
+              name: plan.title,
+              mime: plan.mime,
+              ext: plan.ext,
+              bytes: stat.size,
+            },
+          },
+          Date.now(),
+        );
+        if (!made.ok) {
+          fs.rmSync(target, { force: true });
+          refused.push(`${name}: it could not be added.`);
+          continue;
+        }
+        commitArtifacts(made.state);
+        first ??= made.artifact.id;
+        added++;
+        attach(made.artifact.id, name);
+      } catch (error) {
+        refused.push(`${name}: ${(error as Error).message}`);
+      }
+    }
+    if (rawPaths.length > MAX_UPLOAD_FILES) {
+      refused.push(`Only the first ${MAX_UPLOAD_FILES} files were looked at.`);
+    }
+    if (first !== null && chatId === null && collect === undefined) {
+      openArtifact(first);
+    }
+    if (refused.length > 0) {
+      void dialog.showMessageBox(win, {
+        type: 'info',
+        message:
+          added > 0
+            ? 'Some files were not added.'
+            : 'The files were not added.',
+        detail: refused.join('\n'),
+      });
+    }
+    return added;
   };
 
   // Put an artifact in a Space (or none, with null).
@@ -3003,6 +3499,9 @@ export async function createTabs(
     switch (choice.action) {
       case 'page':
         openTab(newTabUrl(), spaceId);
+        break;
+      case 'upload':
+        void pickAndImport(spaceId);
         break;
       case 'new-artifact': {
         const result = artifactsModel.createArtifact(
@@ -3326,6 +3825,26 @@ export async function createTabs(
       case 'ungroup':
         menuActions.ungroupSpace(spaceId);
         break;
+      case 'sleep':
+        putToSleep(spaceSleepers(sleepTabs(), spaceId, activeTabId()));
+        break;
+      case 'duplicate':
+        duplicateSpace(spaceId);
+        break;
+      case 'export':
+        void exportSpace(spaceId);
+        break;
+      case 'reopen-all': {
+        // Every closed page of the Space comes back as a tab.
+        let next = state;
+        for (const tab of state.tabs.filter(
+          (t) => t.spaceId === spaceId && t.closed,
+        )) {
+          next = model.reopenTab(next, tab.id);
+        }
+        if (next !== state) commitAndShow(revealPage(next));
+        break;
+      }
       case 'close-all':
         for (const tab of state.tabs.filter(
           (t) => t.spaceId === spaceId && !t.closed,
@@ -3355,6 +3874,12 @@ export async function createTabs(
         break;
       case 'name-ai':
         nameFromMenu('chat', choice.chatId);
+        break;
+      case 'export':
+        void exportChat(choice.chatId);
+        break;
+      case 'search':
+        openChatSearch();
         break;
       case 'icon': {
         const chatId = choice.chatId;
@@ -3449,6 +3974,58 @@ export async function createTabs(
 
   const select = (ref: ActiveRef) =>
     commitAndShow(revealPage(model.setActive(state, ref)));
+
+  // When each page was last shown (for putting unused pages to sleep).
+  const lastUsed = new Map<number, number>();
+  // What the sleep rules need to know about each page right now.
+  const sleepTabs = (): SleepTab[] =>
+    state.tabs.map((t) => ({
+      id: t.id,
+      spaceId: t.spaceId,
+      loaded: views.has(t.id),
+      closed: t.closed,
+      audible: pageContents(t.id)?.isCurrentlyAudible() ?? false,
+      working: working.has(t.id),
+    }));
+  // Put pages to sleep: their live web page goes (no memory used) and they load
+  // again when opened.
+  const putToSleep = (ids: number[]) => {
+    for (const id of ids) {
+      destroyView(id);
+      lastUsed.delete(id);
+    }
+    if (ids.length > 0) sendState();
+  };
+  // The page you were last on in each Space (so going to a Space lands there).
+  const lastInSpace = new Map<number, number>();
+  // Go to a Space: the page you were last on there, else its first open page, else
+  // its overview.
+  const goToSpace = (spaceId: number | null) => {
+    if (spaceId === null || !model.findSpace(state, spaceId)) return;
+    const tab = landingTab(state.tabs, spaceId, lastInSpace.get(spaceId));
+    select(tab === null ? { kind: 'lead', spaceId } : { kind: 'tab', id: tab });
+  };
+  const spaceIds = () => state.spaces.map((s) => s.id);
+  // The Space switcher: a menu of every Space, at a place in the window.
+  const openSpaceSwitcher = (x: number, y: number) => {
+    showMenu(
+      spaceSwitcherItems(state, currentSpaceId()),
+      x,
+      y,
+      (choice) => {
+        const parsed = parseSwitchSpaceChoice(choice);
+        if (parsed === null) return;
+        if ('spaceId' in parsed) {
+          goToSpace(parsed.spaceId);
+        } else if (state.spaces.length < model.MAX_SPACES) {
+          const created = model.addSpace(state);
+          commit(created.state);
+          select({ kind: 'lead', spaceId: created.id });
+        }
+      },
+      win.webContents,
+    );
+  };
 
   // Expand the chat, or shrink it back to the compact bar. If the chat is
   // closed, or fills the window, bring back the page with the chat instead.
@@ -3575,6 +4152,24 @@ export async function createTabs(
       } else if (input.key === 'ArrowRight') {
         event.preventDefault();
         goBackOrForward('forward');
+      } else if (/^[1-9]$/.test(input.key)) {
+        // Alt+1 to Alt+9: the Space at that place in the sidebar.
+        const id = spaceIdByNumber(spaceIds(), Number(input.key));
+        if (id !== null) {
+          event.preventDefault();
+          goToSpace(id);
+        }
+      } else if (input.key === 'ArrowDown' || input.key === 'ArrowUp') {
+        // Alt+Down / Alt+Up: the next / previous Space.
+        const id = neighborSpaceId(
+          spaceIds(),
+          currentSpaceId(),
+          input.key === 'ArrowDown' ? 1 : -1,
+        );
+        if (id !== null) {
+          event.preventDefault();
+          goToSpace(id);
+        }
       }
       return;
     }
@@ -3596,6 +4191,11 @@ export async function createTabs(
     } else if (key === '0') {
       event.preventDefault();
       changeZoom(0);
+    } else if (key === 's' && input.shift) {
+      // Ctrl+Shift+S: the Space switcher, at the top left of the page.
+      event.preventDefault();
+      const bounds = win.getContentBounds();
+      openSpaceSwitcher(bounds.width / 2 - 140, TOOLBAR_HEIGHT);
     } else if (key === 's' && !input.shift) {
       event.preventDefault();
       savePageAs();
@@ -3610,7 +4210,13 @@ export async function createTabs(
       reopenLastClosed();
     } else if (key === 't') {
       event.preventDefault();
-      openTab(newTabUrl(), currentSpaceId());
+      // With only the chat showing, a new "tab" is a new chat.
+      if (state.settings.viewMode === 'chat') {
+        chatMenuActions.newChat();
+        win.webContents.focus();
+      } else {
+        openTab(newTabUrl(), currentSpaceId());
+      }
     } else if (key === 'a' && input.shift) {
       event.preventDefault();
       openTabSearch();
@@ -3683,7 +4289,7 @@ export async function createTabs(
     // This new tab has been used: a new tab opened after it is not "second in a row".
     const used = activeTabId();
     if (used !== null) usedNewTabs.add(used);
-    const created = chatsModel.newConversation(chats);
+    const created = chatsModel.startNewChat(chats);
     commitChats(created.state);
     // Everything picked with "@" is linked to the chat, like the chat's own "@".
     const lookup = snapshotLookup(workspace());
@@ -3974,6 +4580,11 @@ export async function createTabs(
     // Show the page alone (chat closed), both, or the chat alone (page hidden).
     'view:set': (mode) => {
       if (!model.VIEW_MODES.includes(mode as model.ViewMode)) return;
+      // Leaving a new-tab page for the chat alone: the chat starts from its own new
+      // chat screen, not from whatever chat was open before.
+      if (mode === 'chat' && state.settings.viewMode !== 'chat') {
+        if (onNewTabPage()) chatMenuActions.newChat();
+      }
       commitAndShow(model.setViewMode(state, mode as model.ViewMode));
     },
     'panel:open': (panel) => {
@@ -4058,6 +4669,10 @@ export async function createTabs(
     // "…" menu that clears a list.
     'library:restore': (kind, id) => {
       if (!isId(id)) return;
+      if (kind === 'space') {
+        restoreDeletedSpace(id);
+        return;
+      }
       if (kind === 'chat') {
         commitChats(chatsModel.restoreConversation(chats, id));
       } else if (kind === 'artifact') {
@@ -4072,11 +4687,17 @@ export async function createTabs(
       libraryChanged();
     },
     'library:delete-forever': (kind, id) => {
-      if (!isId(id) || (kind !== 'chat' && kind !== 'artifact')) return;
+      if (
+        !isId(id) ||
+        (kind !== 'chat' && kind !== 'artifact' && kind !== 'space')
+      )
+        return;
       const title =
         kind === 'chat'
           ? chats.trash.find((c) => c.id === id)?.title
-          : artifacts.trash.find((a) => a.id === id)?.title;
+          : kind === 'space'
+            ? spaceTrash.items.find((s) => s.id === id)?.name
+            : artifacts.trash.find((a) => a.id === id)?.title;
       if (title === undefined) return;
       void confirm({
         title: 'Delete for good',
@@ -4086,7 +4707,10 @@ export async function createTabs(
         button: 'Delete for good',
       }).then((yes) => {
         if (!yes) return;
-        if (kind === 'chat') {
+        if (kind === 'space') {
+          spaceTrash = purgeTrashedSpace(spaceTrash, id);
+          spaceTrashSaver.schedule();
+        } else if (kind === 'chat') {
           commitChats(chatsModel.purgeConversation(chats, id));
         } else {
           commitArtifacts(artifactsModel.purgeArtifact(artifacts, id));
@@ -4323,12 +4947,15 @@ export async function createTabs(
             void confirm({
               title: 'Empty Recently deleted',
               message: 'Delete everything in Recently deleted for good?',
-              detail: 'These chats and artifacts cannot be brought back.',
+              detail:
+                'These chats, artifacts and Spaces cannot be brought back.',
               button: 'Empty',
             }).then((yes) => {
               if (!yes) return;
               commitChats(chatsModel.emptyChatTrash(chats));
               commitArtifacts(artifactsModel.emptyArtifactTrash(artifacts));
+              spaceTrash = emptySpaceTrash(spaceTrash);
+              spaceTrashSaver.schedule();
               libraryChanged();
             });
           } else if (parsed.range !== 'all') {
@@ -4360,7 +4987,12 @@ export async function createTabs(
       showMenu(
         toolsMenuItems({
           hasPage: id !== null && pageIsShown(),
-          zoomText: zoomLabel(activePage()?.getZoomFactor() ?? 1),
+          zoomable: activeFileId() !== null,
+          zoomText: zoomLabel(
+            activeFileId() === null
+              ? (activePage()?.getZoomFactor() ?? 1)
+              : (fileZooms.get(activeFileId() as number) ?? 1),
+          ),
         }),
         x,
         y,
@@ -4509,6 +5141,12 @@ export async function createTabs(
         'site',
       );
     },
+    // + / - / Ctrl+scroll in an image or PDF view: one step, like on a web page.
+    'zoom:change': (direction) => {
+      if (direction === 1 || direction === -1 || direction === 0) {
+        changeZoom(direction);
+      }
+    },
     // The zoom chip in the address bar.
     'zoom:menu': (x, y) => {
       if (!isNumber(x) || !isNumber(y)) return;
@@ -4624,6 +5262,10 @@ export async function createTabs(
         (choice) => {
           const parsed = parseNewArtifactChoice(choice);
           if (!parsed) return;
+          if ('upload' in parsed) {
+            void pickAndImport(currentSpaceId());
+            return;
+          }
           const result = artifactsModel.createArtifact(
             artifacts,
             { kind: parsed.kind, title: '', spaceId: currentSpaceId() },
@@ -4695,7 +5337,12 @@ export async function createTabs(
         ),
       );
     },
-    'chats:new': () => chatMenuActions.newChat(),
+    // The "+" on the chat: a new chat (the empty one is reused, so pressing it again
+    // and again makes nothing new). Keep the keyboard in the chat to type straight away.
+    'chats:new': () => {
+      chatMenuActions.newChat();
+      win.webContents.focus();
+    },
     'chats:select': (id) => {
       if (isId(id)) chatMenuActions.selectChat(id);
     },
@@ -4708,6 +5355,26 @@ export async function createTabs(
       if (isId(id)) void deleteChat(id);
     },
     // The chat-name menu (no id) or the menu of one chat in the list.
+    // The "+" in the chat's message box: add a page, a Space, an artifact or a file.
+    'chat:add-menu': (chatId, x, y) => {
+      if (!isId(chatId) || !isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        addToChatMenuItems(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseAddToChatChoice(choice);
+          if (!parsed) return;
+          if (parsed.action === 'file') {
+            void pickAndImport(currentSpaceId(), chatId);
+          } else if (!win.webContents.isDestroyed()) {
+            // The message box opens its list for it.
+            win.webContents.send('composer:add', chatId, parsed.action);
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
     'chats:menu': (id, x, y, alignCenter) => {
       if (!isNumber(x) || !isNumber(y)) return;
       const items =
@@ -4739,9 +5406,33 @@ export async function createTabs(
         requestSender ?? win.webContents,
       );
     },
+    // The note on a Space's overview.
+    'space:about': (id, text) => {
+      if (!isId(id) || typeof text !== 'string') return;
+      commit(model.setSpaceAbout(state, id, text));
+    },
+    // The Space chip in the toolbar.
+    'spaces:switcher': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      openSpaceSwitcher(x, y);
+    },
+    'space:bulk': (id, action) => {
+      if (!isId(id) || !model.findSpace(state, id)) return;
+      if (
+        action === 'close-all' ||
+        action === 'reopen-all' ||
+        action === 'sleep'
+      ) {
+        runSpaceChoice(id, `space.${action}`);
+      }
+    },
     'space:menu': (id, x, y) => {
       if (!isId(id) || !isNumber(x) || !isNumber(y)) return;
-      const items = spaceMenuItems(state, id);
+      const items = spaceMenuItems(
+        state,
+        id,
+        spaceSleepers(sleepTabs(), id, activeTabId()).length,
+      );
       if (!items) return;
       showMenu(
         items,
@@ -5072,6 +5763,28 @@ export async function createTabs(
       );
     }
   };
+  ipcMain.handle('sleep-settings:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return sleepSettings;
+  });
+  ipcMain.handle('sleep-settings:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    sleepSettings = withSleepSettings(sleepSettings, changes);
+    sleepSettingsSaver.schedule();
+    return sleepSettings;
+  });
+  // Every minute: pages that have gone unused for the time you chose go to sleep.
+  const sleepTimer = setInterval(() => {
+    putToSleep(
+      idleSleepers(
+        sleepTabs(),
+        lastUsed,
+        Date.now(),
+        sleepSettings.afterMinutes,
+        activeTabId(),
+      ),
+    );
+  }, 60_000);
   ipcMain.handle('extension-settings:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return extensionSettings;
@@ -5110,6 +5823,12 @@ export async function createTabs(
       );
       if (found) void manager.remove(found.key);
     }, 20_000);
+  }
+  if (!app.isPackaged && process.env.AIB_TEST_UPLOADS) {
+    // For testing only: add files at start (a test cannot use the file picker).
+    setTimeout(() => {
+      void importFiles(process.env.AIB_TEST_UPLOADS?.split('|') ?? [], null);
+    }, 8000);
   }
   if (!app.isPackaged && process.env.AIB_TEST_STORE_EXTENSION) {
     void manager.installStoreForTest(process.env.AIB_TEST_STORE_EXTENSION);
@@ -5294,6 +6013,15 @@ export async function createTabs(
         detail: `Chat · ${c.messages.length} message${c.messages.length === 1 ? '' : 's'}`,
         deletedAt: c.deletedAt,
         daysLeft: daysLeft(c.deletedAt),
+      })),
+      ...spaceTrash.items.map((s) => ({
+        kind: 'space' as const,
+        id: s.id,
+        title: s.name,
+        emoji: emojiOr(s.emoji, DEFAULT_SPACE_EMOJI),
+        detail: `Space · ${s.pages.length} page${s.pages.length === 1 ? '' : 's'}`,
+        deletedAt: s.deletedAt,
+        daysLeft: daysLeft(s.deletedAt),
       })),
       ...artifacts.trash.map((a) => ({
         kind: 'artifact' as const,
@@ -5498,7 +6226,8 @@ ${artifact.content.slice(0, 1500)}`;
         return { ok: false, reason: 'failed' };
       }
       const current = artifactsModel.findArtifact(artifacts, id);
-      if (!current) return { ok: false, reason: 'failed' };
+      if (!current || current.kind === 'file')
+        return { ok: false, reason: 'failed' };
       // The text changed since the editor loaded it (the assistant edited it):
       // saving now would overwrite that, so refuse and let the editor ask.
       if (current.revision !== revision) {
@@ -5515,6 +6244,255 @@ ${artifact.content.slice(0, 1500)}`;
       if (!result.ok) return { ok: false, reason: 'failed' };
       commitArtifacts(result.state);
       return { ok: true, revision: result.artifact.revision };
+    },
+  );
+  // "Upload files…": pick files, and add them to a Space (or the one you are in).
+  const pickAndImport = async (
+    spaceId: number | null,
+    chatId: number | null = null,
+  ) => {
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Add files',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Text, code, images and PDFs',
+          extensions: [
+            'md',
+            'markdown',
+            'txt',
+            'text',
+            'html',
+            'htm',
+            'css',
+            'js',
+            'ts',
+            'tsx',
+            'jsx',
+            'json',
+            'py',
+            'sh',
+            'csv',
+            'xml',
+            'yml',
+            'yaml',
+            'sql',
+            'png',
+            'jpg',
+            'jpeg',
+            'gif',
+            'webp',
+            'bmp',
+            'pdf',
+          ],
+        },
+      ],
+    });
+    if (picked.canceled) return 0;
+    return importFiles(picked.filePaths, spaceId, chatId);
+  };
+  ipcMain.handle('uploads:pick', (event, spaceId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return pickAndImport(isId(spaceId) ? spaceId : currentSpaceId());
+  });
+  // Files dropped on the Artifacts panel or a Space's overview.
+  ipcMain.handle('uploads:drop', (event, paths: unknown, spaceId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return importFiles(paths, isId(spaceId) ? spaceId : currentSpaceId());
+  });
+  // ---- Letting the assistant read uploads --------------------------------------
+  // A PDF's words are read by this window (PDF.js runs there, in a worker, away from
+  // the main process). A picture is shrunk if it is big, so it is cheap to send.
+  const pdfRequests = new Map<number, (result: PdfTextResult) => void>();
+  let nextPdfRequest = 1;
+  const pdfTexts = new Map<number, PdfTextResult>();
+  const askWindowForPdfText = (bytes: Uint8Array): Promise<PdfTextResult> =>
+    new Promise((resolve) => {
+      if (win.isDestroyed() || win.webContents.isDestroyed()) {
+        resolve({ ok: false });
+        return;
+      }
+      const requestId = nextPdfRequest++;
+      const timer = setTimeout(() => {
+        pdfRequests.delete(requestId);
+        resolve({ ok: false });
+      }, 60_000);
+      pdfRequests.set(requestId, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      win.webContents.send('pdf:extract', requestId, bytes);
+    });
+  ipcMain.on('pdf:extracted', (event, requestId: unknown, result: unknown) => {
+    if (!fromWindow(event) || typeof requestId !== 'number') return;
+    const done = pdfRequests.get(requestId);
+    if (!done) return;
+    pdfRequests.delete(requestId);
+    done(parsePdfText(result));
+  });
+  const MAX_PICTURE_SIDE = 1568;
+  const MAX_PICTURE_BYTES = 4 * 1024 * 1024;
+  async function readUploadedFile(id: number): Promise<FileReading> {
+    const found = artifactsModel.findArtifact(artifacts, id);
+    if (!found?.file) return { ok: false, reason: 'missing' };
+    let bytes: Buffer;
+    try {
+      bytes = fs.readFileSync(uploadPath(found));
+    } catch {
+      return { ok: false, reason: 'missing' };
+    }
+    if (found.file.mime === 'application/pdf') {
+      let text = pdfTexts.get(id);
+      if (!text) {
+        text = await askWindowForPdfText(new Uint8Array(bytes));
+        if (text.ok) pdfTexts.set(id, text);
+      }
+      return text.ok
+        ? {
+            ok: true,
+            kind: 'pdf',
+            pages: text.pages,
+            text: text.text,
+            scanned: text.scanned,
+            truncated: text.truncated,
+          }
+        : { ok: false, reason: 'unreadable' };
+    }
+    // A picture: shrink a big one (and send it as a JPEG), keep a small one as it is.
+    const picture = nativeImage.createFromBuffer(bytes);
+    if (!picture.isEmpty()) {
+      const { width, height } = picture.getSize();
+      const longest = Math.max(width, height);
+      if (longest > MAX_PICTURE_SIDE || bytes.length > MAX_PICTURE_BYTES) {
+        const scale = Math.min(1, MAX_PICTURE_SIDE / longest);
+        const smaller = picture.resize({
+          width: Math.max(1, Math.round(width * scale)),
+          height: Math.max(1, Math.round(height * scale)),
+          quality: 'good',
+        });
+        return {
+          ok: true,
+          kind: 'image',
+          mime: 'image/jpeg',
+          data: smaller.toJPEG(85).toString('base64'),
+        };
+      }
+    }
+    if (bytes.length > MAX_PICTURE_BYTES)
+      return { ok: false, reason: 'too-big' };
+    return {
+      ok: true,
+      kind: 'image',
+      mime: found.file.mime,
+      data: bytes.toString('base64'),
+    };
+  }
+
+  // Files dropped on the new-tab page: they become artifacts (in the tab's Space) and
+  // are given back so the page can show them as chips under its box. Nothing is
+  // opened or sent.
+  ipcMain.handle('newtab:drop', async (event, paths: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const ids: number[] = [];
+    await importFiles(paths, currentSpaceId(), null, ids);
+    return ids.flatMap((id) => {
+      const a = artifactsModel.findArtifact(artifacts, id);
+      return a
+        ? [
+            {
+              id,
+              title: a.title,
+              emoji: emojiOr(a.emoji, defaultArtifactEmoji(a.kind)),
+            },
+          ]
+        : [];
+    });
+  });
+  // Search across all chats (by name and by what was said), for the chat list.
+  // (The chat list is in the sidebar page, so that page may ask too.)
+  ipcMain.handle('chats:search', (event, query: unknown) => {
+    if (!fromWindow(event) && event.sender !== sidebar) {
+      throw new Error('Not allowed.');
+    }
+    if (typeof query !== 'string' || query.length > 200) return [];
+    return chatsModel.searchChats(chats, query);
+  });
+  // Files attached to a chat: picked from a dialog, dropped on the chat, or an image
+  // pasted into the message box. They become artifacts (in the Space you are in) that
+  // are linked to the chat, and no tab is opened.
+  const chatExists = (id: unknown): id is number =>
+    isId(id) && chatsModel.findConversation(chats, id) !== undefined;
+  ipcMain.handle('chat:attach-pick', (event, chatId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!chatExists(chatId)) return 0;
+    return pickAndImport(currentSpaceId(), chatId);
+  });
+  ipcMain.handle(
+    'chat:attach-drop',
+    (event, chatId: unknown, paths: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!chatExists(chatId)) return 0;
+      return importFiles(paths, currentSpaceId(), chatId);
+    },
+  );
+  // A pasted picture has no file on disk: its bytes are written to a temporary file,
+  // which goes through the same checks as any other upload.
+  ipcMain.handle(
+    'chat:attach-bytes',
+    async (event, chatId: unknown, extension: unknown, data: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!chatExists(chatId)) return 0;
+      if (
+        typeof extension !== 'string' ||
+        !PASTED_IMAGE_EXTENSIONS.includes(extension) ||
+        !(data instanceof Uint8Array) ||
+        data.length === 0 ||
+        data.length > MAX_UPLOAD_BYTES
+      ) {
+        return 0;
+      }
+      const folder = fs.mkdtempSync(
+        path.join(app.getPath('temp'), 'aib-paste-'),
+      );
+      const file = path.join(folder, `pasted-image.${extension}`);
+      try {
+        fs.writeFileSync(file, data);
+        return await importFiles([file], currentSpaceId(), chatId);
+      } finally {
+        fs.rmSync(folder, { recursive: true, force: true });
+      }
+    },
+  );
+  // The bytes of an uploaded image or PDF, for the viewer.
+  ipcMain.handle('artifact:file', async (event, id: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const found = isId(id)
+      ? artifactsModel.findArtifact(artifacts, id)
+      : undefined;
+    if (!found?.file) return null;
+    try {
+      const data = await fs.promises.readFile(uploadPath(found));
+      return { mime: found.file.mime, data: new Uint8Array(data) };
+    } catch {
+      return null;
+    }
+  });
+  // Open an uploaded file with the computer's own app for it, or show where it is.
+  // Only the files the app itself saved from an upload (images and PDFs) can be
+  // reached this way, never an address or a path given by the page.
+  ipcMain.handle(
+    'artifact:open-file',
+    async (event, id: unknown, how: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      const found = isId(id)
+        ? artifactsModel.findArtifact(artifacts, id)
+        : undefined;
+      if (!found?.file || !fs.existsSync(uploadPath(found))) return false;
+      if (how === 'folder') {
+        shell.showItemInFolder(uploadPath(found));
+        return true;
+      }
+      return (await shell.openPath(uploadPath(found))) === '';
     },
   );
   ipcMain.handle('artifact:copy', (event, id: unknown, spaceId: unknown) => {
@@ -5646,6 +6624,8 @@ ${artifact.content.slice(0, 1500)}`;
     faviconsSaver.flushSync();
     downloadSettingsSaver.flushSync();
     closedSaver.flushSync();
+    spaceTrashSaver.flushSync();
+    sleepSettingsSaver.flushSync();
     extensionsSaver.flushSync();
     extensionSettingsSaver.flushSync();
   });
@@ -5698,11 +6678,21 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('tools:reset');
     ipcMain.removeHandler('artifact:create');
     ipcMain.removeHandler('artifact:copy');
+    ipcMain.removeHandler('uploads:pick');
+    ipcMain.removeHandler('uploads:drop');
+    ipcMain.removeHandler('chats:search');
+    ipcMain.removeHandler('newtab:drop');
+    ipcMain.removeHandler('chat:attach-pick');
+    ipcMain.removeHandler('chat:attach-drop');
+    ipcMain.removeHandler('chat:attach-bytes');
+    ipcMain.removeHandler('artifact:file');
+    ipcMain.removeHandler('artifact:open-file');
     ipcMain.removeHandler('artifact:read');
     ipcMain.removeHandler('artifact:set-internet');
     ipcMain.removeHandler('artifact:write');
     clearInterval(watchdog);
     clearInterval(trashTimer);
+    clearInterval(sleepTimer);
     for (const { channel, listener } of listeners)
       ipcMain.removeListener(channel, listener);
   });

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   addMenuItems,
   artifactMenuItems,
+  addToChatMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
   emojiPickerItems,
@@ -45,6 +46,7 @@ import {
   parseLibraryChoice,
   zoomChipMenuItems,
   parseLinkChoice,
+  parseAddToChatChoice,
   parseMessageChoice,
   parseModelChoice,
   parseSpaceChoice,
@@ -293,14 +295,16 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(labels.slice(0, 5), [
+  assert.deepEqual(labels.slice(0, 7), [
     'New chat',
     'Rename',
     'Change icon…',
     'Name with AI',
+    'Export as Markdown…',
+    'Search chats…',
     'Delete chat',
   ]);
-  assert.deepEqual(labels.slice(5), ['Second', 'First']);
+  assert.deepEqual(labels.slice(7), ['Second', 'First']);
   const activeId = chats.activeId;
   assert.equal(entry(items, `chat.select:${activeId}`).checked, true);
   assert.equal(entry(items, `chat.select:${firstId}`).checked, false);
@@ -321,8 +325,14 @@ test('the chat row menu and chat ids', () => {
     `chat.rename:${id}`,
     `chat.icon:${id}`,
     `chat.name-ai:${id}`,
+    `chat.export:${id}`,
     `chat.delete:${id}`,
   ]);
+  assert.deepEqual(parseChatChoice('chat.export:7'), {
+    action: 'export',
+    chatId: 7,
+  });
+  assert.deepEqual(parseChatChoice('chat.search'), { action: 'search' });
   assert.equal(chatRowMenuItems(chats, 99999), null);
   assert.deepEqual(parseChatChoice('chat.new'), { action: 'new' });
   assert.deepEqual(parseChatChoice('chat.rename:7'), {
@@ -607,6 +617,7 @@ test('the message menu: copy for all, retry only the newest of yours, branch for
   });
   assert.notEqual(entry(newest, 'msg.retry').disabled, true);
   assert.notEqual(entry(newest, 'msg.branch').disabled, true);
+  assert.notEqual(entry(newest, 'msg.edit').disabled, true);
   const older = messageMenuItems({
     role: 'user',
     hasSelection: false,
@@ -615,6 +626,19 @@ test('the message menu: copy for all, retry only the newest of yours, branch for
   });
   assert.equal(entry(older, 'msg.retry').disabled, true);
   assert.notEqual(entry(older, 'msg.branch').disabled, true);
+  // An older message can be edited (in a new chat) even while a reply is written.
+  assert.notEqual(
+    entry(
+      messageMenuItems({
+        role: 'user',
+        hasSelection: false,
+        isNewestUser: false,
+        busy: true,
+      }),
+      'msg.edit',
+    ).disabled,
+    true,
+  );
   // Not while a reply is being written.
   assert.equal(
     entry(
@@ -628,6 +652,19 @@ test('the message menu: copy for all, retry only the newest of yours, branch for
     ).disabled,
     true,
   );
+  assert.equal(
+    entry(
+      messageMenuItems({
+        role: 'user',
+        hasSelection: false,
+        isNewestUser: true,
+        busy: true,
+      }),
+      'msg.edit',
+    ).disabled,
+    true,
+  );
+  assert.deepEqual(parseMessageChoice('msg.edit'), { action: 'edit' });
   assert.deepEqual(parseMessageChoice('msg.branch'), { action: 'branch' });
   assert.equal(parseMessageChoice('msg.x'), null);
 });
@@ -944,6 +981,10 @@ test('the toolbar "…" menu has Find, Zoom, Print and Developer tools, all grey
       id,
     );
   }
+  // An uploaded image or PDF can be zoomed too, though it has no page to find in.
+  const onFile = toolsMenuItems({ hasPage: false, zoomable: true });
+  assert.notEqual(entry(onFile, 'tools.zoom').disabled, true);
+  assert.equal(entry(onFile, 'tools.find').disabled, true);
   assert.deepEqual(parseToolsChoice('tools.find'), { action: 'find' });
   assert.deepEqual(parseToolsChoice('tools.zoom-in'), { action: 'zoom-in' });
   assert.deepEqual(parseToolsChoice('tools.zoom-out'), { action: 'zoom-out' });
@@ -1400,7 +1441,13 @@ test('the New artifact menu offers each kind, and only a real kind is read back'
     'new-artifact.text',
     'new-artifact.html',
     'new-artifact.code',
+    'new-artifact.upload',
   ]);
+  assert.deepEqual(parseNewArtifactChoice('new-artifact.upload'), {
+    upload: true,
+  });
+  // "file" is not something you can make empty.
+  assert.equal(parseNewArtifactChoice('new-artifact.file'), null);
   assert.deepEqual(parseNewArtifactChoice('new-artifact.html'), {
     kind: 'html',
   });
@@ -1412,4 +1459,77 @@ test('the New artifact menu offers each kind, and only a real kind is read back'
   ]) {
     assert.equal(parseNewArtifactChoice(bad), null, bad);
   }
+});
+
+test('the Space switcher lists every Space in order, ticks the current one and shows the keys', async () => {
+  const { spaceSwitcherItems, parseSwitchSpaceChoice } =
+    await import('./menuData.ts');
+  const { addSpace, defaultState } = await import('./model.ts');
+  let state = defaultState();
+  const ids: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    const added = addSpace(state, `S${i + 1}`);
+    state = added.state;
+    ids.push(added.id);
+  }
+  const items = spaceSwitcherItems(state, ids[1]);
+  assert.deepEqual(menuIds(items), [
+    ...ids.map((id) => `switch-space:${id}`),
+    'switch-space.new',
+  ]);
+  const second = entry(items, `switch-space:${ids[1]}`);
+  assert.equal(second.checked, true);
+  assert.equal(second.shortcut, 'Alt+2');
+  assert.equal(entry(items, `switch-space:${ids[0]}`).checked, false);
+  // Only the first nine have a key.
+  assert.equal(entry(items, `switch-space:${ids[8]}`).shortcut, 'Alt+9');
+  assert.equal(entry(items, `switch-space:${ids[9]}`).shortcut, undefined);
+  assert.deepEqual(menuIds(spaceSwitcherItems(defaultState(), null)), [
+    'switch-space.new',
+  ]);
+  assert.deepEqual(parseSwitchSpaceChoice('switch-space:12'), { spaceId: 12 });
+  assert.deepEqual(parseSwitchSpaceChoice('switch-space.new'), {
+    action: 'new-space',
+  });
+  for (const bad of [
+    'switch-space:',
+    'switch-space:x',
+    'switch-space:1;2',
+    'x',
+  ]) {
+    assert.equal(parseSwitchSpaceChoice(bad), null, bad);
+  }
+});
+
+test('the Space menu can put its pages to sleep, greyed when none can', async () => {
+  const { spaceMenuItems, parseSpaceChoice } = await import('./menuData.ts');
+  const { addSpace, defaultState } = await import('./model.ts');
+  const made = addSpace(defaultState(), 'Work');
+  assert.equal(
+    entry(spaceMenuItems(made.state, made.id)!, 'space.sleep').disabled,
+    true,
+  );
+  assert.equal(
+    entry(spaceMenuItems(made.state, made.id, 3)!, 'space.sleep').disabled,
+    false,
+  );
+  assert.deepEqual(parseSpaceChoice('space.sleep'), { action: 'sleep' });
+});
+
+test('the "+" menu in the message box offers a page, a Space, an artifact and a file', () => {
+  const items = addToChatMenuItems();
+  assert.deepEqual(menuIds(items), [
+    'addchat.page',
+    'addchat.space',
+    'addchat.artifact',
+    'addchat.file',
+  ]);
+  assert.equal(entry(items, 'addchat.space').label, 'Add a Space…');
+  assert.deepEqual(parseAddToChatChoice('addchat.space'), { action: 'space' });
+  assert.deepEqual(parseAddToChatChoice('addchat.page'), { action: 'page' });
+  assert.deepEqual(parseAddToChatChoice('addchat.artifact'), {
+    action: 'artifact',
+  });
+  assert.deepEqual(parseAddToChatChoice('addchat.file'), { action: 'file' });
+  assert.equal(parseAddToChatChoice('addchat.nope'), null);
 });

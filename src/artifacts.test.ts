@@ -302,3 +302,94 @@ test('the permission survives a restart, and a tampered file cannot invent one',
     [false, false, false],
   );
 });
+
+test('an uploaded image or PDF is a "file" artifact: it needs its details, has no text, and cannot be edited', () => {
+  const file = { name: 'cat.png', mime: 'image/png', ext: 'png', bytes: 1234 };
+  const made = createArtifact(
+    defaultArtifacts(),
+    { kind: 'file', title: 'cat.png', file },
+    5,
+  );
+  assert.ok(made.ok);
+  assert.equal(made.artifact.content, '');
+  assert.deepEqual(made.artifact.file, file);
+  // A file artifact needs its details; a text one must not have any.
+  assert.equal(
+    createArtifact(defaultArtifacts(), { kind: 'file', title: 'x' }, 5).ok,
+    false,
+  );
+  assert.equal(
+    createArtifact(
+      defaultArtifacts(),
+      { kind: 'file', title: 'x', file: { ...file, ext: '../x' } },
+      5,
+    ).ok,
+    false,
+  );
+  assert.equal(
+    createArtifact(
+      defaultArtifacts(),
+      { kind: 'file', title: 'x', file: { ...file, mime: 'nope' } },
+      5,
+    ).ok,
+    false,
+  );
+  const text = createArtifact(
+    defaultArtifacts(),
+    { kind: 'text', title: 'x', file },
+    5,
+  );
+  assert.ok(text.ok);
+  assert.equal(text.artifact.file, null);
+  // Its text cannot be changed (the revision stays), but it can be renamed and moved.
+  const tried = updateArtifact(
+    made.state,
+    made.artifact.id,
+    { content: 'hacked', title: 'Cat', spaceId: 3 },
+    6,
+  );
+  assert.ok(tried.ok);
+  assert.equal(tried.artifact.content, '');
+  assert.equal(tried.artifact.revision, 0);
+  assert.equal(tried.artifact.title, 'Cat');
+  assert.equal(tried.artifact.spaceId, 3);
+  // Saved and read back; a file artifact without details, or text with details, is dropped.
+  const back = parseArtifacts(JSON.parse(JSON.stringify(made.state)));
+  assert.deepEqual(back.artifacts[0].file, file);
+  const bad = parseArtifacts({
+    artifacts: [
+      { id: 1, kind: 'file', content: '' },
+      { id: 2, kind: 'markdown', content: 'x', file },
+      {
+        id: 3,
+        kind: 'file',
+        content: '',
+        file: { name: 'a', mime: 'image/png', ext: 'png', bytes: -5 },
+      },
+      { id: 4, kind: 'file', content: '', file },
+    ],
+  });
+  assert.deepEqual(
+    bad.artifacts.map((x) => x.id),
+    [2, 4],
+  );
+  assert.equal(bad.artifacts[0].file, null);
+});
+
+test('uploaded files are called Image or PDF in lists, and sizes are said plainly', async () => {
+  const { fileLabel, byteWords } = await import('./artifacts.ts');
+  assert.equal(
+    fileLabel({ file: { name: 'a', mime: 'image/png', ext: 'png', bytes: 1 } }),
+    'Image',
+  );
+  assert.equal(
+    fileLabel({
+      file: { name: 'a', mime: 'application/pdf', ext: 'pdf', bytes: 1 },
+    }),
+    'PDF',
+  );
+  assert.equal(fileLabel({ file: null }), null);
+  assert.equal(byteWords(512), '512 bytes');
+  assert.equal(byteWords(2048), '2 KB');
+  assert.equal(byteWords(3 * 1024 * 1024 + 200_000), '3.2 MB');
+});
