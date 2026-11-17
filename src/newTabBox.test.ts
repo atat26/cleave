@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  askText,
   autoMode,
   cycleMode,
+  findMention,
   LONG_WORDS,
+  mentionTag,
   modeLabel,
+  withoutMention,
   wordCount,
 } from './newTabBox.ts';
 
@@ -50,4 +54,34 @@ test('the words for each mode name the search engine', () => {
   assert.equal(modeLabel('go', 'Google'), 'Go to');
   assert.equal(modeLabel('search', 'Google'), 'Search Google');
   assert.equal(modeLabel('ask', 'Google'), 'Ask');
+});
+
+test('an @ before the cursor opens the list, with what was typed after it', () => {
+  assert.deepEqual(findMention('@rou', 4), { start: 0, query: 'rou' });
+  assert.deepEqual(findMention('look at @', 9), { start: 8, query: '' });
+  assert.deepEqual(findMention('what is in @route plan', 17), {
+    start: 11,
+    query: 'route',
+  });
+  // Not in the middle of a word, an address or an email.
+  assert.equal(findMention('me@example.com', 14), null);
+  assert.equal(findMention('plain words', 11), null);
+  // After a space the "@" starts a new one.
+  assert.deepEqual(findMention('a @x @y', 7), { start: 5, query: 'y' });
+});
+
+test('picking replaces the @ text, and chips go first in what is asked', () => {
+  assert.equal(withoutMention('look at @rou now', 8, 12), 'look at now');
+  assert.equal(withoutMention('@rou', 0, 4), '');
+  const chips = [
+    { kind: 'space' as const, id: 1, tag: mentionTag('  Route   planning ') },
+    { kind: 'tab' as const, id: 4, tag: '@Maps' },
+  ];
+  assert.equal(chips[0].tag, '@Route planning');
+  assert.equal(
+    askText(chips, '  what changed? '),
+    '@Route planning @Maps what changed?',
+  );
+  assert.equal(askText([], 'just a question'), 'just a question');
+  assert.equal(mentionTag('x'.repeat(100)).length, 61);
 });

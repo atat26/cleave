@@ -31,7 +31,8 @@ const browserApi: BrowserApi = {
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
   showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
   showSiteMenu: (x, y) => ipcRenderer.send('site:menu', x, y),
-  newTabRun: (text, mode) => ipcRenderer.send('newtab:run', text, mode),
+  newTabRun: (text, mode, mentions) =>
+    ipcRenderer.send('newtab:run', text, mode, mentions ?? []),
   newTabResume: (kind, id) => ipcRenderer.send('newtab:resume', kind, id),
   newTabHide: (key) => ipcRenderer.send('newtab:hide', key),
   newTabPill: (space) => ipcRenderer.send('newtab:pill', space),

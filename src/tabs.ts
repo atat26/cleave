@@ -46,7 +46,7 @@ import {
 import * as artifactsModel from './artifacts';
 import type { ArtifactsState } from './artifacts';
 import * as chatsModel from './chats';
-import type { ChatRef, ChatsState } from './chats';
+import type { ChatRef, ChatsState, LinkKind } from './chats';
 import type {
   ActionEnv,
   ActionResult,
@@ -832,7 +832,10 @@ export async function createTabs(
     return {
       firstRun: state.spaces.length === 0,
       welcomeBack: tabId === launchTabId && state.spaces.length > 0,
-      secondInRow: secondNewTabs.has(tabId),
+      secondInRow: (() => {
+        const previous = secondNewTabs.get(tabId);
+        return previous !== undefined && untouchedNewTab(previous);
+      })(),
       autoMode: newTabSettings.autoMode,
       suggestions: newTabSettings.suggestions,
       pick: picked.rows,
@@ -1938,11 +1941,25 @@ export async function createTabs(
   // ---- Actions -------------------------------------------------------------
 
   // New tabs opened straight after another untouched new tab (they show less).
-  const secondNewTabs = new Set<number>();
+  // Each one remembers the new tab it came after. It stays the plain version only
+  // while that one is still an untouched new tab (not used to Ask, not gone, not a
+  // web page any more).
+  const secondNewTabs = new Map<number, number>();
+  // New tabs that were used to Ask (they are not "untouched").
+  const usedNewTabs = new Set<number>();
+  const untouchedNewTab = (id: number): boolean => {
+    const t = model.findTab(state, id);
+    return t !== undefined && model.isNewTabPage(t.url) && !usedNewTabs.has(id);
+  };
   const openTab = (url: string, spaceId: number | null) => {
-    const afterNewTab = model.isNewTabPage(url) && onNewTabPage();
+    const before = activeTabId();
+    const afterNewTab =
+      model.isNewTabPage(url) &&
+      before !== null &&
+      onNewTabPage() &&
+      untouchedNewTab(before);
     const added = model.addTab(state, { url, spaceId });
-    if (afterNewTab) secondNewTabs.add(added.id);
+    if (afterNewTab && before !== null) secondNewTabs.set(added.id, before);
     commitAndShow(revealPage(added.state));
   };
 
@@ -3537,10 +3554,30 @@ export async function createTabs(
   // "Ask" on the new-tab page: start a chat, link the Space you are in, send the
   // text, and show the chat. With no key (or no model) the text waits in the chat's
   // box instead, with the usual notice.
-  const askFromNewTab = (text: string) => {
+  const askFromNewTab = (
+    text: string,
+    mentions: { kind: LinkKind; id: number; tag: string }[] = [],
+  ) => {
     if (!chatService) return;
+    // This new tab has been used: a new tab opened after it is not "second in a row".
+    const used = activeTabId();
+    if (used !== null) usedNewTabs.add(used);
     const created = chatsModel.newConversation(chats);
     commitChats(created.state);
+    // Everything picked with "@" is linked to the chat, like the chat's own "@".
+    const lookup = snapshotLookup(workspace());
+    for (const m of mentions) {
+      const found = lookup(m.kind, m.id);
+      if (!found) continue;
+      commitChats(
+        chatsModel.addRef(chats, created.id, {
+          kind: m.kind,
+          id: m.id,
+          title: found.title,
+          url: found.url,
+        }),
+      );
+    }
     const spaceId = currentSpaceId();
     if (spaceId !== null) {
       const found = snapshotLookup(workspace())('space', spaceId);
@@ -3558,7 +3595,7 @@ export async function createTabs(
     // The page has no room for the chat bar, so the chat gets the window.
     commitAndShow(model.setViewMode(state, 'chat'));
     applyLayout(true);
-    const result = chatService.sendMessage(created.id, text);
+    const result = chatService.sendMessage(created.id, text, mentions);
     if (!result.ok && !win.webContents.isDestroyed()) {
       win.webContents.send('composer:insert', text.slice(0, 4000));
     }
@@ -3658,7 +3695,7 @@ export async function createTabs(
       }
     },
     // Enter in the new-tab page's box, with what it will do.
-    'newtab:run': (text, mode) => {
+    'newtab:run': (text, mode, mentions) => {
       if (
         typeof text !== 'string' ||
         (mode !== 'go' && mode !== 'search' && mode !== 'ask')
@@ -3669,7 +3706,19 @@ export async function createTabs(
       const id = activeTabId();
       if (typed === '' || id === null || !onNewTabPage()) return;
       if (mode === 'ask') {
-        askFromNewTab(typed);
+        // Only real picks (a kind, a number and a short tag) are taken.
+        const picks = (Array.isArray(mentions) ? mentions : [])
+          .filter(
+            (m): m is { kind: LinkKind; id: number; tag: string } =>
+              typeof m === 'object' &&
+              m !== null &&
+              isLinkKind((m as { kind?: unknown }).kind) &&
+              isId((m as { id?: unknown }).id) &&
+              typeof (m as { tag?: unknown }).tag === 'string' &&
+              (m as { tag: string }).tag.length <= 80,
+          )
+          .slice(0, 20);
+        askFromNewTab(typed, picks);
         return;
       }
       const template = activeEngine(searchEngine).template;
