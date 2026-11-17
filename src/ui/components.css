@@ -2859,17 +2859,21 @@ button {
   pointer-events: none;
 }
 
-/* The "+" in the message box: the text starts at the left edge, and the button pops
-   out (pushing the text right) while the pointer or the keyboard is on that side. */
+/* The "+" in the message box: the text starts at the left edge, and the button fades
+   in (pushing the text right) while the pointer or the keyboard is on the left side of
+   the bar. The whole left end of the bar counts, so it is easy to find, and it waits a
+   moment before going away again, so passing the edge does not make it flicker. */
 .composer-add {
   position: absolute;
-  left: var(--s-1);
-  bottom: var(--s-1);
-  width: var(--h-md);
-  height: var(--h-md);
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 88px;
+  padding: var(--s-1) 0 var(--s-1) var(--s-1);
+  box-sizing: border-box;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-end;
+  justify-content: flex-start;
   z-index: 1;
   cursor: text;
 }
@@ -2885,4 +2889,20 @@ button {
 .composer:has(.composer-add:hover) .composer-text,
 .composer:has(.composer-add:focus-within) .composer-text {
   margin-left: var(--h-md);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .composer-add > .btn {
+    transition: opacity 180ms ease 120ms;
+  }
+  .composer-add:hover > .btn,
+  .composer-add:focus-within > .btn {
+    transition: opacity 160ms ease;
+  }
+  .composer-text {
+    transition: margin-left 180ms ease 120ms;
+  }
+  .composer:has(.composer-add:hover) .composer-text,
+  .composer:has(.composer-add:focus-within) .composer-text {
+    transition: margin-left 160ms ease;
+  }
 }
