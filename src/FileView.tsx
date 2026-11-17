@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import { NameButton } from './NameButton';
+import { PdfPages } from './PdfPages';
 import type { ArtifactTabInfo } from './types';
 import { Button, IconButton, ItemEmoji } from './ui/controls';
 
 // An uploaded image or PDF, open in the area where a web page would be. Its bytes are
 // fetched from the app and shown from a short-lived local address. The page has no
-// scripts of its own: an image is drawn as a picture, and a PDF by the built-in PDF
-// viewer.
+// scripts of its own: an image is drawn as a picture, and a PDF page by page (PdfPages).
 export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   const [shown, setShown] = useState<
-    { url: string; mime: string } | 'missing' | null
+    { url: string; mime: string; data: Uint8Array } | 'missing' | null
   >(null);
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       url = URL.createObjectURL(
         new Blob([file.data as Uint8Array<ArrayBuffer>], { type: file.mime }),
       );
-      setShown({ url, mime: file.mime });
+      setShown({ url, mime: file.mime, data: file.data });
     });
     return () => {
       cancelled = true;
@@ -81,6 +81,26 @@ export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           </div>
         </div>
         <div className="art-actions">
+          {isPdf ? (
+            <>
+              <Button
+                className="reveal"
+                onClick={() =>
+                  void window.browserApi.artifactOpenFile(tab.id, 'open')
+                }
+              >
+                Open with PDF app
+              </Button>
+              <Button
+                className="reveal"
+                onClick={() =>
+                  void window.browserApi.artifactOpenFile(tab.id, 'folder')
+                }
+              >
+                Show in folder
+              </Button>
+            </>
+          ) : null}
           <IconButton
             icon="more"
             label="More: rename, move, add to chat and more"
@@ -105,45 +125,7 @@ export function FileArtifactView({ tab }: { tab: ArtifactTabInfo }) {
           This file is no longer there.
         </p>
       ) : isPdf ? (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'grid',
-            placeItems: 'center',
-            borderTop: '1px solid var(--c-border)',
-          }}
-        >
-          <div style={{ textAlign: 'center', maxWidth: 380 }}>
-            <p style={{ margin: '0 0 var(--s-2)', fontWeight: 600 }}>
-              PDFs cannot be shown inside the browser yet.
-            </p>
-            <p className="muted" style={{ margin: '0 0 var(--s-4)' }}>
-              It is saved here with the Space. Open it with the PDF app on your
-              computer.
-            </p>
-            <div
-              className="row-flex"
-              style={{ justifyContent: 'center', gap: 'var(--s-2)' }}
-            >
-              <Button
-                variant="primary"
-                onClick={() =>
-                  void window.browserApi.artifactOpenFile(tab.id, 'open')
-                }
-              >
-                Open with your PDF app
-              </Button>
-              <Button
-                onClick={() =>
-                  void window.browserApi.artifactOpenFile(tab.id, 'folder')
-                }
-              >
-                Show in folder
-              </Button>
-            </div>
-          </div>
-        </div>
+        <PdfPages data={shown.data} />
       ) : (
         <div
           style={{
