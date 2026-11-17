@@ -31,7 +31,10 @@ import {
   retargetEverywhere,
   retargetRef,
   setActiveConversation,
+  branchBeforeMessage,
   branchConversation,
+  editUserMessage,
+  searchChats,
   truncateAfter,
   setConversationModel,
   startAssistantMessage,
@@ -1071,4 +1074,132 @@ test('leaving an untouched chat throws it away; leaving a used one does not', ()
   assert.equal(selectConversation(added.state, 9999), added.state);
   // The one to keep is never dropped, even if untouched.
   assert.equal(dropUntouched(first, first.activeId), first);
+});
+
+// ---- Editing a sent message, and searching chats ---------------------------------
+
+// A chat with two exchanges: "first question"/"first answer", "second question"/"second answer".
+function twoExchanges() {
+  let state = defaultChats(NOW);
+  const id = state.activeId;
+  const ids: number[] = [];
+  for (const word of ['first', 'second']) {
+    const asked = addUserMessage(
+      state,
+      id,
+      `${word} question`,
+      NOW + ids.length,
+    );
+    assert.ok(asked);
+    state = asked.state;
+    ids.push(asked.id);
+    const reply = startAssistantMessage(state, id, 'm', NOW);
+    assert.ok(reply);
+    state = appendToMessage(reply.state, id, reply.id, `${word} answer`);
+    state = finishMessage(state, id, reply.id, { status: 'done' }, NOW);
+  }
+  return { state, id, ids };
+}
+
+test('editing a message changes its text and keeps only the mentions still in it', () => {
+  let state = defaultChats(NOW);
+  const id = state.activeId;
+  state = addRef(state, id, { kind: 'space', id: 1, title: 'Home', url: null });
+  state = addRef(state, id, { kind: 'space', id: 2, title: 'Work', url: null });
+  const sent = addUserMessage(state, id, 'Compare @Home and @Work', NOW, [
+    { kind: 'space', id: 1, tag: '@Home' },
+    { kind: 'space', id: 2, tag: '@Work' },
+  ]);
+  assert.ok(sent);
+  const edited = editUserMessage(sent.state, id, sent.id, '  Only @Home now  ');
+  assert.ok(edited);
+  const message = edited.conversations[0].messages[0];
+  assert.equal(message.content, 'Only @Home now');
+  assert.deepEqual(
+    message.mentions.map((m) => m.tag),
+    ['@Home'],
+  );
+  // Empty text, text that is too long, and a message that is not yours are refused.
+  assert.equal(editUserMessage(sent.state, id, sent.id, '   '), null);
+  assert.equal(
+    editUserMessage(sent.state, id, sent.id, 'x'.repeat(MAX_USER_CHARS + 1)),
+    null,
+  );
+  assert.equal(editUserMessage(sent.state, id, 9999, 'hi'), null);
+});
+
+test('branching before a message copies what came earlier, and leaves the chat alone', () => {
+  const { state, id, ids } = twoExchanges();
+  const branch = branchBeforeMessage(state, id, ids[1], NOW + 9);
+  assert.ok(branch);
+  const copy = branch.state.conversations.find((c) => c.id === branch.id);
+  assert.deepEqual(
+    copy?.messages.map((m) => m.content),
+    ['first question', 'first answer'],
+  );
+  assert.equal(copy?.title.endsWith('(edited)'), true);
+  assert.equal(branch.state.activeId, branch.id);
+  // The original is untouched.
+  assert.equal(
+    branch.state.conversations.find((c) => c.id === id)?.messages.length,
+    4,
+  );
+  // Editing the very first message branches into an empty chat (with the same links).
+  const first = branchBeforeMessage(state, id, ids[0], NOW);
+  assert.equal(
+    first?.state.conversations.find((c) => c.id === first.id)?.messages.length,
+    0,
+  );
+  // Only your own messages can be edited.
+  const reply = state.conversations[0].messages[1];
+  assert.equal(branchBeforeMessage(state, id, reply.id), null);
+});
+
+test('searching finds a chat by its name or by what was said, newest first, with a snippet', () => {
+  const { state, id } = twoExchanges();
+  let both = renameConversation(state, id, 'Goldfish plans');
+  const other = newConversation(both, NOW + 100);
+  both = other.state;
+  const asked = addUserMessage(
+    both,
+    other.id,
+    'Which Goldfish food is best?',
+    NOW + 100,
+  );
+  assert.ok(asked);
+  both = asked.state;
+
+  const byName = searchChats(both, 'GOLDFISH');
+  assert.deepEqual(
+    byName.map((m) => m.id),
+    [other.id, id],
+  );
+  // The chat that matched only by its name has no snippet.
+  assert.equal(byName[1].snippet, null);
+  assert.match(byName[0].snippet ?? '', /Which Goldfish food is best\?/);
+
+  const byText = searchChats(both, 'second   answer');
+  assert.deepEqual(
+    byText.map((m) => m.id),
+    [id],
+  );
+  assert.match(byText[0].snippet ?? '', /second answer/);
+
+  assert.deepEqual(searchChats(both, '   '), []);
+  assert.deepEqual(searchChats(both, 'nothing like this'), []);
+});
+
+test('searching skips untouched chats and cuts a long match down to a snippet', () => {
+  let state = defaultChats(NOW);
+  // The only chat is untouched ("New chat"): a search for "new" finds nothing.
+  assert.deepEqual(searchChats(state, 'new'), []);
+  const id = state.activeId;
+  const long = `${'a '.repeat(100)}needle${' b'.repeat(100)}`;
+  const asked = addUserMessage(state, id, long, NOW);
+  assert.ok(asked);
+  state = asked.state;
+  const [match] = searchChats(state, 'needle');
+  assert.ok(match.snippet);
+  assert.ok(match.snippet.startsWith('…') && match.snippet.endsWith('…'));
+  assert.ok(match.snippet.length < 130);
 });

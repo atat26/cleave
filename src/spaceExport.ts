@@ -83,7 +83,7 @@ export function spaceMarkdown(input: {
 }
 
 // A file name from the Space's name: letters, numbers and a few signs, never a path.
-export function exportFileName(name: string): string {
+export function exportFileName(name: string, fallback = 'Space'): string {
   const base = name
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, ' ')
@@ -92,5 +92,5 @@ export function exportFileName(name: string): string {
     .replace(/^[.\s]+/, '')
     .slice(0, 80)
     .trim();
-  return `${base === '' ? 'Space' : base}.md`;
+  return `${base === '' ? fallback : base}.md`;
 }

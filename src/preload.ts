@@ -279,6 +279,16 @@ const browserApi: BrowserApi = {
       files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
       spaceId,
     ),
+  searchChats: (query) => ipcRenderer.invoke('chats:search', query),
+  onFocusChatSearch: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('chats:focus-search', listener);
+    return () => {
+      ipcRenderer.removeListener('chats:focus-search', listener);
+    };
+  },
+  chatEdit: (chatId, messageId, text) =>
+    ipcRenderer.invoke('chat:edit', chatId, messageId, text),
   chatAttachPick: (chatId) => ipcRenderer.invoke('chat:attach-pick', chatId),
   // Files that are on the computer go by their place; a pasted picture (a screenshot,
   // say) has none, so its bytes are sent instead.

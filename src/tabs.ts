@@ -48,6 +48,7 @@ import {
 } from './layout';
 import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
+import { chatMarkdown } from './chatExport';
 import { exportFileName, spaceMarkdown } from './spaceExport';
 import type { FileReading } from './artifactTools';
 import { parsePdfText } from './pdfTextFormat';
@@ -3055,6 +3056,42 @@ export async function createTabs(
     }
   };
 
+  // Save a chat as a Markdown file you choose the place for.
+  const exportChat = async (chatId: number) => {
+    const chat = chatsModel.findConversation(chats, chatId);
+    if (!chat) return;
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export chat',
+      defaultPath: path.join(
+        app.getPath('documents'),
+        exportFileName(chat.title, 'Chat'),
+      ),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (picked.canceled || !picked.filePath) return;
+    try {
+      fs.writeFileSync(picked.filePath, chatMarkdown(chat, new Date()), 'utf8');
+    } catch (error) {
+      void dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'The chat could not be saved.',
+        detail: (error as Error).message,
+      });
+    }
+  };
+
+  // "Search chats…": show only the chat (whose list is in the sidebar) and put the
+  // keyboard in the list's search box.
+  const openChatSearch = () => {
+    if (state.settings.viewMode !== 'chat') {
+      commitAndShow(model.setViewMode(state, 'chat'));
+    }
+    if (!pinnedNow()) setHover(true);
+    if (sidebar.isDestroyed()) return;
+    sidebar.send('chats:focus-search');
+    sidebar.focus(); // So the box can take keyboard input.
+  };
+
   const deleteChat = (id: number) => {
     const chat = chatsModel.findConversation(chats, id);
     if (!chat) return;
@@ -3800,6 +3837,12 @@ export async function createTabs(
         break;
       case 'name-ai':
         nameFromMenu('chat', choice.chatId);
+        break;
+      case 'export':
+        void exportChat(choice.chatId);
+        break;
+      case 'search':
+        openChatSearch();
         break;
       case 'icon': {
         const chatId = choice.chatId;
@@ -6288,6 +6331,15 @@ ${artifact.content.slice(0, 1500)}`;
     };
   }
 
+  // Search across all chats (by name and by what was said), for the chat list.
+  // (The chat list is in the sidebar page, so that page may ask too.)
+  ipcMain.handle('chats:search', (event, query: unknown) => {
+    if (!fromWindow(event) && event.sender !== sidebar) {
+      throw new Error('Not allowed.');
+    }
+    if (typeof query !== 'string' || query.length > 200) return [];
+    return chatsModel.searchChats(chats, query);
+  });
   // Files attached to a chat: picked from a dialog, dropped on the chat, or an image
   // pasted into the message box. They become artifacts (in the Space you are in) that
   // are linked to the chat, and no tab is opened.
@@ -6551,6 +6603,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('artifact:copy');
     ipcMain.removeHandler('uploads:pick');
     ipcMain.removeHandler('uploads:drop');
+    ipcMain.removeHandler('chats:search');
     ipcMain.removeHandler('chat:attach-pick');
     ipcMain.removeHandler('chat:attach-drop');
     ipcMain.removeHandler('chat:attach-bytes');

@@ -805,6 +805,111 @@ export function branchConversation(
   };
 }
 
+// A new chat from everything BEFORE one of your messages (the message itself and
+// what followed are left out), for editing that message: the edited text is then sent
+// in the new chat. The chat it came from stays exactly as it was.
+export function branchBeforeMessage(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  now = Date.now(),
+): { state: ChatsState; id: number } | null {
+  const chat = findConversation(state, chatId);
+  const index =
+    chat?.messages.findIndex((m) => m.id === messageId && m.role === 'user') ??
+    -1;
+  if (!chat || index < 0 || state.conversations.length >= MAX_CONVERSATIONS) {
+    return null;
+  }
+  const id = state.nextId;
+  const copy: Conversation = {
+    ...chat,
+    id,
+    title: cleanTitle(`${chat.title} (edited)`, DEFAULT_CHAT_TITLE),
+    // An unnamed copy gets named again from its first message.
+    titleByUser: false,
+    createdAt: now,
+    updatedAt: now,
+    refs: chat.refs.map((r) => ({ ...r })),
+    messages: chat.messages.slice(0, index).map((m) => ({ ...m })),
+  };
+  return {
+    id,
+    state: {
+      ...state,
+      conversations: [...state.conversations, copy],
+      activeId: id,
+      nextId: id + 1,
+    },
+  };
+}
+
+// Change the text of one of your messages. Mentions whose "@name" is no longer in
+// the text are dropped (attached pages, with no "@name", stay). Empty or over-long
+// text is refused.
+export function editUserMessage(
+  state: ChatsState,
+  chatId: number,
+  messageId: number,
+  text: string,
+): ChatsState | null {
+  const content = text.trim();
+  if (content === '' || content.length > MAX_USER_CHARS) return null;
+  const chat = findConversation(state, chatId);
+  const message = chat?.messages.find((m) => m.id === messageId);
+  if (!chat || !message || message.role !== 'user') return null;
+  return update(state, chatId, (c) => ({
+    ...c,
+    messages: c.messages.map((m) =>
+      m.id === messageId
+        ? {
+            ...m,
+            content,
+            mentions: m.mentions.filter(
+              (x) => x.tag === '' || content.includes(x.tag),
+            ),
+          }
+        : m,
+    ),
+  }));
+}
+
+// The most results a search gives.
+export const MAX_SEARCH_RESULTS = 50;
+// A chat that matched a search, with a short piece of text around the match (null
+// when only its name matched).
+export interface ChatMatch {
+  id: number;
+  snippet: string | null;
+}
+
+// Find chats by name or by what was said in them (case does not matter), most
+// recently used first. Chats nothing has happened in are not listed.
+export function searchChats(state: ChatsState, query: string): ChatMatch[] {
+  const needle = query.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (needle === '') return [];
+  const found: ChatMatch[] = [];
+  for (const chat of byRecency(state.conversations)) {
+    if (found.length >= MAX_SEARCH_RESULTS) break;
+    if (isUntouched(chat)) continue;
+    let snippet: string | null = null;
+    let matched = chat.title.toLowerCase().includes(needle);
+    for (const message of chat.messages) {
+      if (message.role !== 'user' && message.role !== 'assistant') continue;
+      const flat = message.content.replace(/\s+/g, ' ');
+      const at = flat.toLowerCase().indexOf(needle);
+      if (at < 0) continue;
+      matched = true;
+      const from = Math.max(0, at - 40);
+      const to = Math.min(flat.length, at + needle.length + 60);
+      snippet = `${from > 0 ? '…' : ''}${flat.slice(from, to).trim()}${to < flat.length ? '…' : ''}`;
+      break;
+    }
+    if (matched) found.push({ id: chat.id, snippet });
+  }
+  return found;
+}
+
 // Remove every message after the given one (which stays). Used when a past
 // prompt is retried: the conversation carries on from there.
 export function truncateAfter(

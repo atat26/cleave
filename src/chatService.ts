@@ -561,6 +561,85 @@ export function createChatService(options: {
     },
   );
 
+  // Change one of your messages and send it again. Your newest message is changed
+  // where it is (its reply is replaced). An older one is changed in a NEW chat that
+  // starts from everything before it, so this chat stays exactly as it was.
+  ipcMain.handle(
+    'chat:edit',
+    (
+      event,
+      chatId: unknown,
+      messageId: unknown,
+      text: unknown,
+    ): ChatSendResult => {
+      if (!fromUi(event)) throw new Error('Not allowed.');
+      if (!isId(chatId) || !isId(messageId) || typeof text !== 'string') {
+        return invalid;
+      }
+      const chat = chats.findConversation(options.getChats(), chatId);
+      const message = chat?.messages.find((m) => m.id === messageId);
+      if (!chat || !message || message.role !== 'user') return invalid;
+      const content = text.trim();
+      if (content === '' || content.length > chats.MAX_USER_CHARS) {
+        return {
+          ok: false,
+          kind: 'empty',
+          error:
+            content === ''
+              ? 'The message is empty.'
+              : 'That message is too long.',
+        };
+      }
+      // Cannot send (no key, no model)? Then change nothing.
+      const prepared = contextFor(chatId);
+      if (!prepared.ok) return prepared;
+
+      const newest = [...chat.messages]
+        .reverse()
+        .find((m) => m.role === 'user');
+      if (newest?.id === messageId) {
+        if (runner.runningChats().includes(chatId)) {
+          return { ok: false, kind: 'busy', error: REASON_TEXT.busy };
+        }
+        const edited = chats.editUserMessage(
+          options.getChats(),
+          chatId,
+          messageId,
+          content,
+        );
+        if (!edited) return invalid;
+        options.setChats(edited);
+        const started = runner.retry(chatId, prepared.context, messageId);
+        if (started.ok) {
+          resetChat(chatId);
+          autoNameFirst(chatId);
+          void started.done;
+        }
+        return answer(started);
+      }
+
+      const branched = chats.branchBeforeMessage(
+        options.getChats(),
+        chatId,
+        messageId,
+        Date.now(),
+      );
+      if (!branched) {
+        return {
+          ok: false,
+          kind: 'nothing-to-retry',
+          error: 'That message cannot be edited.',
+        };
+      }
+      options.setChats(branched.state);
+      options.onMeta(); // Switch to the new chat.
+      const mentions = message.mentions
+        .filter((m) => m.tag !== '' && content.includes(m.tag))
+        .map((m) => ({ kind: m.kind, id: m.id, tag: m.tag }));
+      return sendMessage(branched.id, content, mentions);
+    },
+  );
+
   // Start a new chat from an earlier message of yours (that message and its
   // reply are copied; nothing is sent to the model). The chat it came from is
   // left exactly as it was.
@@ -735,6 +814,7 @@ export function createChatService(options: {
       ipcMain.removeHandler('chat:send');
       ipcMain.removeHandler('chat:retry');
       ipcMain.removeHandler('chat:branch');
+      ipcMain.removeHandler('chat:edit');
       ipcMain.removeHandler('chat:name-ai');
       ipcMain.removeListener('chat:stop', onStop);
       ipcMain.removeListener('chat:decide', onDecide);

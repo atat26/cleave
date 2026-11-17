@@ -393,6 +393,8 @@ export type ChatChoice =
   | { action: 'rename'; chatId: number }
   | { action: 'icon'; chatId: number }
   | { action: 'name-ai'; chatId: number }
+  | { action: 'export'; chatId: number }
+  | { action: 'search' }
   | { action: 'delete'; chatId: number };
 
 const shortTitle = (title: string) =>
@@ -423,6 +425,12 @@ export function chatRowMenuItems(
       id: `chat.name-ai:${chatId}`,
       label: 'Name with AI',
       icon: 'sparkle',
+    },
+    {
+      type: 'item',
+      id: `chat.export:${chatId}`,
+      label: 'Export as Markdown…',
+      icon: 'upload',
     },
     { type: 'separator' },
     {
@@ -462,6 +470,13 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     {
       type: 'item',
+      id: `chat.export:${active}`,
+      label: 'Export as Markdown…',
+      icon: 'upload',
+    },
+    { type: 'item', id: 'chat.search', label: 'Search chats…', icon: 'search' },
+    {
+      type: 'item',
       id: `chat.delete:${active}`,
       label: 'Delete chat',
       icon: 'trash',
@@ -484,10 +499,17 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
 
 export function parseChatChoice(id: string): ChatChoice | null {
   if (id === 'chat.new') return { action: 'new' };
-  const m = /^chat\.(select|rename|icon|name-ai|delete):(\d+)$/.exec(id);
+  if (id === 'chat.search') return { action: 'search' };
+  const m = /^chat\.(select|rename|icon|name-ai|export|delete):(\d+)$/.exec(id);
   if (!m) return null;
   return {
-    action: m[1] as 'select' | 'rename' | 'icon' | 'name-ai' | 'delete',
+    action: m[1] as
+      | 'select'
+      | 'rename'
+      | 'icon'
+      | 'name-ai'
+      | 'export'
+      | 'delete',
     chatId: Number(m[2]),
   };
 }
@@ -879,11 +901,13 @@ export function parseLinkChoice(id: string): LinkChoice | null {
 export type MessageChoice =
   | { action: 'copy' }
   | { action: 'retry' }
+  | { action: 'edit' }
   | { action: 'branch' };
 
 // Copy (the selected text, else the whole message), and for one of your own
-// messages Retry (only the newest, when no reply is being written) and Branch
-// (any of them).
+// messages Retry (only the newest, when no reply is being written), Edit (change it
+// and send it again: in place for the newest, in a new chat for an older one) and
+// Branch (any of them).
 export function messageMenuItems(options: {
   role: 'user' | 'assistant';
   hasSelection: boolean;
@@ -911,6 +935,14 @@ export function messageMenuItems(options: {
       },
       {
         type: 'item',
+        id: 'msg.edit',
+        label: 'Edit and resend…',
+        icon: 'pencil',
+        // The newest is changed where it is, which cannot happen mid-reply.
+        disabled: options.isNewestUser && options.busy,
+      },
+      {
+        type: 'item',
         id: 'msg.branch',
         label: 'Branch from here',
         icon: 'branch',
@@ -926,6 +958,8 @@ export function parseMessageChoice(id: string): MessageChoice | null {
       return { action: 'copy' };
     case 'msg.retry':
       return { action: 'retry' };
+    case 'msg.edit':
+      return { action: 'edit' };
     case 'msg.branch':
       return { action: 'branch' };
   }

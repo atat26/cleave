@@ -293,14 +293,16 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(labels.slice(0, 5), [
+  assert.deepEqual(labels.slice(0, 7), [
     'New chat',
     'Rename',
     'Change icon…',
     'Name with AI',
+    'Export as Markdown…',
+    'Search chats…',
     'Delete chat',
   ]);
-  assert.deepEqual(labels.slice(5), ['Second', 'First']);
+  assert.deepEqual(labels.slice(7), ['Second', 'First']);
   const activeId = chats.activeId;
   assert.equal(entry(items, `chat.select:${activeId}`).checked, true);
   assert.equal(entry(items, `chat.select:${firstId}`).checked, false);
@@ -321,8 +323,14 @@ test('the chat row menu and chat ids', () => {
     `chat.rename:${id}`,
     `chat.icon:${id}`,
     `chat.name-ai:${id}`,
+    `chat.export:${id}`,
     `chat.delete:${id}`,
   ]);
+  assert.deepEqual(parseChatChoice('chat.export:7'), {
+    action: 'export',
+    chatId: 7,
+  });
+  assert.deepEqual(parseChatChoice('chat.search'), { action: 'search' });
   assert.equal(chatRowMenuItems(chats, 99999), null);
   assert.deepEqual(parseChatChoice('chat.new'), { action: 'new' });
   assert.deepEqual(parseChatChoice('chat.rename:7'), {
@@ -607,6 +615,7 @@ test('the message menu: copy for all, retry only the newest of yours, branch for
   });
   assert.notEqual(entry(newest, 'msg.retry').disabled, true);
   assert.notEqual(entry(newest, 'msg.branch').disabled, true);
+  assert.notEqual(entry(newest, 'msg.edit').disabled, true);
   const older = messageMenuItems({
     role: 'user',
     hasSelection: false,
@@ -615,6 +624,19 @@ test('the message menu: copy for all, retry only the newest of yours, branch for
   });
   assert.equal(entry(older, 'msg.retry').disabled, true);
   assert.notEqual(entry(older, 'msg.branch').disabled, true);
+  // An older message can be edited (in a new chat) even while a reply is written.
+  assert.notEqual(
+    entry(
+      messageMenuItems({
+        role: 'user',
+        hasSelection: false,
+        isNewestUser: false,
+        busy: true,
+      }),
+      'msg.edit',
+    ).disabled,
+    true,
+  );
   // Not while a reply is being written.
   assert.equal(
     entry(
@@ -628,6 +650,19 @@ test('the message menu: copy for all, retry only the newest of yours, branch for
     ).disabled,
     true,
   );
+  assert.equal(
+    entry(
+      messageMenuItems({
+        role: 'user',
+        hasSelection: false,
+        isNewestUser: true,
+        busy: true,
+      }),
+      'msg.edit',
+    ).disabled,
+    true,
+  );
+  assert.deepEqual(parseMessageChoice('msg.edit'), { action: 'edit' });
   assert.deepEqual(parseMessageChoice('msg.branch'), { action: 'branch' });
   assert.equal(parseMessageChoice('msg.x'), null);
 });

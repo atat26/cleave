@@ -2816,3 +2816,18 @@ button {
   color: inherit;
   text-align: left;
 }
+
+/* Changing a message you sent (ChatMessages.tsx). */
+.msg-edit {
+  align-self: flex-end;
+  width: min(85%, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.msg-edit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+}

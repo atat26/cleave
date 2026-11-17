@@ -1,5 +1,11 @@
 import type { PdfTextResult } from './pdfTextFormat';
-import type { ChatMessage, ChatRef, LinkKind, MessagePart } from './chats';
+import type {
+  ChatMatch,
+  ChatMessage,
+  ChatRef,
+  LinkKind,
+  MessagePart,
+} from './chats';
 import type { ApprovalLevel } from './toolPolicy';
 import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
@@ -650,6 +656,17 @@ export interface BrowserApi {
   // Add files dropped on the Artifacts panel or a Space's overview.
   uploadDrop: (files: File[], spaceId: number | null) => Promise<number>;
   // The bytes of an uploaded image or PDF (null if it is gone).
+  // Find chats by name or by what was said in them.
+  searchChats: (query: string) => Promise<ChatMatch[]>;
+  // "Search chats…" was chosen: put the keyboard in the chat list's search box.
+  onFocusChatSearch: (callback: () => void) => () => void;
+  // Change one of your messages and send it again. The newest is changed where it
+  // is; an older one is changed in a new chat (this chat stays as it was).
+  chatEdit: (
+    chatId: number,
+    messageId: number,
+    text: string,
+  ) => Promise<ChatSendResult>;
   // Attach files to a chat (they become artifacts linked to it): choose them in a
   // dialog, drop them, or paste a picture. Each gives how many were added.
   chatAttachPick: (chatId: number) => Promise<number>;
@@ -843,7 +860,7 @@ export interface BrowserApi {
     callback: (action: {
       chatId: number;
       messageId: number;
-      action: 'retry' | 'branch';
+      action: 'retry' | 'branch' | 'edit';
     }) => void,
   ) => () => void;
   // Text to put in the message box (for example a selection from a web page).

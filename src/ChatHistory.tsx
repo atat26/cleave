@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { byRecency } from './chats';
+import type { ChatMatch } from './chats';
 import { PinButton } from './PinButton';
 import { ItemEmoji } from './ui/controls';
 import {
@@ -29,11 +30,14 @@ const openMenu = (chat: ChatInfo) => (event: ReactMouseEvent) => {
 function ChatRow({
   chat,
   active,
+  snippet,
   renameRequest,
   onRenameHandled,
 }: {
   chat: ChatInfo;
   active: boolean;
+  // Search: a piece of what was said that matched (the row is taller with it).
+  snippet?: string | null;
   // Set when "Rename chat" was chosen from this chat's right-click menu.
   renameRequest: number | null;
   onRenameHandled: () => void;
@@ -60,7 +64,11 @@ function ChatRow({
       onDoubleClick={() => setEditing(true)}
       onContextMenu={openMenu(chat)}
       title={chat.title}
-      style={rowStyle(active)}
+      style={
+        snippet
+          ? { ...rowStyle(active), height: 46, alignItems: 'center' }
+          : rowStyle(active)
+      }
     >
       <ItemEmoji emoji={chat.emoji} />
       {chat.generating && (
@@ -88,6 +96,26 @@ function ChatRow({
           }}
           style={{ flex: 1, minWidth: 0, fontSize: 13 }}
         />
+      ) : snippet ? (
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <span style={ellipsis}>{chat.title}</span>
+          <span
+            style={{
+              ...ellipsis,
+              fontSize: 11,
+              color: 'var(--c-text-2)',
+            }}
+          >
+            {snippet}
+          </span>
+        </span>
       ) : (
         <span style={ellipsis}>{chat.title}</span>
       )}
@@ -119,6 +147,45 @@ export function ChatList({
   renameRequest: number | null;
   onRenameHandled: () => void;
 }) {
+  // The search box above the list: finds chats by name and by what was said.
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState<ChatMatch[] | null>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const text = query.trim();
+    if (text === '') {
+      setFound(null);
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      void window.browserApi.searchChats(text).then((result) => {
+        if (current) setFound(result);
+      });
+    }, 150);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [query, chats]);
+  // "Search chats…" in a menu puts the keyboard here.
+  useEffect(
+    () =>
+      window.browserApi.onFocusChatSearch(() => {
+        searchBox.current?.focus();
+        searchBox.current?.select();
+      }),
+    [],
+  );
+  const byId = new Map(chats.conversations.map((c) => [c.id, c]));
+  const shown =
+    found === null
+      ? newestFirst(chats).map((chat) => ({ chat, snippet: null }))
+      : found.flatMap((m) => {
+          const chat = byId.get(m.id);
+          return chat ? [{ chat, snippet: m.snippet }] : [];
+        });
+
   return (
     <>
       <div
@@ -148,16 +215,46 @@ export function ChatList({
         <span style={{ flex: 1, paddingLeft: 4 }}>Chats</span>
         <PinButton pinned={pinned} />
       </div>
+      <div style={{ padding: '0 10px 8px', flexShrink: 0 }}>
+        <input
+          ref={searchBox}
+          type="search"
+          className="input"
+          value={query}
+          placeholder="Search chats"
+          aria-label="Search chats"
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setQuery('');
+              e.currentTarget.blur();
+            }
+          }}
+          style={{ width: '100%', height: 28, fontSize: 13 }}
+        />
+      </div>
       <div style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}>
-        {newestFirst(chats).map((chat) => (
+        {shown.map(({ chat, snippet }) => (
           <ChatRow
             key={chat.id}
             chat={chat}
             active={chat.id === chats.activeId}
+            snippet={snippet}
             renameRequest={renameRequest}
             onRenameHandled={onRenameHandled}
           />
         ))}
+        {found !== null && shown.length === 0 && (
+          <p
+            style={{
+              margin: '8px 10px',
+              color: 'var(--c-text-2)',
+              fontSize: 13,
+            }}
+          >
+            No chats match.
+          </p>
+        )}
       </div>
     </>
   );
