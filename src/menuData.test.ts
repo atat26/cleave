@@ -728,6 +728,7 @@ test('the page menu: Back and Forward grey out when there is nowhere to go', () 
     'page.bookmark',
     'page.save-to-space',
     'page.save-new-space',
+    'page.save-as-artifact',
     'page.save-as',
     'page.print',
     'page.inspect',
@@ -769,6 +770,7 @@ test('the link menu lists your Spaces to open it in', () => {
         !/save|download/.test(
           id
             .replace(/save-(?:to-|new-)?space/g, '')
+            .replace(/save-(?:selection-)?as-artifact/g, '')
             .replace(/^page\.save-(?:page|link|image)?-?as$/, ''),
         ),
     ),
@@ -777,6 +779,18 @@ test('the link menu lists your Spaces to open it in', () => {
     all.filter((id) => /^page\.save-(?:link-|image-)?as$/.test(id)),
     ['page.save-link-as', 'page.save-image-as', 'page.save-as'],
   );
+  // The two "Save … as artifact" entries save into the app's own artifact store,
+  // not a file: one for the page, one for selected text.
+  assert.deepEqual(
+    all.filter((id) => id.endsWith('as-artifact')),
+    ['page.save-selection-as-artifact', 'page.save-as-artifact'],
+  );
+  assert.deepEqual(parsePageChoice('page.save-as-artifact'), {
+    action: 'save-as-artifact',
+  });
+  assert.deepEqual(parsePageChoice('page.save-selection-as-artifact'), {
+    action: 'save-selection-as-artifact',
+  });
 });
 
 test('the selection menu names what will be searched, on one short line', () => {

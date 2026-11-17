@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   cleanSavedText,
+  saveFailureWords,
   createSaveTools,
   MAX_BOOKMARKS_PER_REPLY,
   MAX_CHECKS,
@@ -266,5 +267,25 @@ test('saved text is tidied, cut, and given a heading and a source line', () => {
       now: new Date('2026-11-17T10:00:00Z'),
     }),
     /^# Saved page\n\n_Selected text from a web page on 2026-11-17\._/,
+  );
+});
+
+test('the right-click save says plainly why nothing was saved', () => {
+  assert.equal(
+    saveFailureWords('empty', 'page'),
+    'The page has no text to save.',
+  );
+  assert.equal(
+    saveFailureWords('empty', 'selection'),
+    'The selection has no text to save.',
+  );
+  assert.match(saveFailureWords('too-many', 'page'), /too many artifacts/);
+  assert.match(
+    saveFailureWords('too-long', 'selection'),
+    /selection is too long/,
+  );
+  assert.equal(
+    saveFailureWords('unavailable', 'page'),
+    'The page could not be read.',
   );
 });
