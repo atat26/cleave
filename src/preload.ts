@@ -2,6 +2,7 @@
 // Expose small, specific functions here -- never whole Electron modules.
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action';
+import type { ApprovalLevel } from './toolPolicy';
 import type {
   BrowserApi,
   ChatMessage,
@@ -168,6 +169,19 @@ const browserApi: BrowserApi = {
   downloadsOpenFolder: () => ipcRenderer.invoke('downloads:open-folder'),
   libraryClosed: () => ipcRenderer.invoke('library:closed'),
   libraryDeleted: () => ipcRenderer.invoke('library:deleted'),
+  skillGet: (id) => ipcRenderer.invoke('skills:get', id),
+  skillSave: (input) => ipcRenderer.invoke('skills:save', input),
+  skillEnable: (id, enabled) => ipcRenderer.send('skill:enable', id, enabled),
+  skillDelete: (id) => ipcRenderer.send('skill:delete', id),
+  showSkillMenu: (id, x, y) => ipcRenderer.send('skill:menu', id, x, y),
+  showNewSkillMenu: (x, y) => ipcRenderer.send('skill:new-menu', x, y),
+  onSkillEdit: (callback) => {
+    const listener = (_event: unknown, id: number | null) => callback(id);
+    ipcRenderer.on('skill:edit', listener);
+    return () => {
+      ipcRenderer.removeListener('skill:edit', listener);
+    };
+  },
   libraryRestore: (kind, id) => ipcRenderer.send('library:restore', kind, id),
   libraryDeleteForever: (kind, id) =>
     ipcRenderer.send('library:delete-forever', kind, id),
@@ -259,6 +273,19 @@ const browserApi: BrowserApi = {
   toolsList: () => ipcRenderer.invoke('tools:list'),
   toolsSetLevel: (tool, level) => ipcRenderer.invoke('tools:set', tool, level),
   toolsReset: () => ipcRenderer.invoke('tools:reset'),
+  toolsPreset: (preset) => ipcRenderer.invoke('tools:preset', preset),
+  toolsSetGroup: (group, level) =>
+    ipcRenderer.invoke('tools:set-group', group, level),
+  showToolLevelMenu: (target, x, y) =>
+    ipcRenderer.send('tool:level-menu', target, x, y),
+  onToolLevelChosen: (callback) => {
+    const listener = (_event: unknown, target: string, level: ApprovalLevel) =>
+      callback(target, level);
+    ipcRenderer.on('tool:level-chosen', listener);
+    return () => {
+      ipcRenderer.removeListener('tool:level-chosen', listener);
+    };
+  },
   artifactCreate: (kind, title, spaceId) =>
     ipcRenderer.invoke('artifact:create', kind, title, spaceId),
   artifactOpen: (id) => ipcRenderer.send('artifact:open', id),

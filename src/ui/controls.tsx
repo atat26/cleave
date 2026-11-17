@@ -202,14 +202,21 @@ export function Segmented<T extends string>({
   value,
   onChange,
   label,
+  fill = false,
 }: {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (next: T) => void;
   label: string;
+  // Spread the choices over the whole width.
+  fill?: boolean;
 }) {
   return (
-    <div className="seg" role="group" aria-label={label}>
+    <div
+      className={join('seg', fill && 'seg-fill')}
+      role="group"
+      aria-label={label}
+    >
       {options.map((option) => (
         <button
           key={option.value}

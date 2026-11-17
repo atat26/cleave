@@ -10,6 +10,7 @@ import { ChatComposer } from './ChatComposer';
 import { MessageList, useChatMessages } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
 import { NewChatView } from './NewChatView';
+import type { SkillInfo } from './skills';
 import { PAGE_INSET, RAIL_WIDTH } from './layout';
 import type { ViewMode } from './model';
 import { ResizeHandle } from './ResizeHandle';
@@ -37,6 +38,7 @@ export function ChatBar({
   tabs,
   spaces,
   artifacts,
+  skills,
   activeTabId,
   renameRequest,
   onRenameHandled,
@@ -49,6 +51,7 @@ export function ChatBar({
   tabs: TabInfo[];
   spaces: SpaceInfo[];
   artifacts: ArtifactInfo[];
+  skills: SkillInfo[];
   activeTabId: number | null;
   renameRequest: number | null;
   onRenameHandled: () => void;
@@ -114,6 +117,7 @@ export function ChatBar({
       tabs={tabs}
       spaces={spaces}
       artifacts={artifacts}
+      skills={skills}
       activeTabId={activeTabId}
       compact={!full}
       before={

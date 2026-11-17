@@ -599,8 +599,24 @@ export function createTabTools(
     return { kind: 'auto' };
   };
 
-  const plan = (call: ToolCall): Plan =>
-    applyPolicy(ownPlan(call), levelOf(call.name), describe(call));
+  const plan = (call: ToolCall): Plan => {
+    const own = ownPlan(call);
+    const applied = applyPolicy(own, levelOf(call.name), describe(call));
+    // A note is background for later chats: after web content was read, adding to it
+    // always asks. (Applied last, because "Always allow" would otherwise let it through.)
+    if (
+      call.name === 'edit_space_note' &&
+      applied.kind !== 'refuse' &&
+      readWebContent()
+    ) {
+      return {
+        kind: 'ask',
+        text: own.kind === 'ask' ? own.text : describe(call),
+        risky: true,
+      };
+    }
+    return applied;
+  };
 
   async function run(call: ToolCall): Promise<ToolOutcome> {
     // Defence in depth: a tool turned off never runs, whoever asks.

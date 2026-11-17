@@ -4,6 +4,11 @@ import {
   addMenuItems,
   artifactMenuItems,
   addToChatMenuItems,
+  newSkillMenuItems,
+  skillMenuItems,
+  parseToolLevelChoice,
+  parseToolTarget,
+  toolLevelMenuItems,
   chatRowMenuItems,
   chatSwitchMenuItems,
   emojiPickerItems,
@@ -47,6 +52,8 @@ import {
   zoomChipMenuItems,
   parseLinkChoice,
   parseAddToChatChoice,
+  parseNewSkillChoice,
+  parseSkillChoice,
   parseMessageChoice,
   parseModelChoice,
   parseSpaceChoice,
@@ -295,16 +302,17 @@ test('the chat-name menu lists chats newest first, ticks the open one, and acts 
   const labels = items
     .filter((i) => i.type === 'item')
     .map((i) => (i as MenuEntry).label);
-  assert.deepEqual(labels.slice(0, 7), [
+  assert.deepEqual(labels.slice(0, 8), [
     'New chat',
     'Rename',
     'Change icon…',
     'Name with AI',
+    'Make a skill from this chat…',
     'Export as Markdown…',
     'Search chats…',
     'Delete chat',
   ]);
-  assert.deepEqual(labels.slice(7), ['Second', 'First']);
+  assert.deepEqual(labels.slice(8), ['Second', 'First']);
   const activeId = chats.activeId;
   assert.equal(entry(items, `chat.select:${activeId}`).checked, true);
   assert.equal(entry(items, `chat.select:${firstId}`).checked, false);
@@ -325,9 +333,16 @@ test('the chat row menu and chat ids', () => {
     `chat.rename:${id}`,
     `chat.icon:${id}`,
     `chat.name-ai:${id}`,
+    `chat.make-skill:${id}`,
     `chat.export:${id}`,
     `chat.delete:${id}`,
   ]);
+  // An empty chat has nothing to make a skill from.
+  assert.equal(entry(items, `chat.make-skill:${id}`).disabled, true);
+  assert.deepEqual(parseChatChoice('chat.make-skill:7'), {
+    action: 'make-skill',
+    chatId: 7,
+  });
   assert.deepEqual(parseChatChoice('chat.export:7'), {
     action: 'export',
     chatId: 7,
@@ -1532,4 +1547,63 @@ test('the "+" menu in the message box offers a page, a Space, an artifact and a 
   });
   assert.deepEqual(parseAddToChatChoice('addchat.file'), { action: 'file' });
   assert.equal(parseAddToChatChoice('addchat.nope'), null);
+});
+
+test('the skill menus: edit, turn on or off, duplicate, export and delete; and New skill or import', () => {
+  const on = skillMenuItems({ enabled: true });
+  assert.deepEqual(menuIds(on), [
+    'skill.edit',
+    'skill.toggle',
+    'skill.duplicate',
+    'skill.export',
+    'skill.delete',
+  ]);
+  assert.equal(entry(on, 'skill.toggle').label, 'Turn off');
+  assert.equal(
+    entry(skillMenuItems({ enabled: false }), 'skill.toggle').label,
+    'Turn on',
+  );
+  assert.equal(entry(on, 'skill.delete').danger, true);
+  assert.deepEqual(parseSkillChoice('skill.export'), { action: 'export' });
+  assert.deepEqual(parseSkillChoice('skill.delete'), { action: 'delete' });
+  assert.equal(parseSkillChoice('skill.nope'), null);
+  assert.deepEqual(menuIds(newSkillMenuItems()), ['skill.new', 'skill.import']);
+  assert.deepEqual(parseNewSkillChoice('skill.new'), { action: 'new' });
+  assert.deepEqual(parseNewSkillChoice('skill.import'), { action: 'import' });
+  assert.equal(parseNewSkillChoice('skill.edit'), null);
+});
+
+test('the Tools level menu ticks the current level, marks the default, and reads a choice back', () => {
+  const items = toolLevelMenuItems('ask', 'always');
+  assert.deepEqual(menuIds(items), [
+    'tool.level:always',
+    'tool.level:if-safe',
+    'tool.level:ask',
+    'tool.level:never',
+  ]);
+  assert.equal(entry(items, 'tool.level:ask').checked, true);
+  assert.equal(entry(items, 'tool.level:always').checked, false);
+  assert.equal(entry(items, 'tool.level:always').detail, 'Default');
+  assert.equal(entry(items, 'tool.level:never').detail, undefined);
+  // A group whose tools differ ticks nothing.
+  assert.ok(
+    toolLevelMenuItems(null, null).every(
+      (i) => i.type !== 'item' || !i.checked,
+    ),
+  );
+  assert.equal(parseToolLevelChoice('tool.level:if-safe'), 'if-safe');
+  assert.equal(parseToolLevelChoice('tool.level:sometimes'), null);
+  assert.equal(parseToolLevelChoice('skill.edit'), null);
+  assert.deepEqual(parseToolTarget('tool:read_page'), {
+    kind: 'tool',
+    name: 'read_page',
+  });
+  assert.deepEqual(parseToolTarget('group:look'), {
+    kind: 'group',
+    group: 'look',
+  });
+  assert.equal(parseToolTarget('tool:'), null);
+  assert.equal(parseToolTarget('else'), null);
+  assert.equal(parseToolTarget(5), null);
+  assert.equal(parseToolTarget('tool:' + 'x'.repeat(100)), null);
 });

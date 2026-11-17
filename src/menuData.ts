@@ -15,6 +15,8 @@ import type {
   TextArtifactKind,
 } from './artifacts.ts';
 import { byRecency } from './chats.ts';
+import { APPROVAL_LEVELS, isApprovalLevel, LEVEL_WORDS } from './toolPolicy.ts';
+import type { ApprovalLevel } from './toolPolicy.ts';
 import type { ChatRef, ChatsState } from './chats.ts';
 import { resolveLink } from './chatLinks.ts';
 import type { Workspace } from './chatLinks.ts';
@@ -393,6 +395,7 @@ export type ChatChoice =
   | { action: 'rename'; chatId: number }
   | { action: 'icon'; chatId: number }
   | { action: 'name-ai'; chatId: number }
+  | { action: 'make-skill'; chatId: number }
   | { action: 'export'; chatId: number }
   | { action: 'search' }
   | { action: 'delete'; chatId: number };
@@ -425,6 +428,15 @@ export function chatRowMenuItems(
       id: `chat.name-ai:${chatId}`,
       label: 'Name with AI',
       icon: 'sparkle',
+    },
+    {
+      type: 'item',
+      id: `chat.make-skill:${chatId}`,
+      label: 'Make a skill from this chat…',
+      icon: 'bolt',
+      // Nothing to learn from an empty chat.
+      disabled:
+        chats.conversations.find((c) => c.id === chatId)?.messages.length === 0,
     },
     {
       type: 'item',
@@ -470,6 +482,14 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
     },
     {
       type: 'item',
+      id: `chat.make-skill:${active}`,
+      label: 'Make a skill from this chat…',
+      icon: 'bolt',
+      disabled:
+        chats.conversations.find((c) => c.id === active)?.messages.length === 0,
+    },
+    {
+      type: 'item',
       id: `chat.export:${active}`,
       label: 'Export as Markdown…',
       icon: 'upload',
@@ -500,7 +520,10 @@ export function chatSwitchMenuItems(chats: ChatsState): MenuItem[] {
 export function parseChatChoice(id: string): ChatChoice | null {
   if (id === 'chat.new') return { action: 'new' };
   if (id === 'chat.search') return { action: 'search' };
-  const m = /^chat\.(select|rename|icon|name-ai|export|delete):(\d+)$/.exec(id);
+  const m =
+    /^chat\.(select|rename|icon|name-ai|make-skill|export|delete):(\d+)$/.exec(
+      id,
+    );
   if (!m) return null;
   return {
     action: m[1] as
@@ -508,10 +531,85 @@ export function parseChatChoice(id: string): ChatChoice | null {
       | 'rename'
       | 'icon'
       | 'name-ai'
+      | 'make-skill'
       | 'export'
       | 'delete',
     chatId: Number(m[2]),
   };
+}
+
+// ---- Skills ------------------------------------------------------------------------
+
+export type SkillChoice =
+  | { action: 'edit' }
+  | { action: 'toggle' }
+  | { action: 'duplicate' }
+  | { action: 'export' }
+  | { action: 'delete' };
+
+// Right-click (or the "…" on hover) on a skill.
+export function skillMenuItems(skill: { enabled: boolean }): MenuItem[] {
+  return [
+    { type: 'item', id: 'skill.edit', label: 'Edit', icon: 'pencil' },
+    {
+      type: 'item',
+      id: 'skill.toggle',
+      label: skill.enabled ? 'Turn off' : 'Turn on',
+      icon: skill.enabled ? 'x' : 'check',
+    },
+    { type: 'item', id: 'skill.duplicate', label: 'Duplicate', icon: 'copy' },
+    {
+      type: 'item',
+      id: 'skill.export',
+      label: 'Export as a file…',
+      icon: 'upload',
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      id: 'skill.delete',
+      label: 'Delete',
+      icon: 'trash',
+      danger: true,
+    },
+  ];
+}
+
+export function parseSkillChoice(id: string): SkillChoice | null {
+  switch (id) {
+    case 'skill.edit':
+      return { action: 'edit' };
+    case 'skill.toggle':
+      return { action: 'toggle' };
+    case 'skill.duplicate':
+      return { action: 'duplicate' };
+    case 'skill.export':
+      return { action: 'export' };
+    case 'skill.delete':
+      return { action: 'delete' };
+  }
+  return null;
+}
+
+export type NewSkillChoice = { action: 'new' } | { action: 'import' };
+
+// The "New" button on the Skills panel.
+export function newSkillMenuItems(): MenuItem[] {
+  return [
+    { type: 'item', id: 'skill.new', label: 'New skill', icon: 'plus' },
+    {
+      type: 'item',
+      id: 'skill.import',
+      label: 'Import from a file…',
+      icon: 'doc',
+    },
+  ];
+}
+
+export function parseNewSkillChoice(id: string): NewSkillChoice | null {
+  if (id === 'skill.new') return { action: 'new' };
+  if (id === 'skill.import') return { action: 'import' };
+  return null;
 }
 
 // ---- The "+" menu in the chat's message box ----------------------------------------
@@ -2305,4 +2403,44 @@ export function parsePopupChoice(id: string): PopupCardChoice | null {
   if (id === 'popup.allow') return { action: 'allow' };
   const m = /^popup\.open:(\d{1,2})$/.exec(id);
   return m ? { action: 'open', index: Number(m[1]) } : null;
+}
+
+// ---- The Tools panel: how much a tool (or a whole group) may do -------------------
+
+// What a menu is for: one tool ("tool:read_page") or a whole group ("group:look").
+export type ToolTarget =
+  | { kind: 'tool'; name: string }
+  | { kind: 'group'; group: string };
+
+export function parseToolTarget(target: unknown): ToolTarget | null {
+  if (typeof target !== 'string' || target.length > 80) return null;
+  if (target.startsWith('tool:') && target.length > 5) {
+    return { kind: 'tool', name: target.slice(5) };
+  }
+  if (target.startsWith('group:') && target.length > 6) {
+    return { kind: 'group', group: target.slice(6) };
+  }
+  return null;
+}
+
+// The four levels, with the one it is at ticked and the default marked.
+export function toolLevelMenuItems(
+  current: ApprovalLevel | null,
+  fallback: ApprovalLevel | null,
+): MenuItem[] {
+  return APPROVAL_LEVELS.map(
+    (level): MenuItem => ({
+      type: 'item',
+      id: `tool.level:${level}`,
+      label: LEVEL_WORDS[level],
+      checked: level === current,
+      ...(level === fallback ? { detail: 'Default' } : {}),
+    }),
+  );
+}
+
+export function parseToolLevelChoice(id: string): ApprovalLevel | null {
+  if (!id.startsWith('tool.level:')) return null;
+  const level = id.slice('tool.level:'.length);
+  return isApprovalLevel(level) ? level : null;
 }

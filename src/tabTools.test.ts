@@ -284,6 +284,15 @@ test('adding to a note asks as risky once web content was read in the same reply
   const after = w.tools.plan(call('edit_space_note', text));
   assert.ok(after.kind === 'ask');
   assert.equal(after.risky, true);
+  // Even a tool set to "Always allow" asks once web content was read.
+  const always = world(() => 'always');
+  assert.deepEqual(always.tools.plan(call('edit_space_note', text)), {
+    kind: 'auto',
+  });
+  always.setWebContent(true);
+  const asked = always.tools.plan(call('edit_space_note', text));
+  assert.ok(asked.kind === 'ask');
+  assert.equal(asked.risky, true);
 });
 
 test('a note that would be too long, empty text and too many writes are refused', async () => {

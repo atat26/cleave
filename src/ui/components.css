@@ -572,6 +572,16 @@ button {
   align-items: center;
   justify-content: center;
 }
+/* A segmented control that fills the width, each choice the same size. */
+.seg.seg-fill {
+  display: flex;
+}
+.seg-fill button {
+  flex: 1 1 0;
+  justify-content: center;
+  white-space: nowrap;
+  padding: 0 var(--s-1);
+}
 .seg button:hover {
   background: var(--c-hover);
 }

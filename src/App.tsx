@@ -214,6 +214,7 @@ export function App() {
           tabs={state.tabs}
           spaces={state.spaces}
           artifacts={state.artifacts}
+          skills={state.skills}
           activeTabId={activeTab?.id ?? null}
           renameRequest={chatRenameRequest}
           onRenameHandled={clearChatRenameRequest}
@@ -223,6 +224,7 @@ export function App() {
         <RightPanel
           panel={shownPanel}
           artifacts={state.artifacts}
+          skills={state.skills}
           openArtifactIds={state.artifactTabs.map((t) => t.id)}
           spaces={state.spaces}
           artifactRenameRequest={artifactRenameRequest}

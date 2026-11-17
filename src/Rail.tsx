@@ -18,7 +18,7 @@ const RAIL_ITEMS: {
   { panel: 'extensions', label: 'Extensions', icon: 'puzzle' },
   { panel: 'library', label: 'Library', icon: 'history' },
   { panel: 'artifacts', label: 'Artifacts', icon: 'doc' },
-  { panel: 'skills', label: 'Skills', icon: 'sparkle' },
+  { panel: 'skills', label: 'Skills', icon: 'bolt' },
   { panel: 'tools', label: 'Tools', icon: 'tools' },
   { panel: 'settings', label: 'Settings', icon: 'settings', bottom: true },
 ];

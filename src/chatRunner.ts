@@ -57,6 +57,8 @@ export interface RunContext {
   systemPrompt: string | null;
   // What the chat has linked (titles and addresses), already cleaned; or null.
   linked?: string | null;
+  // The skills that are on, as a short list for the assistant; or null.
+  skills?: string | null;
   // The read-only tools the assistant may use (null or left out: a plain chat).
   tools?: AgentTools | null;
 }
@@ -86,6 +88,7 @@ export function createChatRunner(deps: RunnerDeps) {
     let conversation: ChatMessageInput[] = buildMessages({
       systemPrompt: context.systemPrompt,
       linkedContext: context.linked ?? null,
+      skillsContext: context.skills ?? null,
       history,
     });
     const tools = context.tools ?? null;

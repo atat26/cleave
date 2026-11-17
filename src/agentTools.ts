@@ -57,6 +57,12 @@ import {
 import type { RecallEnv } from './recallTools.ts';
 import { createSaveTools, isSaveTool, SAVE_DEFINITIONS } from './saveTools.ts';
 import type { SaveEnv } from './saveTools.ts';
+import {
+  createSkillTools,
+  isSkillTool,
+  SKILL_DEFINITIONS,
+} from './skillTools.ts';
+import type { SkillsEnv } from './skillTools.ts';
 
 export const MAX_PAGE_CHARS = 20_000;
 export const MAX_READS = 8;
@@ -153,7 +159,14 @@ export type LinkReadOutcome =
   | { ok: false; reason: 'blocked' | 'timeout' | 'unavailable' };
 
 export interface AgentEnv
-  extends ActionEnv, ArtifactToolEnv, EyesEnv, TabsEnv, RecallEnv, SaveEnv {
+  extends
+    ActionEnv,
+    ArtifactToolEnv,
+    EyesEnv,
+    TabsEnv,
+    RecallEnv,
+    SaveEnv,
+    SkillsEnv {
   // Reading a page by its address in a hidden, private window (see linkReader.ts).
   readLink(url: string, signal: AbortSignal): Promise<LinkReadOutcome>;
   // The full address a numbered link on a linked tab goes to (or null).
@@ -554,6 +567,7 @@ export function createAgentTools(
   const tabTools = createTabTools(env, levelOf, () => readWebContent());
   const recall = createRecallTools(env, levelOf);
   const saveTools = createSaveTools(env, levelOf);
+  const skillTools = createSkillTools(env, levelOf, () => readWebContent());
 
   // Has the assistant read web content in this reply (a page, a link, a page's
   // controls or search results)? Pages are written by strangers, so after that
@@ -594,6 +608,7 @@ export function createAgentTools(
     if (isTabTool(call.name)) return tabTools.plan(call);
     if (isRecallTool(call.name)) return recall.plan(call);
     if (isSaveTool(call.name)) return saveTools.plan(call);
+    if (isSkillTool(call.name)) return skillTools.plan(call);
     const own: Plan = isActionName(call.name)
       ? planAction(call, actionContext)
       : call.name === 'web_search'
@@ -916,6 +931,7 @@ export function createAgentTools(
     if (isTabTool(call.name)) return tabTools.describe(call);
     if (isRecallTool(call.name)) return recall.describe(call);
     if (isSaveTool(call.name)) return saveTools.describe(call);
+    if (isSkillTool(call.name)) return skillTools.describe(call);
     if (call.name === 'read_page' || call.name === 'look_at_page') {
       const id = tabArgument(call);
       const tab = env.linkedTabs().find((t) => t.id === id);
@@ -953,6 +969,7 @@ export function createAgentTools(
     if (isTabTool(call.name)) return tabTools.run(call);
     if (isRecallTool(call.name)) return recall.run(call);
     if (isSaveTool(call.name)) return saveTools.run(call, signal);
+    if (isSkillTool(call.name)) return skillTools.run(call);
     if (isActionName(call.name)) return runAction(call, signal);
     if (call.name === 'web_search') return runSearch(call, signal);
     if (call.name === 'read_link') return runReadLink(call, signal);
@@ -1124,6 +1141,7 @@ export function createAgentTools(
       ...TAB_DEFINITIONS,
       ...RECALL_DEFINITIONS,
       ...SAVE_DEFINITIONS,
+      ...SKILL_DEFINITIONS,
       ...ACTION_DEFINITIONS,
       ...ARTIFACT_DEFINITIONS,
     ].filter((definition) => levelOf(definition.name) !== 'never'),

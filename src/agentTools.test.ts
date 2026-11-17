@@ -279,6 +279,11 @@ function setup(
       };
     },
     linkedTabs: () => tabs,
+    // (The skill tools have their own tests in skillTools.test.ts.)
+    listSkills: () => [],
+    readSkill: () => null,
+    makeSkill: () => ({ ok: false as const, problem: 'none' }),
+    changeSkill: () => ({ ok: false as const, problem: 'none' }),
     // (The save tools have their own tests in saveTools.test.ts.)
     savePage: async () => ({ ok: false as const, reason: 'closed' as const }),
     bookmarkPage: async () => ({
@@ -1620,4 +1625,29 @@ test('the save, bookmark and check tools are offered, in the Tools panel, ask by
     call('create_artifact', { title: 'T', kind: 'markdown', content: 'x' }),
   );
   assert.equal(write.kind, 'ask');
+});
+
+test('the skill tools are offered and in the Tools panel; using one just goes ahead, making or changing one asks', async () => {
+  const names = createAgentTools(setup().env, () => 'always').definitions.map(
+    (d) => d.name,
+  );
+  for (const name of ['use_skill', 'create_skill', 'edit_skill']) {
+    assert.ok(names.includes(name), name);
+  }
+  assert.equal(defaultLevel('use_skill'), 'always');
+  assert.equal(defaultLevel('create_skill'), 'ask');
+  assert.equal(defaultLevel('edit_skill'), 'ask');
+  // After reading a page, making a skill asks even though the tool is set to "always".
+  const { tools, env } = setup(undefined, () => 'always');
+  await tools.run(call('read_page', { tab: 1 }), ABORT);
+  const plan = tools.plan(
+    call('create_skill', {
+      name: 'N',
+      description: 'Use when x.',
+      instructions: '1. y',
+    }),
+  );
+  assert.ok(plan.kind === 'ask');
+  assert.equal(plan.risky, true);
+  assert.ok(env.listSkills().length === 0);
 });
