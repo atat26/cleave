@@ -26,6 +26,10 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         does: 'Go to that tab, counting from the top of the sidebar',
       },
       { keys: 'Ctrl+9', does: 'Go to the last tab' },
+      {
+        keys: 'Ctrl+K',
+        does: 'Search everything: tabs, Spaces, artifacts, chats, history',
+      },
       { keys: 'Ctrl+Shift+A', does: 'Search your tabs' },
     ],
   },

@@ -509,6 +509,7 @@ const browserApi: BrowserApi = {
   },
   popupReady: () => ipcRenderer.send('popup:ready'),
   popupChoose: (id) => ipcRenderer.send('popup:choose', id),
+  quickQuery: (text) => ipcRenderer.invoke('quick:query', text),
   popupClose: () => ipcRenderer.send('popup:close'),
   showSpaceMenu: (id, x, y) => ipcRenderer.send('space:menu', id, x, y),
   showArtifactMenu: (id, x, y) => ipcRenderer.send('artifact:menu', id, x, y),

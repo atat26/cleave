@@ -170,6 +170,7 @@ import {
 import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
+import { parseQuickChoice, quickSearchItems } from './quickSearch';
 import { parseTabSearchChoice, tabSearchItems } from './tabSearch';
 import {
   clearHiddenPickUp,
@@ -839,7 +840,7 @@ export async function createTabs(
       items: MenuItem[];
       x: number;
       y: number;
-      panel?: 'prompt' | 'site' | 'search';
+      panel?: 'prompt' | 'site' | 'search' | 'quick';
     };
   } | null = null;
 
@@ -1365,7 +1366,7 @@ export async function createTabs(
     alignCenter?: number,
     picker = false,
     dismissed?: () => void,
-    panel?: 'prompt' | 'site' | 'search',
+    panel?: 'prompt' | 'site' | 'search' | 'quick',
   ) => {
     if (openMenu) closeMenu(false);
     openMenu = {
@@ -1568,6 +1569,110 @@ export async function createTabs(
       false,
       undefined,
       'search',
+    );
+  };
+
+  // Ctrl+K: one box that finds anything (tabs, Spaces, artifacts, chats, history),
+  // or goes to an address, searches the web, or asks the assistant. The rows are
+  // asked for as you type (the 'quick:query' answer below).
+  const quickSources = () => ({
+    state,
+    closed: closedTabs.tabs,
+    artifacts: artifacts.artifacts,
+    chats,
+    history: history.entries,
+    bookmarks: bookmarks.items,
+    engineName: activeEngine(searchEngine).name,
+  });
+  // "Ask about ..." from the box: a new chat with the text sent. The chat bar is
+  // shown under the page when only the page was showing.
+  const askFromQuickSearch = (text: string) => {
+    if (!chatService) return;
+    const created = chatsModel.startNewChat(chats);
+    commitChats(created.state);
+    if (state.settings.viewMode === 'page') {
+      commitAndShow(model.setViewMode(state, 'both'));
+      applyLayout(true);
+    }
+    const result = chatService.sendMessage(created.id, text, []);
+    if (!result.ok && !win.webContents.isDestroyed()) {
+      win.webContents.send('composer:insert', text.slice(0, 4000));
+    }
+  };
+  // An address from the box: in the new-tab page you are on (it becomes that page),
+  // else in the selected tab (or a new one when no page is selected).
+  const quickGo = (url: string) => {
+    const id = activeTabId();
+    if (id !== null && onNewTabPage() && goFromNewTab(id, url)) return;
+    goTo(url);
+  };
+  const runQuickChoice = (choiceId: string) => {
+    const choice = parseQuickChoice(choiceId);
+    if (!choice) return;
+    const template = activeEngine(searchEngine).template;
+    switch (choice.kind) {
+      case 'go': {
+        const url = resolveInput(choice.text, template);
+        if (url !== '') quickGo(url);
+        break;
+      }
+      case 'search': {
+        const url = searchUrl(choice.text, template);
+        if (url !== '') quickGo(url);
+        break;
+      }
+      case 'ask':
+        askFromQuickSearch(choice.text);
+        break;
+      case 'page':
+        // A bookmark or a visited page: a new tab (only a real web address).
+        if (model.isWebUrl(choice.url)) {
+          const id = activeTabId();
+          if (id === null || !onNewTabPage() || !goFromNewTab(id, choice.url)) {
+            openTab(choice.url, currentSpaceId());
+          }
+        }
+        break;
+      case 'tab': {
+        const tab = model.findTab(state, choice.id);
+        if (!tab) break;
+        if (tab.closed) reopenTab(choice.id);
+        else select({ kind: 'tab', id: choice.id });
+        break;
+      }
+      case 'closed':
+        reopenClosedById(choice.id);
+        break;
+      case 'space':
+        if (model.findSpace(state, choice.id)) {
+          select({ kind: 'lead', spaceId: choice.id });
+        }
+        break;
+      case 'artifact':
+        openArtifact(choice.id);
+        break;
+      case 'chat':
+        if (chatsModel.findConversation(chats, choice.id)) {
+          chatMenuActions.selectChat(choice.id);
+          if (state.settings.viewMode === 'page') {
+            commitAndShow(model.setViewMode(state, 'both'));
+            applyLayout(true);
+          }
+        }
+        break;
+    }
+  };
+  const openQuickSearch = () => {
+    showMenu(
+      quickSearchItems('', quickSources()),
+      0,
+      0,
+      runQuickChoice,
+      win.webContents,
+      undefined,
+      false,
+      undefined,
+      'quick',
     );
   };
 
@@ -2132,6 +2237,9 @@ export async function createTabs(
         break;
       case 'fullscreen':
         toggleWindowFullscreen();
+        break;
+      case 'quick-search':
+        openQuickSearch();
         break;
       case 'tab-search':
         openTabSearch();
@@ -4664,6 +4772,9 @@ export async function createTabs(
       } else {
         openTab(newTabUrl(), currentSpaceId());
       }
+    } else if (key === 'k' && !input.shift) {
+      event.preventDefault();
+      openQuickSearch();
     } else if (key === 'a' && input.shift) {
       event.preventDefault();
       openTabSearch();
@@ -6010,9 +6121,12 @@ export async function createTabs(
     waiting?.();
   };
   const onPopupChoose = (event: Electron.IpcMainEvent, id: unknown) => {
-    if (event.sender !== popup || !openMenu) return;
-    // Only an item of the menu that is open (and enabled) counts.
-    if (!isChoosable(openMenu.items, id)) return;
+    if (event.sender !== popup || !openMenu || typeof id !== 'string') return;
+    // Only an item of the menu that is open (and enabled) counts. Quick search's rows
+    // change as you type, so there a row counts if it reads as one of its choices.
+    if (openMenu.shown.panel === 'quick') {
+      if (parseQuickChoice(id) === null) return;
+    } else if (!isChoosable(openMenu.items, id)) return;
     const { choose } = openMenu;
     if (openMenu.shown.panel === 'site') {
       // The site card stays open: the choice is applied and the card sent again.
@@ -7240,6 +7354,11 @@ ${artifact.content.slice(0, 1500)}`;
       return result.artifact.id;
     },
   );
+  // The rows of quick search for what was typed. Only the popup page may ask.
+  ipcMain.handle('quick:query', (event, text: unknown) => {
+    if (event.sender !== popup || typeof text !== 'string') return [];
+    return quickSearchItems(text.slice(0, 500), quickSources());
+  });
   ipcMain.handle('tools:reset', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     toolSettings = defaultToolSettings();
@@ -7395,6 +7514,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
+    ipcMain.removeHandler('quick:query');
     ipcMain.removeHandler('tools:preset');
     ipcMain.removeHandler('tools:set-group');
     ipcMain.removeHandler('artifact:create');

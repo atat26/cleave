@@ -2095,6 +2095,12 @@ button {
   height: 16px;
   border-radius: 3px;
 }
+.ts-emoji {
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+}
 .ts-globe {
   display: grid;
   place-items: center;
