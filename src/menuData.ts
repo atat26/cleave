@@ -516,6 +516,7 @@ export type ArtifactChoice =
   | { action: 'icon' }
   | { action: 'name-ai' }
   | { action: 'add-to-chat' }
+  | { action: 'internet' }
   | { action: 'move'; spaceId: number }
   | { action: 'move-new-space' }
   | { action: 'take-out' }
@@ -575,6 +576,18 @@ export function artifactMenuItems(
       label: 'Add to chat',
       icon: 'chat',
     },
+    // A page can only be given the internet if it is an HTML page.
+    ...(artifact.kind === 'html'
+      ? [
+          {
+            type: 'item',
+            id: 'artifact.internet',
+            label: 'Allow internet for this page',
+            icon: 'globe',
+            checked: artifact.internetFor === artifact.revision,
+          } as MenuItem,
+        ]
+      : []),
     { type: 'separator' },
     {
       type: 'item',
@@ -618,6 +631,8 @@ export function parseArtifactChoice(id: string): ArtifactChoice | null {
       return { action: 'name-ai' };
     case 'artifact.add-to-chat':
       return { action: 'add-to-chat' };
+    case 'artifact.internet':
+      return { action: 'internet' };
     case 'artifact.move-new-space':
       return { action: 'move-new-space' };
     case 'artifact.take-out':

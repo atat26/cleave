@@ -14,6 +14,7 @@ import { openSecretStore } from './electronSecrets';
 import { registerLlm } from './llm';
 import { registerSearch } from './search';
 import { createTabs } from './tabs';
+import { guardPreviewFrames } from './previewGuard';
 import { loadUi } from './ui';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -55,6 +56,8 @@ const createWindow = () => {
   // (Websites will live in their own tab views, added later in M1.)
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  // HTML artifacts run scripts in a frame inside this window: it may go nowhere.
+  guardPreviewFrames(mainWindow);
 
   // Load the app's UI page (the toolbar).
   void loadUi(mainWindow.webContents);
