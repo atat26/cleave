@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_ARTIFACT_CHARS } from './artifacts';
 import { PAGE_INSET, PAGE_RADIUS, TOOLBAR_HEIGHT } from './layout';
 import type { ArtifactDocument, ArtifactTabInfo } from './types';
@@ -9,9 +9,17 @@ import {
   previewNote,
 } from './artifactRender';
 import type { PreviewMessage } from './artifactRender';
+import { detectLanguage, languageName } from './highlight';
+import { HighlightedEditor } from './HighlightedEditor';
 import { NameButton } from './NameButton';
 import { Markdown } from './MarkdownView';
-import { Badge, Banner, Button, ItemEmoji, Segmented } from './ui/controls';
+import {
+  Banner,
+  Button,
+  IconButton,
+  ItemEmoji,
+  Segmented,
+} from './ui/controls';
 import { Icon } from './ui/Icon';
 
 const KIND_WORDS: Record<ArtifactTabInfo['kind'], string> = {
@@ -22,6 +30,9 @@ const KIND_WORDS: Record<ArtifactTabInfo['kind'], string> = {
 };
 
 const SAVE_DELAY_MS = 500;
+
+const sizeWords = (chars: number) =>
+  chars < 1000 ? `${chars} chars` : `${(chars / 1000).toFixed(1)}k chars`;
 
 // An open artifact: a plain text editor in the area where a web page would be.
 // It loads the text once, then saves a moment after you stop typing (and when
@@ -198,6 +209,15 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
   };
 
   const mono = tab.kind === 'html' || tab.kind === 'code';
+  // What the text is written in, for its colours: from the kind, the ending of its
+  // name ("calc.py"), or what it looks like. (Looked up again only when the name or
+  // the start of the text changes.)
+  const head = text.slice(0, 2000);
+  const language = useMemo(
+    () => detectLanguage(tab.kind, tab.title, text),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tab.kind, tab.title, head],
+  );
 
   const [renaming, setRenaming] = useState(false);
   const finishRename = (value: string) => {
@@ -266,6 +286,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
         background: 'var(--c-surface)',
         color: 'var(--c-text)',
         borderRadius: PAGE_RADIUS,
+        containerType: 'inline-size',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
@@ -273,7 +294,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
       }}
     >
       <header
-        className="reveal-host"
+        className="reveal-host art-head"
         // Right-click the header for the same menu as the artifact's sidebar row.
         onContextMenu={(event) => {
           if (event.target instanceof HTMLInputElement) return;
@@ -284,110 +305,127 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             event.clientY,
           );
         }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--s-3)',
-          padding: 'var(--s-4) var(--s-5) var(--s-3)',
-        }}
       >
         <ItemEmoji emoji={tab.emoji} />
-        {renaming ? (
-          <input
-            className="input"
-            autoFocus
-            defaultValue={tab.title}
-            maxLength={80}
-            aria-label="Artifact name"
-            onFocus={(e) => e.target.select()}
-            onBlur={(e) => finishRename(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') finishRename(e.currentTarget.value);
-              if (e.key === 'Escape') setRenaming(false);
-            }}
-            style={{
-              fontSize: 'var(--fs-xl)',
-              fontWeight: 600,
-              flex: 1,
-              minWidth: 0,
-              height: 36,
+        <div className="art-title">
+          <div className="art-title-row">
+            {renaming ? (
+              <input
+                className="input"
+                autoFocus
+                defaultValue={tab.title}
+                maxLength={80}
+                aria-label="Artifact name"
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => finishRename(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') finishRename(e.currentTarget.value);
+                  if (e.key === 'Escape') setRenaming(false);
+                }}
+                style={{
+                  fontSize: 'var(--fs-xl)',
+                  fontWeight: 600,
+                  flex: 1,
+                  minWidth: 0,
+                  height: 36,
+                }}
+              />
+            ) : (
+              <h1
+                className="truncate"
+                onClick={() => setRenaming(true)}
+                title="Click to rename"
+                style={{
+                  margin: 0,
+                  fontSize: 'var(--fs-xl)',
+                  fontWeight: 600,
+                  minWidth: 0,
+                  cursor: 'text',
+                }}
+              >
+                {tab.title}
+              </h1>
+            )}
+            <NameButton kind="artifact" id={tab.id} />
+          </div>
+          <div className="art-meta">
+            <span>
+              {tab.kind === 'code'
+                ? languageName(language)
+                : KIND_WORDS[tab.kind]}
+              {' · '}
+              {sizeWords(text.length)}
+            </span>
+            <span
+              role="status"
+              className={
+                status !== 'saved' || savedFlash
+                  ? 'row-flex reveal is-on'
+                  : 'row-flex reveal'
+              }
+              style={{
+                gap: 'var(--s-1)',
+                color: status === 'failed' ? 'var(--c-danger)' : undefined,
+              }}
+            >
+              {status === 'saved' && <Icon name="check" />}
+              {status === 'saving' && <Icon name="spinner" className="spin" />}
+              {status === 'failed' && <Icon name="warn" />}
+              {status === 'saved'
+                ? 'Saved'
+                : status === 'saving'
+                  ? 'Saving…'
+                  : 'Could not save'}
+            </span>
+          </div>
+        </div>
+        <div className="art-actions">
+          {showPreview && isHtml && internet && (
+            // Always visible while it is on: this page can reach the internet.
+            <Button
+              icon="globe"
+              title="This page can use the internet. Click to turn it off."
+              onClick={() => chooseInternet(false)}
+            >
+              Internet on
+            </Button>
+          )}
+          {showPreview && isHtml && !internet && (
+            // Quiet until the pointer or keyboard is on the header.
+            <Button
+              icon="globe"
+              className="reveal"
+              title="Let this page load fonts and libraries from the internet"
+              onClick={() => chooseInternet(true)}
+            >
+              Allow internet
+            </Button>
+          )}
+          {canRender && (
+            <Segmented
+              label="View"
+              value={view}
+              onChange={chooseView}
+              options={[
+                { value: 'preview', label: 'Preview' },
+                { value: 'edit', label: 'Edit' },
+              ]}
+            />
+          )}
+          <IconButton
+            icon="more"
+            label="More: rename, move, add to chat and more"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              window.browserApi.showArtifactMenu(
+                tab.id,
+                box.right - 200,
+                box.bottom + 4,
+              );
             }}
           />
-        ) : (
-          <h1
-            className="truncate"
-            onClick={() => setRenaming(true)}
-            title="Click to rename"
-            style={{
-              margin: 0,
-              fontSize: 'var(--fs-xl)',
-              fontWeight: 600,
-              minWidth: 0,
-              cursor: 'text',
-            }}
-          >
-            {tab.title}
-          </h1>
-        )}
-        <NameButton kind="artifact" id={tab.id} />
-        <div style={{ flex: 1 }} />
-        {canRender && (
-          <Segmented
-            label="View"
-            value={view}
-            onChange={chooseView}
-            options={[
-              { value: 'preview', label: 'Preview' },
-              { value: 'edit', label: 'Edit' },
-            ]}
-          />
-        )}
-        {showPreview && isHtml && internet && (
-          // Always visible while it is on: this page can reach the internet.
-          <Button
-            size="sm"
-            icon="globe"
-            title="This page can use the internet. Click to turn it off."
-            onClick={() => chooseInternet(false)}
-          >
-            Internet on
-          </Button>
-        )}
-        {showPreview && isHtml && !internet && (
-          // Quiet until the pointer or keyboard is on the header.
-          <Button
-            size="sm"
-            icon="globe"
-            className="reveal"
-            title="Let this page load fonts and libraries from the internet"
-            onClick={() => chooseInternet(true)}
-          >
-            Allow internet
-          </Button>
-        )}
-        <Badge>{KIND_WORDS[tab.kind]}</Badge>
-        <span
-          role="status"
-          className={
-            status !== 'saved' || savedFlash
-              ? 'row-flex reveal is-on'
-              : 'row-flex reveal'
-          }
-          style={{
-            gap: 'var(--s-1)',
-            fontSize: 'var(--fs-xs)',
-            color: status === 'failed' ? 'var(--c-danger)' : 'var(--c-text-2)',
-          }}
-        >
-          {status === 'saved' && <Icon name="check" />}
-          {status === 'saving' && <Icon name="spinner" className="spin" />}
-          {status === 'failed' && <Icon name="warn" />}
-          {status === 'saved'
-            ? 'Saved'
-            : status === 'saving'
-              ? 'Saving…'
-              : 'Could not save'}
-        </span>
+        </div>
       </header>
       {conflict && (
         <div style={{ margin: '0 var(--s-5) var(--s-3)' }}>
@@ -466,7 +504,7 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             }}
           />
         </>
-      ) : (
+      ) : tab.kind === 'text' ? (
         <textarea
           aria-label={`Edit ${tab.title}`}
           value={text}
@@ -499,6 +537,27 @@ export function ArtifactView({ tab }: { tab: ArtifactTabInfo }) {
             lineHeight: 1.55,
             fontFamily: mono ? 'var(--font-mono)' : 'var(--font)',
             tabSize: 2,
+          }}
+        />
+      ) : (
+        <HighlightedEditor
+          label={`Edit ${tab.title}`}
+          value={text}
+          language={language}
+          mono={mono}
+          maxLength={MAX_ARTIFACT_CHARS}
+          onChange={change}
+          onBlur={() => void save()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            const box = event.currentTarget;
+            window.browserApi.showEditMenu(
+              'editor',
+              event.clientX,
+              event.clientY,
+              box.selectionStart !== box.selectionEnd,
+              box.value.slice(box.selectionStart, box.selectionEnd),
+            );
           }}
         />
       )}

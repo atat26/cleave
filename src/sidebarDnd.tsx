@@ -18,6 +18,11 @@ import {
 } from 'react';
 import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
 import {
+  hasArtifactDrag,
+  readArtifactDrag,
+  ARTIFACT_DRAG,
+} from './artifactDrag.ts';
+import {
   applyDrop,
   dropForItem,
   dropForSpaceHeader,
@@ -76,6 +81,11 @@ export const useDnd = (): Dnd => {
 
 const keyOf = (item: DragItem) => `${item.kind}:${item.id}`;
 
+// An artifact dragged in from the Artifacts panel (a different part of the window).
+// While it is over the sidebar only its type can be seen, not which artifact it is,
+// so it stands in as an artifact with no number until it is dropped.
+const FOREIGN_ARTIFACT: DragItem = { kind: 'artifact', id: 0 };
+
 // A tilted copy of the row for the pointer to carry.
 function startGhost(event: DragEvent, from: HTMLElement) {
   const rect = from.getBoundingClientRect();
@@ -122,6 +132,8 @@ export function DndProvider({
   const [over, setOver] = useState<DropAt | null>(null);
   const dragRef = useRef<DragItem | null>(null);
   const overRef = useRef<DropAt | null>(null);
+  // An artifact from the panel is being dragged over the sidebar.
+  const foreignRef = useRef(false);
   // After Alt+Up/Down the row is moved in the page, which can drop its focus.
   const refocus = useRef<string | null>(null);
 
@@ -141,6 +153,7 @@ export function DndProvider({
   }, []);
 
   const finish = useCallback(() => {
+    foreignRef.current = false;
     dragRef.current = null;
     overRef.current = null;
     setDrag(null);
@@ -160,11 +173,47 @@ export function DndProvider({
     [],
   );
 
+  // What is being dragged over a spot: one of our own rows, or an artifact from the
+  // panel (which needs the sidebar to start showing where it would land).
+  const dragging = useCallback((event: DragEvent): DragItem | null => {
+    if (dragRef.current) return dragRef.current;
+    if (!hasArtifactDrag(event.dataTransfer.types)) return null;
+    if (!foreignRef.current) {
+      foreignRef.current = true;
+      setDrag(FOREIGN_ARTIFACT);
+    }
+    return FOREIGN_ARTIFACT;
+  }, []);
+
+  // A drag from the panel that leaves the window, or is dropped somewhere else,
+  // never reports back, so it is cleaned up here.
+  useLayoutEffect(() => {
+    const clear = () => {
+      if (foreignRef.current) finish();
+    };
+    const left = (event: globalThis.DragEvent) => {
+      if (event.relatedTarget === null) clear();
+    };
+    window.addEventListener('dragleave', left);
+    window.addEventListener('dragend', clear);
+    window.addEventListener('drop', clear);
+    return () => {
+      window.removeEventListener('dragleave', left);
+      window.removeEventListener('dragend', clear);
+      window.removeEventListener('drop', clear);
+    };
+  }, [finish]);
+
   const drop = useCallback(
     (event: DragEvent) => {
       event.preventDefault();
-      const item = dragRef.current;
       const at = overRef.current;
+      let item = dragRef.current;
+      // Dropped from the panel: now the artifact's number can be read.
+      if (!item && foreignRef.current) {
+        const id = readArtifactDrag(event.dataTransfer.getData(ARTIFACT_DRAG));
+        item = id === null ? null : { kind: 'artifact', id };
+      }
       finish();
       if (item && at) applyDrop(item, at, api);
     },
@@ -218,7 +267,7 @@ export function DndProvider({
           },
           onDragEnd: finish,
           onDragOver: (event) => {
-            const current = dragRef.current;
+            const current = dragging(event);
             if (!current) return;
             const rect = (
               event.currentTarget as HTMLElement
@@ -246,7 +295,7 @@ export function DndProvider({
           'data-dnd-key': keyOf(own),
           onKeyDown: keys(own),
           onDragOver: (event) => {
-            const current = dragRef.current;
+            const current = dragging(event);
             if (!current) return;
             const rect = (
               event.currentTarget as HTMLElement
@@ -301,7 +350,7 @@ export function DndProvider({
       },
       backgroundProps: () => ({
         onDragOver: (event) => {
-          const current = dragRef.current;
+          const current = dragging(event);
           // Only the bare background, not a row or a header on top of it.
           if (!current || current.kind === 'space') return;
           if (event.target !== event.currentTarget) return;
@@ -316,7 +365,7 @@ export function DndProvider({
         onDrop: drop,
       }),
     };
-  }, [api, begin, drag, drop, finish, over, setTarget]);
+  }, [api, begin, drag, dragging, drop, finish, over, setTarget]);
 
   return <DndContext.Provider value={value}>{children}</DndContext.Provider>;
 }

@@ -96,7 +96,7 @@ const KIND_SCHEMA = {
   type: 'string',
   enum: [...ARTIFACT_KINDS],
   description:
-    'markdown for notes and writing, text for plain text, html for a web page or a small working tool (a calculator, a form, a game), code for source code or data files. An html artifact is ONE self-contained file: put the CSS in a <style> tag and the JavaScript in a <script> tag, and draw pictures with inline SVG, canvas or data: addresses. It runs with scripts but with no internet, so do not use outside libraries, CDN links (Tailwind, Bootstrap, Chart.js...), web fonts, fetch or images from web addresses: they are blocked. Data you keep (localStorage) only lasts while the preview is open.',
+    'markdown for notes and writing, text for plain text, html for a web page or a small working tool (a calculator, a form, a game), code for source code or data files (end its title with the file ending, like calc.py or app.js, so it is coloured for its language). An html artifact is ONE self-contained file: put the CSS in a <style> tag and the JavaScript in a <script> tag, and draw pictures with inline SVG, canvas or data: addresses. It runs with scripts but with no internet, so do not use outside libraries, CDN links (Tailwind, Bootstrap, Chart.js...), web fonts, fetch or images from web addresses: they are blocked. Data you keep (localStorage) only lasts while the preview is open.',
 };
 
 export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [

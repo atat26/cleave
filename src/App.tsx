@@ -191,6 +191,7 @@ export function App() {
         <RightPanel
           panel={shownPanel}
           artifacts={state.artifacts}
+          openArtifactIds={state.artifactTabs.map((t) => t.id)}
           spaces={state.spaces}
           artifactRenameRequest={artifactRenameRequest}
           onArtifactRenameHandled={clearArtifactRenameRequest}

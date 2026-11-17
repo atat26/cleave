@@ -30,12 +30,15 @@ const PLACEHOLDERS: Partial<Record<RightPanelName, string>> = {
 export function RightPanel({
   panel,
   artifacts,
+  openArtifactIds,
   spaces,
   artifactRenameRequest,
   onArtifactRenameHandled,
 }: {
   panel: RightPanelName;
   artifacts: ArtifactInfo[];
+  // The artifacts that are open as tabs.
+  openArtifactIds: number[];
   spaces: SpaceInfo[];
   artifactRenameRequest: number | null;
   onArtifactRenameHandled: () => void;
@@ -103,6 +106,7 @@ export function RightPanel({
           ) : panel === 'artifacts' ? (
             <ArtifactsPanel
               artifacts={artifacts}
+              openIds={openArtifactIds}
               spaces={spaces}
               renameRequest={artifactRenameRequest}
               onRenameHandled={onArtifactRenameHandled}

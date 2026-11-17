@@ -1,5 +1,7 @@
 import { Fragment, useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { CodeText } from './CodeText';
+import { languageFromTag } from './highlight';
 import { parseMarkdown } from './markdown';
 import type { Align, Block, Inline } from './markdown';
 
@@ -137,7 +139,16 @@ function BlockNodes({
                   whiteSpace: 'pre',
                 }}
               >
-                <code>{block.text}</code>
+                <code>
+                  {(() => {
+                    const language = languageFromTag(block.lang);
+                    return language === null ? (
+                      block.text
+                    ) : (
+                      <CodeText language={language} code={block.text} />
+                    );
+                  })()}
+                </code>
               </pre>
             );
           case 'list': {

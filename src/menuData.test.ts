@@ -1391,3 +1391,25 @@ test('the Add extension menu offers the Chrome Web Store and a folder', () => {
   });
   assert.equal(parseAddExtensionChoice('add-extension.zip'), null);
 });
+
+test('the New artifact menu offers each kind, and only a real kind is read back', async () => {
+  const { newArtifactMenuItems, parseNewArtifactChoice } =
+    await import('./menuData.ts');
+  assert.deepEqual(menuIds(newArtifactMenuItems()), [
+    'new-artifact.markdown',
+    'new-artifact.text',
+    'new-artifact.html',
+    'new-artifact.code',
+  ]);
+  assert.deepEqual(parseNewArtifactChoice('new-artifact.html'), {
+    kind: 'html',
+  });
+  for (const bad of [
+    'new-artifact.pdf',
+    'new-artifact.',
+    'artifact.html',
+    'new-artifact.html.x',
+  ]) {
+    assert.equal(parseNewArtifactChoice(bad), null, bad);
+  }
+});

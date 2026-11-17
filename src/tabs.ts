@@ -243,6 +243,8 @@ import {
   downloadMenuItems,
   addExtensionMenuItems,
   extensionMenuItems,
+  newArtifactMenuItems,
+  parseNewArtifactChoice,
   libraryMenuItems,
   parseAddExtensionChoice,
   parsePuzzleChoice,
@@ -4554,6 +4556,10 @@ export async function createTabs(
       if (spaceId !== null && !model.findSpace(state, spaceId)) return;
       // The artifact belongs to one Space: change that first (its open tab follows).
       if (found.spaceId !== spaceId) placeArtifact(artifactId, spaceId);
+      // Dragged in from the Artifacts panel it may not be open yet: open it first.
+      if (!state.artifactTabs.some((t) => t.artifactId === artifactId)) {
+        openArtifact(artifactId);
+      }
       commit(model.placeArtifactTab(state, artifactId, beforeArtifactId));
     },
     'sidebar:move-space': (spaceId, beforeSpaceId) => {
@@ -4604,6 +4610,31 @@ export async function createTabs(
         x,
         y,
         (choice) => runArtifactChoice(id, choice),
+        requestSender ?? win.webContents,
+      );
+    },
+    // "New" in the Artifacts panel: pick a kind; it is made in the Space you are in
+    // and its name is asked for right away.
+    'artifact:new-menu': (x, y) => {
+      if (!isNumber(x) || !isNumber(y)) return;
+      showMenu(
+        newArtifactMenuItems(),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseNewArtifactChoice(choice);
+          if (!parsed) return;
+          const result = artifactsModel.createArtifact(
+            artifacts,
+            { kind: parsed.kind, title: '', spaceId: currentSpaceId() },
+            Date.now(),
+          );
+          if (!result.ok) return;
+          commitArtifacts(result.state);
+          if (!win.webContents.isDestroyed()) {
+            win.webContents.send('artifact:begin-rename', result.artifact.id);
+          }
+        },
         requestSender ?? win.webContents,
       );
     },

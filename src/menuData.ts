@@ -1749,6 +1749,36 @@ export function parseAddExtensionChoice(id: string): AddExtensionChoice | null {
   return null;
 }
 
+export type NewArtifactChoice = { kind: ArtifactKind };
+
+// "New" in the Artifacts panel: what kind of artifact to make.
+export function newArtifactMenuItems(): MenuItem[] {
+  const rows: {
+    kind: ArtifactKind;
+    label: string;
+    icon: 'doc' | 'file' | 'globe' | 'code';
+  }[] = [
+    { kind: 'markdown', label: 'Markdown note', icon: 'doc' },
+    { kind: 'text', label: 'Plain text', icon: 'file' },
+    { kind: 'html', label: 'HTML page', icon: 'globe' },
+    { kind: 'code', label: 'Code', icon: 'code' },
+  ];
+  return rows.map(
+    (row): MenuItem => ({
+      type: 'item',
+      id: `new-artifact.${row.kind}`,
+      label: row.label,
+      icon: row.icon,
+    }),
+  );
+}
+
+export function parseNewArtifactChoice(id: string): NewArtifactChoice | null {
+  const m = /^new-artifact\.([a-z]+)$/.exec(id);
+  const kind = ARTIFACT_KINDS.find((k) => k === m?.[1]);
+  return kind ? { kind } : null;
+}
+
 export type PuzzleChoice =
   | { action: 'open'; key: string }
   | { action: 'pin'; key: string }

@@ -140,3 +140,29 @@
     --dur-slow: 0ms;
   }
 }
+
+/* ---- Code colours (syntax highlighting): light by default, dark below ----------- */
+:root {
+  --hl-comment: #5b6472;
+  --hl-string: #0a6b3d;
+  --hl-number: #0550ae;
+  --hl-keyword: #b5253b;
+  --hl-literal: #0550ae;
+  --hl-type: #8a4b00;
+  --hl-function: #6f42c1;
+  --hl-attr: #8a4b00;
+  --hl-tag: #0b6e4f;
+  --hl-punct: #5b6472;
+}
+:root[data-theme='dark'] {
+  --hl-comment: #8b95a5;
+  --hl-string: #9be3b4;
+  --hl-number: #8cc2ff;
+  --hl-keyword: #ff8f9c;
+  --hl-literal: #8cc2ff;
+  --hl-type: #ffc27a;
+  --hl-function: #d2b0ff;
+  --hl-attr: #ffc27a;
+  --hl-tag: #8be0c2;
+  --hl-punct: #a2abb9;
+}

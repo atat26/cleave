@@ -1,3 +1,8 @@
+import {
+  ARTIFACT_DRAG,
+  hasArtifactDrag,
+  readArtifactDrag,
+} from './artifactDrag';
 import { useEffect, useRef, useState } from 'react';
 import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
 import { ChatComposer } from './ChatComposer';
@@ -59,6 +64,8 @@ export function ChatBar({
   // A reply that finishes while the chat is too slim to show it: say so, until the
   // chat is opened enough to read it (or something new is sent).
   const [unreadReply, setUnreadReply] = useState(false);
+  // An artifact is being dragged over the chat.
+  const [dropping, setDropping] = useState(false);
   const wasWriting = useRef(false);
   const writingNow = live?.working === true;
   useEffect(() => {
@@ -110,7 +117,39 @@ export function ChatBar({
         padding: `0 ${PAGE_INSET}px ${PAGE_INSET}px`,
       }}
     >
-      <div className={full ? 'chat-card' : 'chat-card is-compact'}>
+      <div
+        className={[
+          full ? 'chat-card' : 'chat-card is-compact',
+          dropping ? 'is-dropping' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        // An artifact dragged from the Artifacts panel is added to the chat.
+        onDragOver={(event) => {
+          if (!hasArtifactDrag(event.dataTransfer.types)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          if (!dropping) setDropping(true);
+        }}
+        onDragLeave={(event) => {
+          if (
+            !event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
+            setDropping(false);
+          }
+        }}
+        onDrop={(event) => {
+          setDropping(false);
+          if (!hasArtifactDrag(event.dataTransfer.types)) return;
+          event.preventDefault();
+          const id = readArtifactDrag(
+            event.dataTransfer.getData(ARTIFACT_DRAG),
+          );
+          if (id !== null && chats.activeId !== null) {
+            window.browserApi.chatLink(chats.activeId, 'artifact', id);
+          }
+        }}
+      >
         {/* With only the chat open, its name is shown up in the top strip
             and the chat list is in the sidebar, so no header is needed here. */}
         {full && !chatOnly && (
