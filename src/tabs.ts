@@ -91,6 +91,7 @@ import {
   siteRows,
 } from './permissions';
 import type { AskKind } from './permissions';
+import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import {
   canProceed,
   certErrorCode,
@@ -738,9 +739,9 @@ export async function createTabs(
 
   // Sites whose certificate is wrong: the tab showing the warning page, and the
   // sites you chose to go on to anyway (until the app closes).
-  const certErrors = new Map<
+  const failedPages = new Map<
     number,
-    { url: string; code: number; host: string }
+    { url: string; code: number; host: string; kind: 'cert' | 'load' | 'crash' }
   >();
   const certAllowed = new Set<string>();
   // Is this address on a site you went on to despite its certificate? (It is never
@@ -1069,7 +1070,7 @@ export async function createTabs(
   app.on('certificate-error', onCertificateError);
   // Reload a tab (from the warning page, the page it could not open).
   const reloadTab = (tabId: number, contents: Electron.WebContents) => {
-    const failed = certErrors.get(tabId);
+    const failed = failedPages.get(tabId);
     if (failed) void contents.loadURL(failed.url);
     else contents.reload();
   };
@@ -1179,22 +1180,52 @@ export async function createTabs(
     // A site whose certificate is wrong gets a warning page, not a blank one. The
     // address bar keeps showing the address that failed.
     contents.on('did-fail-load', (_event, code, _text, failedUrl, isMain) => {
-      if (!isMain || !isCertError(code) || !model.isWebUrl(failedUrl)) return;
+      const cert = isCertError(code);
+      if (
+        !isMain ||
+        !(cert || isLoadError(code)) ||
+        !model.isWebUrl(failedUrl)
+      ) {
+        return;
+      }
       let host = '';
       try {
         host = new URL(failedUrl).hostname;
       } catch {
         return;
       }
-      certErrors.set(tab.id, { url: failedUrl, code, host });
-      void contents.loadURL(certErrorUrl(host, code));
+      failedPages.set(tab.id, {
+        url: failedUrl,
+        code,
+        host,
+        kind: cert ? 'cert' : 'load',
+      });
+      void contents.loadURL(
+        cert ? certErrorUrl(host, code) : loadErrorUrl(host, code),
+      );
+    });
+    // A page whose process crashed (or ran out of memory) gets a page saying so,
+    // with Reload, instead of staying blank.
+    contents.on('render-process-gone', (_event, details) => {
+      if (details.reason === 'clean-exit' || details.reason === 'killed')
+        return;
+      const address = model.findTab(state, tab.id)?.url ?? '';
+      if (!model.isWebUrl(address)) return;
+      let host = '';
+      try {
+        host = new URL(address).hostname;
+      } catch {
+        // No name to show.
+      }
+      failedPages.set(tab.id, { url: address, code: 0, host, kind: 'crash' });
+      void contents.loadURL(crashPageUrl(host));
     });
     contents.on('did-navigate', () => {
-      const failed = certErrors.get(tab.id);
+      const failed = failedPages.get(tab.id);
       if (failed && contents.getURL().startsWith('data:text/html')) {
         updateTab(tab.id, { url: failed.url, favicon: null });
       } else if (failed) {
-        certErrors.delete(tab.id);
+        failedPages.delete(tab.id);
       }
     });
     // The warning page's two links.
@@ -1202,11 +1233,18 @@ export async function createTabs(
       if (!url.startsWith('aib:')) return;
       event.preventDefault();
       const link = parseCertLink(url);
-      const failed = certErrors.get(tab.id);
+      const failed = failedPages.get(tab.id);
       if (!link || !failed || !contents.getURL().startsWith('data:text/html')) {
         return;
       }
-      certErrors.delete(tab.id);
+      // "Reload" tries the address again; the other two are the certificate page's.
+      if (link === 'reload') {
+        failedPages.delete(tab.id);
+        void contents.loadURL(failed.url);
+        return;
+      }
+      if (failed.kind !== 'cert') return;
+      failedPages.delete(tab.id);
       if (link === 'proceed') {
         if (!canProceed(failed.code)) return;
         certAllowed.add(failed.host);
