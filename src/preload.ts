@@ -31,6 +31,7 @@ const browserApi: BrowserApi = {
   libraryHistory: (query) => ipcRenderer.invoke('library:history', query),
   showStarMenu: (x, y) => ipcRenderer.send('star:menu', x, y),
   showSiteMenu: (x, y) => ipcRenderer.send('site:menu', x, y),
+  newTabRun: (text, mode) => ipcRenderer.send('newtab:run', text, mode),
   onFocusAddress: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('toolbar:focus-address', listener);

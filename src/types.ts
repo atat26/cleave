@@ -317,6 +317,8 @@ export interface BrowserApi {
   showStarMenu: (x: number, y: number) => void;
   // The lock chip's menu: what this site may do.
   showSiteMenu: (x: number, y: number) => void;
+  // The new-tab page's box: do what Enter was going to do.
+  newTabRun: (text: string, mode: 'go' | 'search' | 'ask') => void;
   // Ctrl+L: the app asks the toolbar to put the keyboard in the address bar.
   onFocusAddress: (callback: () => void) => () => void;
   // The "pop-up blocked" chip's card.

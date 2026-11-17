@@ -65,6 +65,8 @@ export interface ChatService {
   runningChats(): number[];
   // Stop a chat's reply (used when the chat is deleted).
   stop(chatId: number): void;
+  // Send a message in a chat from inside the app (the new-tab page's Ask).
+  sendMessage(chatId: number, text: string): ChatSendResult;
   // Send the UI the messages that have @ mentions or attached pages again (their
   // tokens changed, for example after a closed page was reopened).
   refreshMentions(): void;
@@ -471,6 +473,31 @@ export function createChatService(options: {
     return nameChat(chatId, true);
   });
 
+  // Send a message in a chat and start the reply (from the chat's own box, or from
+  // inside the app, like the new-tab page's Ask).
+  const sendMessage = (
+    chatId: unknown,
+    text: unknown,
+    mentions: unknown,
+  ): ChatSendResult => {
+    if (!isId(chatId) || typeof text !== 'string') return invalid;
+    const prepared = contextFor(chatId);
+    if (!prepared.ok) return prepared;
+    const started = runner.send(
+      chatId,
+      text,
+      prepared.context,
+      sanitizeMentions(mentions),
+    );
+    if (started.ok) {
+      options.onMeta(); // The first message may have named the chat.
+      autoNameFirst(chatId);
+      // The reply is written in the background; failures end up in the chat.
+      void started.done;
+    }
+    return answer(started);
+  };
+
   ipcMain.handle(
     'chat:send',
     (
@@ -480,22 +507,7 @@ export function createChatService(options: {
       mentions: unknown,
     ): ChatSendResult => {
       if (!fromUi(event)) throw new Error('Not allowed.');
-      if (!isId(chatId) || typeof text !== 'string') return invalid;
-      const prepared = contextFor(chatId);
-      if (!prepared.ok) return prepared;
-      const started = runner.send(
-        chatId,
-        text,
-        prepared.context,
-        sanitizeMentions(mentions),
-      );
-      if (started.ok) {
-        options.onMeta(); // The first message may have named the chat.
-        autoNameFirst(chatId);
-        // The reply is written in the background; failures end up in the chat.
-        void started.done;
-      }
-      return answer(started);
+      return sendMessage(chatId, text, mentions);
     },
   );
 
@@ -694,6 +706,8 @@ export function createChatService(options: {
 
   return {
     runningChats: () => runner.runningChats(),
+    sendMessage: (chatId: number, text: string): ChatSendResult =>
+      sendMessage(chatId, text, []),
     nameChat: (chatId) => nameChat(chatId, true),
     stop: (chatId) => runner.stop(chatId),
     refreshMentions() {
