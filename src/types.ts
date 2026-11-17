@@ -773,7 +773,7 @@ export interface BrowserApi {
       y: number;
       alignCenter?: number;
       // Draw a card for a site instead of a menu.
-      panel?: 'prompt' | 'site' | 'search';
+      panel?: 'prompt' | 'site' | 'search' | 'quick';
       // Draw the emoji picker instead of a menu.
       picker?: boolean;
     }) => void,
@@ -781,6 +781,8 @@ export interface BrowserApi {
   onPopupHide: (callback: () => void) => () => void;
   popupReady: () => void;
   popupChoose: (id: string) => void;
+  // Quick search (Ctrl+K): the rows for what was typed. Only the popup page asks.
+  quickQuery: (text: string) => Promise<MenuItem[]>;
   popupClose: () => void;
   // Called when the assistant changed an artifact's text (so an open editor can
   // show it). Returns an unsubscribe function.

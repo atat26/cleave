@@ -1558,6 +1558,7 @@ export type ToolsChoice =
   | { action: 'zoom-reset' }
   | { action: 'print' }
   | { action: 'fullscreen' }
+  | { action: 'quick-search' }
   | { action: 'tab-search' }
   | { action: 'devtools' };
 
@@ -1597,6 +1598,13 @@ export function toolsMenuItems(options: {
 }): MenuItem[] {
   const off = !options.hasPage;
   return [
+    {
+      type: 'item',
+      id: 'tools.quick-search',
+      label: 'Search everything',
+      icon: 'search',
+      shortcut: 'Ctrl+K',
+    },
     {
       type: 'item',
       id: 'tools.tab-search',
@@ -1667,6 +1675,8 @@ export function parseToolsChoice(id: string): ToolsChoice | null {
       return { action: 'print' };
     case 'tools.fullscreen':
       return { action: 'fullscreen' };
+    case 'tools.quick-search':
+      return { action: 'quick-search' };
     case 'tools.tab-search':
       return { action: 'tab-search' };
     case 'tools.devtools':

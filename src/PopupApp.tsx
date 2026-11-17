@@ -8,6 +8,7 @@ import type { MenuItem } from './menuTypes';
 import { ContextMenu } from './ui/ContextMenu';
 import { EmojiPicker } from './ui/EmojiPicker';
 import { SitePanel } from './ui/SitePanel';
+import { QuickSearch } from './ui/QuickSearch';
 import { TabSearch } from './ui/TabSearch';
 
 interface Shown {
@@ -17,7 +18,7 @@ interface Shown {
   alignCenter?: number;
   picker?: boolean;
   // Draw a card for a site instead of a menu (see ui/SitePanel.tsx).
-  panel?: 'prompt' | 'site' | 'search';
+  panel?: 'prompt' | 'site' | 'search' | 'quick';
 }
 
 export function PopupApp() {
@@ -54,7 +55,16 @@ export function PopupApp() {
       }}
     >
       <div onMouseDown={(event) => event.stopPropagation()}>
-        {shown.panel === 'search' ? (
+        {shown.panel === 'quick' ? (
+          <QuickSearch
+            items={shown.items}
+            onClose={close}
+            onChoose={(id) => {
+              setShown(null);
+              window.browserApi.popupChoose(id);
+            }}
+          />
+        ) : shown.panel === 'search' ? (
           <TabSearch
             items={shown.items}
             onClose={close}
