@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addBlocked, blockedLabel, decidePopup, GESTURE_MS } from './popups.ts';
+import {
+  addBlocked,
+  blockedLabel,
+  decidePopup,
+  GESTURE_MS,
+  opensInBackground,
+} from './popups.ts';
 
 test('a window you just asked for opens; one nobody asked for is blocked', () => {
   assert.equal(decidePopup({ answer: null, sinceGesture: 200 }), 'open');
@@ -47,4 +53,17 @@ test('a blocked address reads as a short line', () => {
   assert.ok(
     blockedLabel('https://example.com/' + 'a'.repeat(100)).endsWith('…'),
   );
+});
+
+test('a middle-click or Ctrl+click link opens behind the page; other windows come to the front', () => {
+  assert.equal(opensInBackground('background-tab'), true);
+  for (const other of [
+    'foreground-tab',
+    'new-window',
+    'default',
+    'other',
+    '',
+  ]) {
+    assert.equal(opensInBackground(other), false, other);
+  }
 });

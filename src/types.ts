@@ -387,7 +387,8 @@ export interface BrowserApi {
   librarySettingsSet: (
     changes: Partial<Omit<LibrarySettings, 'version'>>,
   ) => Promise<LibrarySettings>;
-  libraryOpen: (url: string) => void;
+  // Open a page from the Library; in the background, behind the page you are on.
+  libraryOpen: (url: string, background?: boolean) => void;
   libraryRemoveVisit: (id: number) => void;
   libraryReopenClosed: (id: number) => void;
   showLibraryMenu: (

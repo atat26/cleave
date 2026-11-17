@@ -93,7 +93,7 @@ import {
 } from './permissions';
 import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
-import { addBlocked, decidePopup } from './popups';
+import { addBlocked, decidePopup, opensInBackground } from './popups';
 import { HINT_HEIGHT, HINT_MS, HINT_WIDTH, hintUrl } from './fullscreenHint';
 import {
   canProceed,
@@ -1291,7 +1291,7 @@ export async function createTabs(
     // same Space. Only normal web addresses are allowed.
     // A page may open a window only when you just clicked or pressed a key on it.
     // Otherwise it is blocked, and the chip in the address bar offers it to you.
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, disposition }) => {
       const site = siteKey(
         model.findTab(state, tab.id)?.url ?? contents.getURL(),
       );
@@ -1301,8 +1301,14 @@ export async function createTabs(
         sinceGesture: last === undefined ? null : Date.now() - last,
       });
       if (decision === 'open') {
-        if (model.isWebUrl(url))
-          openTab(url, model.findTab(state, tab.id)?.spaceId ?? null);
+        const spaceId = model.findTab(state, tab.id)?.spaceId ?? null;
+        if (model.isWebUrl(url)) {
+          if (opensInBackground(disposition)) {
+            openBackgroundTab(url, spaceId, tab.id);
+          } else {
+            openTab(url, spaceId);
+          }
+        }
       } else if (decision === 'block') {
         blockedPopups.set(
           tab.id,
@@ -1793,6 +1799,24 @@ export async function createTabs(
 
   const openTab = (url: string, spaceId: number | null) =>
     commitAndShow(revealPage(model.addTab(state, { url, spaceId }).state));
+
+  // Open a page behind the one you are on, right after it, and start loading it
+  // (middle-click and Ctrl+click on a link, or on a row in the Library).
+  const openBackgroundTab = (
+    url: string,
+    spaceId: number | null,
+    after?: number,
+  ) => {
+    const added = model.addTab(state, {
+      url,
+      spaceId,
+      activate: false,
+      after,
+    });
+    commit(added.state);
+    const tab = model.findTab(state, added.id);
+    if (tab) ensureView(tab);
+  };
 
   // Throw away a tab's live web page (if it has one).
   // A tab's page, or nothing if it has none (or it is gone: a page can close its own
@@ -3612,9 +3636,14 @@ export async function createTabs(
         libraryChanged();
       });
     },
-    'library:open': (url) => {
+    'library:open': (url, background) => {
       const kept = historyUrl(url);
-      if (kept !== null) openTab(kept, currentSpaceId());
+      if (kept === null) return;
+      if (background === true) {
+        openBackgroundTab(kept, currentSpaceId(), activeTabId() ?? undefined);
+      } else {
+        openTab(kept, currentSpaceId());
+      }
     },
     // The Downloads list: act on one download (the buttons and the row's menu).
     'downloads:act': (id, action) => {

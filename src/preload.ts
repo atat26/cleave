@@ -107,7 +107,8 @@ const browserApi: BrowserApi = {
   librarySettingsGet: () => ipcRenderer.invoke('library-settings:get'),
   librarySettingsSet: (changes) =>
     ipcRenderer.invoke('library-settings:set', changes),
-  libraryOpen: (url) => ipcRenderer.send('library:open', url),
+  libraryOpen: (url, background) =>
+    ipcRenderer.send('library:open', url, background === true),
   libraryRemoveVisit: (id) => ipcRenderer.send('library:remove-visit', id),
   libraryReopenClosed: (id) => ipcRenderer.send('library:reopen-closed', id),
   showLibraryMenu: (list, x, y) => ipcRenderer.send('library:menu', list, x, y),
