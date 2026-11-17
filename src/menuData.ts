@@ -1411,6 +1411,8 @@ export function toolsMenuItems(options: {
   hasPage: boolean;
   // The current page's zoom, as text like "125%" (shown in the Zoom entry).
   zoomText?: string;
+  // Something other than a web page can be zoomed (an uploaded image or PDF).
+  zoomable?: boolean;
 }): MenuItem[] {
   const off = !options.hasPage;
   return [
@@ -1435,7 +1437,7 @@ export function toolsMenuItems(options: {
       id: 'tools.zoom',
       label: options.zoomText ? `Zoom (${options.zoomText})` : 'Zoom',
       icon: 'zoom',
-      disabled: off,
+      disabled: off && !options.zoomable,
       submenu: zoomItems('tools'),
     },
     {

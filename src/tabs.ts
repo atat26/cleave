@@ -4855,6 +4855,7 @@ export async function createTabs(
       showMenu(
         toolsMenuItems({
           hasPage: id !== null && pageIsShown(),
+          zoomable: activeFileId() !== null,
           zoomText: zoomLabel(
             activeFileId() === null
               ? (activePage()?.getZoomFactor() ?? 1)

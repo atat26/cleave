@@ -944,6 +944,10 @@ test('the toolbar "…" menu has Find, Zoom, Print and Developer tools, all grey
       id,
     );
   }
+  // An uploaded image or PDF can be zoomed too, though it has no page to find in.
+  const onFile = toolsMenuItems({ hasPage: false, zoomable: true });
+  assert.notEqual(entry(onFile, 'tools.zoom').disabled, true);
+  assert.equal(entry(onFile, 'tools.find').disabled, true);
   assert.deepEqual(parseToolsChoice('tools.find'), { action: 'find' });
   assert.deepEqual(parseToolsChoice('tools.zoom-in'), { action: 'zoom-in' });
   assert.deepEqual(parseToolsChoice('tools.zoom-out'), { action: 'zoom-out' });

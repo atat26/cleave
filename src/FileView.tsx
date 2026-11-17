@@ -125,18 +125,6 @@ export function FileArtifactView({
           </div>
         </div>
         <div className="art-actions">
-          <IconButton
-            className="reveal"
-            icon="minus"
-            label="Zoom out"
-            onClick={() => window.browserApi.changeZoom(-1)}
-          />
-          <IconButton
-            className="reveal"
-            icon="plus"
-            label="Zoom in"
-            onClick={() => window.browserApi.changeZoom(1)}
-          />
           {isPdf ? (
             <>
               <Button
