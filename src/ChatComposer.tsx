@@ -424,6 +424,7 @@ export function ChatComposer({
           <AddMenuButton
             onAddPage={() => openFromButton('page')}
             onAddArtifact={() => openFromButton('artifact')}
+            onAttachFile={() => void window.browserApi.chatAttachPick(chat.id)}
           />
         )}
         {compact && refs.length > 0 && (
@@ -480,6 +481,12 @@ export function ChatComposer({
             // Only plain text can be pasted or dropped in.
             onPaste={(e) => {
               e.preventDefault();
+              // Pictures and files on the clipboard are attached to the chat.
+              const files = Array.from(e.clipboardData.files);
+              if (files.length > 0) {
+                void window.browserApi.chatAttachFiles(chat.id, files);
+                return;
+              }
               document.execCommand(
                 'insertText',
                 false,

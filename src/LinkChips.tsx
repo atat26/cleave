@@ -347,9 +347,11 @@ export function MentionToken({
 export function AddMenuButton({
   onAddPage,
   onAddArtifact,
+  onAttachFile,
 }: {
   onAddPage: () => void;
   onAddArtifact: () => void;
+  onAttachFile: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // Keep the text box focused, so the list's arrow keys work.
@@ -360,7 +362,7 @@ export function AddMenuButton({
         icon="plus"
         size="sm"
         className={open ? 'reveal is-on' : 'reveal'}
-        label="Add a page or an artifact to the chat"
+        label="Add a page, an artifact or a file to the chat"
         aria-expanded={open}
         onMouseDown={keepFocus}
         onClick={() => setOpen(!open)}
@@ -390,6 +392,18 @@ export function AddMenuButton({
             title="Attach an artifact to the chat (the assistant gets its title and kind)"
           >
             Artifact
+          </Button>
+          <Button
+            size="sm"
+            icon="upload"
+            onMouseDown={keepFocus}
+            onClick={() => {
+              setOpen(false);
+              onAttachFile();
+            }}
+            title="Attach images, PDFs or text files from your computer (they are also kept in your artifacts)"
+          >
+            File
           </Button>
         </>
       )}

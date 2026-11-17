@@ -14,6 +14,15 @@ import type {
 // preload) gets the extension system's button API.
 if (!location.hash) injectBrowserAction();
 
+// The file ending for each kind of picture that can be pasted (see uploadRules.ts).
+const PASTED_IMAGE_TYPES: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+};
+
 const browserApi: BrowserApi = {
   platform: process.platform,
 
@@ -270,6 +279,34 @@ const browserApi: BrowserApi = {
       files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
       spaceId,
     ),
+  chatAttachPick: (chatId) => ipcRenderer.invoke('chat:attach-pick', chatId),
+  // Files that are on the computer go by their place; a pasted picture (a screenshot,
+  // say) has none, so its bytes are sent instead.
+  chatAttachFiles: async (chatId, files) => {
+    const paths: string[] = [];
+    let added = 0;
+    for (const file of files) {
+      const place = webUtils.getPathForFile(file);
+      const extension = PASTED_IMAGE_TYPES[file.type];
+      if (place) paths.push(place);
+      else if (extension) {
+        added += (await ipcRenderer.invoke(
+          'chat:attach-bytes',
+          chatId,
+          extension,
+          new Uint8Array(await file.arrayBuffer()),
+        )) as number;
+      }
+    }
+    if (paths.length > 0) {
+      added += (await ipcRenderer.invoke(
+        'chat:attach-drop',
+        chatId,
+        paths,
+      )) as number;
+    }
+    return added;
+  },
   artifactFile: (id) => ipcRenderer.invoke('artifact:file', id),
   artifactOpenFile: (id, how) =>
     ipcRenderer.invoke('artifact:open-file', id, how),

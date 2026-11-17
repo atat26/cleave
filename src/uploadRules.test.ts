@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   MAX_TEXT_UPLOAD_BYTES,
   MAX_UPLOAD_BYTES,
+  PASTED_IMAGE_EXTENSIONS,
   planUpload,
 } from './uploadRules.ts';
 
@@ -111,4 +112,23 @@ test('empty, huge, binary and unknown files are refused with a plain reason', ()
     assert.equal(bad.type, 'refused');
     assert.ok((bad as { reason: string }).reason.length > 5);
   }
+});
+
+test('every kind of picture that can be pasted is accepted by the upload rules', () => {
+  const headers: Record<string, Uint8Array> = {
+    png: head(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a),
+    jpg: head(0xff, 0xd8, 0xff),
+    gif: ascii('GIF89a'),
+    webp: ascii('RIFF    WEBPVP8 '),
+    bmp: ascii('BM'),
+  };
+  for (const extension of PASTED_IMAGE_EXTENSIONS) {
+    const plan = planUpload(
+      `pasted-image.${extension}`,
+      500,
+      headers[extension],
+    );
+    assert.equal(plan.type, 'file', extension);
+  }
+  assert.equal(PASTED_IMAGE_EXTENSIONS.length, Object.keys(headers).length);
 });

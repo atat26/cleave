@@ -11,6 +11,14 @@ import type { TextArtifactKind } from './artifacts.ts';
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 // A text file's size in bytes is held to a bit over the character limit.
 export const MAX_TEXT_UPLOAD_BYTES = 4 * 1024 * 1024;
+// The picture kinds a pasted image can be (the app saves it under one of these).
+export const PASTED_IMAGE_EXTENSIONS: readonly string[] = [
+  'png',
+  'jpg',
+  'gif',
+  'webp',
+  'bmp',
+];
 export const MAX_UPLOAD_FILES = 20;
 
 export type UploadPlan =

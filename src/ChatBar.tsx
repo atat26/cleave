@@ -1,6 +1,7 @@
 import {
   ARTIFACT_DRAG,
   hasArtifactDrag,
+  hasFileDrag,
   readArtifactDrag,
 } from './artifactDrag';
 import { useEffect, useRef, useState } from 'react';
@@ -181,9 +182,15 @@ export function ChatBar({
         ]
           .filter(Boolean)
           .join(' ')}
-        // An artifact dragged from the Artifacts panel is added to the chat.
+        // An artifact dragged from the Artifacts panel, or files dragged in from the
+        // computer, are added to the chat.
         onDragOver={(event) => {
-          if (!hasArtifactDrag(event.dataTransfer.types)) return;
+          if (
+            !hasArtifactDrag(event.dataTransfer.types) &&
+            !hasFileDrag(event.dataTransfer.types)
+          ) {
+            return;
+          }
           event.preventDefault();
           event.dataTransfer.dropEffect = 'copy';
           if (!dropping) setDropping(true);
@@ -197,6 +204,19 @@ export function ChatBar({
         }}
         onDrop={(event) => {
           setDropping(false);
+          if (hasFileDrag(event.dataTransfer.types)) {
+            event.preventDefault();
+            if (
+              chats.activeId !== null &&
+              event.dataTransfer.files.length > 0
+            ) {
+              void window.browserApi.chatAttachFiles(
+                chats.activeId,
+                Array.from(event.dataTransfer.files),
+              );
+            }
+            return;
+          }
           if (!hasArtifactDrag(event.dataTransfer.types)) return;
           event.preventDefault();
           const id = readArtifactDrag(

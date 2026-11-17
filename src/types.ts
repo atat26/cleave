@@ -649,6 +649,10 @@ export interface BrowserApi {
   // Add files dropped on the Artifacts panel or a Space's overview.
   uploadDrop: (files: File[], spaceId: number | null) => Promise<number>;
   // The bytes of an uploaded image or PDF (null if it is gone).
+  // Attach files to a chat (they become artifacts linked to it): choose them in a
+  // dialog, drop them, or paste a picture. Each gives how many were added.
+  chatAttachPick: (chatId: number) => Promise<number>;
+  chatAttachFiles: (chatId: number, files: File[]) => Promise<number>;
   artifactFile: (
     id: number,
   ) => Promise<{ mime: string; data: Uint8Array } | null>;

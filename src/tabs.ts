@@ -48,7 +48,12 @@ import {
 import * as artifactsModel from './artifacts';
 import { landingTab, neighborSpaceId, spaceIdByNumber } from './spaceSwitch';
 import { exportFileName, spaceMarkdown } from './spaceExport';
-import { MAX_UPLOAD_FILES, planUpload } from './uploadRules';
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_FILES,
+  PASTED_IMAGE_EXTENSIONS,
+  planUpload,
+} from './uploadRules';
 import {
   defaultSleepSettings,
   idleSleepers,
@@ -3203,9 +3208,12 @@ export async function createTabs(
 
   // Add files you chose or dropped, as artifacts in a Space (or in none). Returns
   // how many were added. Files that cannot be added are listed in one message.
+  // With a chat given (`chatId`), the files are attached to that chat (linked to it)
+  // and nothing is opened.
   const importFiles = async (
     rawPaths: unknown,
     spaceId: number | null,
+    chatId: number | null = null,
   ): Promise<number> => {
     if (!Array.isArray(rawPaths)) return 0;
     if (spaceId !== null && !model.findSpace(state, spaceId)) spaceId = null;
@@ -3215,6 +3223,29 @@ export async function createTabs(
     const refused: string[] = [];
     let first: number | null = null;
     let added = 0;
+    // Link a new artifact to the chat the files are for.
+    const attach = (artifactId: number, name: string) => {
+      if (chatId === null) return;
+      const found = snapshotLookup(workspace())('artifact', artifactId);
+      const count = () =>
+        chatsModel.findConversation(chats, chatId)?.refs.length ?? 0;
+      const before = count();
+      if (found) {
+        commitChats(
+          chatsModel.addRef(chats, chatId, {
+            kind: 'artifact',
+            id: artifactId,
+            title: found.title,
+            url: found.url,
+          }),
+        );
+      }
+      if (count() === before) {
+        refused.push(
+          `${name}: it is in your artifacts, but this chat has as many links as it can hold.`,
+        );
+      }
+    };
     for (const file of paths) {
       const name = path.basename(file);
       try {
@@ -3251,6 +3282,7 @@ export async function createTabs(
           commitArtifacts(made.state);
           first ??= made.artifact.id;
           added++;
+          attach(made.artifact.id, name);
           continue;
         }
         const id = artifacts.nextId;
@@ -3280,6 +3312,7 @@ export async function createTabs(
         commitArtifacts(made.state);
         first ??= made.artifact.id;
         added++;
+        attach(made.artifact.id, name);
       } catch (error) {
         refused.push(`${name}: ${(error as Error).message}`);
       }
@@ -3287,7 +3320,7 @@ export async function createTabs(
     if (rawPaths.length > MAX_UPLOAD_FILES) {
       refused.push(`Only the first ${MAX_UPLOAD_FILES} files were looked at.`);
     }
-    if (first !== null) openArtifact(first);
+    if (first !== null && chatId === null) openArtifact(first);
     if (refused.length > 0) {
       void dialog.showMessageBox(win, {
         type: 'info',
@@ -6108,7 +6141,10 @@ ${artifact.content.slice(0, 1500)}`;
     },
   );
   // "Upload files…": pick files, and add them to a Space (or the one you are in).
-  const pickAndImport = async (spaceId: number | null) => {
+  const pickAndImport = async (
+    spaceId: number | null,
+    chatId: number | null = null,
+  ) => {
     const picked = await dialog.showOpenDialog(win, {
       title: 'Add files',
       properties: ['openFile', 'multiSelections'],
@@ -6147,7 +6183,7 @@ ${artifact.content.slice(0, 1500)}`;
       ],
     });
     if (picked.canceled) return 0;
-    return importFiles(picked.filePaths, spaceId);
+    return importFiles(picked.filePaths, spaceId, chatId);
   };
   ipcMain.handle('uploads:pick', (event, spaceId: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
@@ -6158,6 +6194,52 @@ ${artifact.content.slice(0, 1500)}`;
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return importFiles(paths, isId(spaceId) ? spaceId : currentSpaceId());
   });
+  // Files attached to a chat: picked from a dialog, dropped on the chat, or an image
+  // pasted into the message box. They become artifacts (in the Space you are in) that
+  // are linked to the chat, and no tab is opened.
+  const chatExists = (id: unknown): id is number =>
+    isId(id) && chatsModel.findConversation(chats, id) !== undefined;
+  ipcMain.handle('chat:attach-pick', (event, chatId: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    if (!chatExists(chatId)) return 0;
+    return pickAndImport(currentSpaceId(), chatId);
+  });
+  ipcMain.handle(
+    'chat:attach-drop',
+    (event, chatId: unknown, paths: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!chatExists(chatId)) return 0;
+      return importFiles(paths, currentSpaceId(), chatId);
+    },
+  );
+  // A pasted picture has no file on disk: its bytes are written to a temporary file,
+  // which goes through the same checks as any other upload.
+  ipcMain.handle(
+    'chat:attach-bytes',
+    async (event, chatId: unknown, extension: unknown, data: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!chatExists(chatId)) return 0;
+      if (
+        typeof extension !== 'string' ||
+        !PASTED_IMAGE_EXTENSIONS.includes(extension) ||
+        !(data instanceof Uint8Array) ||
+        data.length === 0 ||
+        data.length > MAX_UPLOAD_BYTES
+      ) {
+        return 0;
+      }
+      const folder = fs.mkdtempSync(
+        path.join(app.getPath('temp'), 'aib-paste-'),
+      );
+      const file = path.join(folder, `pasted-image.${extension}`);
+      try {
+        fs.writeFileSync(file, data);
+        return await importFiles([file], currentSpaceId(), chatId);
+      } finally {
+        fs.rmSync(folder, { recursive: true, force: true });
+      }
+    },
+  );
   // The bytes of an uploaded image or PDF, for the viewer.
   ipcMain.handle('artifact:file', async (event, id: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
@@ -6375,6 +6457,9 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('artifact:copy');
     ipcMain.removeHandler('uploads:pick');
     ipcMain.removeHandler('uploads:drop');
+    ipcMain.removeHandler('chat:attach-pick');
+    ipcMain.removeHandler('chat:attach-drop');
+    ipcMain.removeHandler('chat:attach-bytes');
     ipcMain.removeHandler('artifact:file');
     ipcMain.removeHandler('artifact:open-file');
     ipcMain.removeHandler('artifact:read');
