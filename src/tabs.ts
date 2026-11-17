@@ -7160,24 +7160,27 @@ ${artifact.content.slice(0, 1500)}`;
   // Clear out Recently deleted (see purgeTrash) now and every few hours.
   purgeTrash();
   const trashTimer = setInterval(purgeTrash, 6 * 60 * 60_000);
-  let reloadsLeft = 6;
+  let reloadsLeft = 10;
   const watchdog = setInterval(() => {
     if (win.isDestroyed()) {
       clearInterval(watchdog);
       return;
     }
-    const pages = [win.webContents, sidebar];
-    if (pages.every((page) => listening.has(page))) {
+    // The pages that have not started: the window and sidebar ask for the state; the
+    // menu, find and suggestion pages say "ready" instead. (A menu page that never
+    // started made every menu do nothing.)
+    const notStarted = [
+      ...[win.webContents, sidebar].filter((page) => !listening.has(page)),
+      ...(popupReady ? [] : [popup]),
+      ...(findReady ? [] : [find]),
+      ...(suggestReady ? [] : [suggestPage]),
+    ];
+    if (notStarted.length === 0) {
       clearInterval(watchdog);
       return;
     }
-    for (const page of pages) {
-      if (
-        !listening.has(page) &&
-        !page.isDestroyed() &&
-        !page.isLoading() &&
-        reloadsLeft > 0
-      ) {
+    for (const page of notStarted) {
+      if (!page.isDestroyed() && !page.isLoading() && reloadsLeft > 0) {
         reloadsLeft--;
         console.warn('[ui] a page did not start; loading it again');
         page.reload();
