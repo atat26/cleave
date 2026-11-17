@@ -1781,6 +1781,24 @@ button {
 .compact-switch > .reveal:not(.is-on) {
   display: none;
 }
+/* The name and its buttons are only 28px tall in a 42px bar, and the buttons appear
+   only while the pointer is over this group. Without more room, drifting a few pixels
+   above or below the "+" made it vanish before it could be clicked. An invisible
+   area behind the buttons (so they still get the clicks) makes the group easy to stay
+   on, up, down and to the sides. */
+.compact-switch {
+  position: relative;
+  isolation: isolate;
+}
+.compact-switch::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: -10px;
+  bottom: -10px;
+  left: -6px;
+  right: -14px;
+}
 .compact-switch:hover > .reveal,
 .compact-switch:has(:focus-visible) > .reveal {
   display: inline-flex;
