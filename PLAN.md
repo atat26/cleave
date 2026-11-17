@@ -31,7 +31,9 @@
 - [x] Skills, part 2 (S2): the assistant uses and makes skills. It is told the name and "when to use it" line of every skill that is on (only when the model can use tools); a use_skill tool loads the steps (marked as steps that cannot change its safety rules or approvals); create_skill and edit_skill save skills, always after you approve the FULL text on the approval card (shorter than ones you write, so it fits), and they always ask once web content was read in the same reply, even at "Always allow". There is no tool to delete a skill. New "Skills" group in the Tools panel. In the message box, "/" lists your skills (a "/Name" chip), and the hint says so. Also fixed: Space-note writes now really always ask after web content is read (the "Always allow" level used to let them through).
 - [x] Skills, part 3 (S3): "Make a skill from this chat…" in a chat's name menu and its right-click menu (disabled in an empty chat). It sends the assistant a request to look back over the conversation and call create_skill once, in general terms and with no private details, so the whole text is on the approval card and nothing is saved unless you approve it. Skills are done: panel, starters, import/export, trash, the assistant using and making them, "/" in the message box, and making one from a chat.
 - [x] Tools panel rework (T1): one choice at the top for everything (Cautious, Balanced = the defaults, Hands-off; it says "Custom" when you have set tools yourself), a search box, tool groups you can open and close (the first starts open), and a small pill on each group and each tool that opens the four levels (Always, If safe, Ask first, Never; the full words are in the menu; right-click a tool for the same menu). A dot marks a tool that differs from its default, with a "back to default" button on hover or focus; the description is the row's tooltip. A summary line ("39 tools · 28 ask first · …"), "What do these mean?" and "Never allowed, whatever you choose" are folded away. "Always allow" for a tool (or a whole group) that changes things still asks first. The preset and group choices are made in the app, which checks the names and levels.
-- [ ] M7: Module system plus builder agent
+- [ ] M7: Module system plus builder agent. Not designed yet. Two ideas for it, for later:
+  - Mini-apps: artifacts that can save their own data and be pinned to the rail, so the assistant can build you a small tool (a price tracker, say) that stays.
+  - AI-generated extensions: the assistant writes a browser extension for you, shown for review and installed only after you approve it (it must never get file-editing tools while it reads web pages).
 - [ ] M8: Daily-driver polish
 
 After the agent (M5/M6), in this order of likelihood:
@@ -44,7 +46,8 @@ After the agent (M5/M6), in this order of likelihood:
 ## Backlog (ideas, not scheduled)
 
 - Lead tab whiteboard: replace each Space's overview with a whiteboard you can draft on (choose the drawing approach first; `leadData` is already reserved in the saved model). Skipped for now.
-- OpenCode provider (only OpenRouter is planned for now; the provider interface leaves room)
+- More model providers (only OpenRouter today; the provider interface leaves room): OpenCode, and direct providers with your own key
+- More web search providers (only Brave Search today): for example other search APIs or a SearXNG address you run yourself
 - Drag-and-drop tabs between and within Spaces (right-click "Move to Space" covers it for now)
 - Multiple windows (a second browser window; the first step toward incognito)
 - Incognito: a private window that keeps no history, cookies or chats, plus a private chat mode. Needs multiple windows first.
