@@ -269,10 +269,14 @@ async function reachable(
 export async function locateControl(
   cdp: Cdp,
   backendNodeId: number,
+  scrollIntoView = true,
 ): Promise<Rect | null> {
   try {
     await cdp.send('DOM.enable');
-    await cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId });
+    // (Measuring again later, after a resize or a scroll, must not scroll the page back.)
+    if (scrollIntoView) {
+      await cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId });
+    }
     return rectFromQuads(
       await cdp.send('DOM.getContentQuads', { backendNodeId }),
     );

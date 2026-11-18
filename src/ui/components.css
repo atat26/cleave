@@ -3340,3 +3340,25 @@ button {
     transition: none;
   }
 }
+
+/* The approval card popped out over the page (OverlayApp.tsx). */
+.ao-card {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(520px, calc(100% - 32px));
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-popup);
+}
+.ao-card.is-bottom {
+  bottom: 16px;
+}
+.ao-card.is-top {
+  top: 46px;
+}
+.ao-card .approval-card {
+  margin: 0;
+}

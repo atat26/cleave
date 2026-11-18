@@ -21,6 +21,7 @@ import {
   stepView,
 } from './runModel';
 import type { RunView, StepState, StepView, ToolPartView } from './runModel';
+import type { CardDetails } from './approvalCard';
 import type { ChatMessage } from './chats';
 import type { TabInfo } from './types';
 import { Badge, Button, IconButton } from './ui/controls';
@@ -428,38 +429,48 @@ function Emphasised({ text }: { text: string }) {
 // What the assistant is asking to do, and the ways to answer. Where it happens (the
 // site), why it is risky (badges), the exact words or address involved, the tabs in a
 // batch or the full text of a skill, what happens next, and Allow / Allow the rest /
-// Don't allow. It takes the keyboard only if you are not typing; then Enter allows,
-// Shift+Enter allows the rest, Esc does not allow, and a risky one needs Ctrl+Enter.
-export function ApprovalCard({
-  part,
-  chatId,
-  messageId,
-  tabs,
+// Don't allow. Then Enter allows, Shift+Enter allows the rest, Esc does not allow, and a
+// risky one needs Ctrl+Enter. It is drawn in the chat, or popped out over the page (see
+// OverlayApp.tsx); the same card either way.
+export interface ApprovalView {
+  toolName: string;
+  ask: string;
+  risky: boolean;
+  card: CardDetails | null | undefined;
+  site: { host: string; favicon: string | null } | null;
+}
+
+export function ApprovalCardView({
+  view,
+  onDecide,
+  onStop,
+  takeKeyboard,
 }: {
-  part: ToolPartView;
-  chatId: number;
-  messageId: number;
-  tabs: TabInfo[];
+  view: ApprovalView;
+  onDecide: (decision: 'allow' | 'allow-rest' | 'deny') => void;
+  onStop: () => void;
+  // Ask for the keyboard when it appears (unless you are typing). The popped-out card does
+  // not: the app gives it the keyboard itself, since it is in another view.
+  takeKeyboard: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
-  const card = part.card;
-  const site = stepSite(part, tabs);
-  const badges = badgesFor(part.name, part.risky, card);
-  const decide = (decision: 'allow' | 'allow-rest' | 'deny') =>
-    window.browserApi.chatDecide(chatId, messageId, part.id, decision);
+  const { card, risky, site } = view;
+  const badges = badgesFor(view.toolName, risky, card ?? undefined);
 
-  // A new card asks for the keyboard, unless you are in the middle of typing.
   useEffect(() => {
-    if (cardMayTakeFocus(document.activeElement as HTMLElement | null)) {
+    if (
+      takeKeyboard &&
+      cardMayTakeFocus(document.activeElement as HTMLElement | null)
+    ) {
       ref.current?.focus({ preventScroll: true });
     }
     ref.current?.scrollIntoView({ block: 'nearest' });
-  }, []);
+  }, [takeKeyboard]);
 
   // With a list or a full text under it, the question is just the first line.
-  const lines = part.ask.split('\n');
-  const question = card?.list || card?.full ? lines[0] : part.ask;
+  const lines = view.ask.split('\n');
+  const question = card?.list || card?.full ? lines[0] : view.ask;
   const fullLines = card?.full ? card.full.value.split('\n').length : 0;
 
   return (
@@ -468,7 +479,7 @@ export function ApprovalCard({
       tabIndex={-1}
       role="group"
       aria-label="Approval needed"
-      className={part.risky ? 'approval-card is-risky' : 'approval-card'}
+      className={risky ? 'approval-card is-risky' : 'approval-card'}
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
@@ -476,11 +487,11 @@ export function ApprovalCard({
         }
       }}
       onKeyDown={(event) => {
-        const answer = answerFor(event, part.risky);
+        const answer = answerFor(event, risky);
         if (answer === null) return;
         event.preventDefault();
         event.stopPropagation();
-        decide(answer);
+        onDecide(answer);
       }}
     >
       <div className="ac-head">
@@ -492,10 +503,7 @@ export function ApprovalCard({
       {badges.length > 0 && (
         <div className="ac-badges">
           {badges.map((badge, i) => (
-            <Badge
-              key={badge}
-              tone={part.risky && i === 0 ? 'warn' : 'neutral'}
-            >
+            <Badge key={badge} tone={risky && i === 0 ? 'warn' : 'neutral'}>
               {badge}
             </Badge>
           ))}
@@ -535,23 +543,23 @@ export function ApprovalCard({
             <pre className="ac-full">{card.full.value}</pre>
           </div>
         )}
-        <div className="ac-next">{nextLine(part.name)}</div>
+        <div className="ac-next">{nextLine(view.toolName)}</div>
       </div>
       <div className="ac-foot">
         <div className="actions">
           <Button
             variant="primary"
             size="sm"
-            className={part.risky ? 'btn-warn-allow' : undefined}
-            onClick={() => decide('allow')}
-            title={part.risky ? 'Allow (Ctrl+Enter)' : 'Allow (Enter)'}
+            className={risky ? 'btn-warn-allow' : undefined}
+            onClick={() => onDecide('allow')}
+            title={risky ? 'Allow (Ctrl+Enter)' : 'Allow (Enter)'}
           >
             Allow
           </Button>
-          {!part.risky && (
+          {!risky && (
             <Button
               size="sm"
-              onClick={() => decide('allow-rest')}
+              onClick={() => onDecide('allow-rest')}
               title="Go ahead with the rest of this reply without asking again, except for risky actions (Shift+Enter)"
             >
               Allow the rest of this reply
@@ -559,7 +567,7 @@ export function ApprovalCard({
           )}
           <Button
             size="sm"
-            onClick={() => decide('deny')}
+            onClick={() => onDecide('deny')}
             title="Don't allow (Esc)"
           >
             Don't allow
@@ -567,7 +575,7 @@ export function ApprovalCard({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => window.browserApi.chatStop(chatId)}
+            onClick={onStop}
             title="Stop this reply"
           >
             Stop
@@ -576,10 +584,59 @@ export function ApprovalCard({
         <div className="ac-wait">
           If you do nothing, it waits. Nothing happens until you answer.
           {focused &&
-            (part.risky
+            (risky
               ? ' Ctrl+Enter allows, Esc does not.'
               : ' Enter allows, Shift+Enter allows the rest, Esc does not.')}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// The card for a waiting step, in the chat.
+export function ApprovalCard({
+  part,
+  chatId,
+  messageId,
+  tabs,
+}: {
+  part: ToolPartView;
+  chatId: number;
+  messageId: number;
+  tabs: TabInfo[];
+}) {
+  return (
+    <ApprovalCardView
+      view={{
+        toolName: part.name,
+        ask: part.ask,
+        risky: part.risky,
+        card: part.card,
+        site: stepSite(part, tabs),
+      }}
+      onDecide={(decision) =>
+        window.browserApi.chatDecide(chatId, messageId, part.id, decision)
+      }
+      onStop={() => window.browserApi.chatStop(chatId)}
+      takeKeyboard
+    />
+  );
+}
+
+// In the chat, a waiting step whose card has popped out over the page: just a line saying so.
+export function PoppedOutNote({ ask }: { ask: string }) {
+  return (
+    <div className="step" data-state="waiting">
+      <div className="step-main" style={{ cursor: 'default' }}>
+        <StatusIcon state="waiting" />
+        <span className="step-text">
+          <span className="step-line truncate">
+            <Emphasised text={ask.split('\n')[0]} />
+          </span>
+          <span className="step-result">
+            Waiting for you: answer in the card on the page.
+          </span>
+        </span>
       </div>
     </div>
   );

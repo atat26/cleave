@@ -10,7 +10,7 @@ import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import { blocksOf, stepView } from './runModel';
-import { ApprovalCard, StepGroup, StepRow } from './StepList';
+import { ApprovalCard, PoppedOutNote, StepGroup, StepRow } from './StepList';
 import type {
   ArtifactInfo,
   ChatMessage,
@@ -281,6 +281,7 @@ function ToolBlock({
   tabs,
   isNewestReply,
   busy,
+  poppedOut,
 }: {
   part: ToolPart;
   chatId: number;
@@ -289,9 +290,12 @@ function ToolBlock({
   tabs: TabInfo[];
   isNewestReply: boolean;
   busy: boolean;
+  // The approval card is shown over the page instead of here.
+  poppedOut: boolean;
 }) {
   // Waiting for you: the approval card.
   if (part.status === 'waiting') {
+    if (poppedOut) return <PoppedOutNote ask={part.ask} />;
     return (
       <ApprovalCard
         part={part}
@@ -360,6 +364,7 @@ function MessageView({
   tabs,
   spaces,
   artifacts,
+  poppedOut,
 }: {
   message: ChatMessage;
   isLast: boolean;
@@ -371,6 +376,8 @@ function MessageView({
   tabs: TabInfo[];
   spaces: SpaceInfo[];
   artifacts: ArtifactInfo[];
+  // An approval card is popped out over the page (so the chat shows a note, not the card).
+  poppedOut: boolean;
 }) {
   const [retryNote, setRetryNote] = useState('');
   const retry = async () => {
@@ -640,6 +647,7 @@ function MessageView({
               tabs={tabs}
               isNewestReply={isLast}
               busy={busy}
+              poppedOut={poppedOut}
             />,
           );
         }
@@ -710,6 +718,7 @@ export function MessageList({
   tabs,
   spaces,
   artifacts,
+  poppedOut = false,
 }: {
   chatId: number;
   // A reply is being written in this chat right now.
@@ -717,6 +726,8 @@ export function MessageList({
   tabs: TabInfo[];
   spaces: SpaceInfo[];
   artifacts: ArtifactInfo[];
+  // An approval card is popped out over the page.
+  poppedOut?: boolean;
 }) {
   const messages = useChatMessages(chatId);
   const box = useRef<HTMLDivElement>(null);
@@ -766,6 +777,7 @@ export function MessageList({
           tabs={tabs}
           spaces={spaces}
           artifacts={artifacts}
+          poppedOut={poppedOut}
         />
       ))}
     </div>

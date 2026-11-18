@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  cardSide,
   defaultAgentVisualSettings,
   overlayBounds,
   overlayFor,
   parseAgentVisualSettings,
   PILL_HEIGHT,
+  popoutOf,
 } from './agentVisuals.ts';
+import type { ChatMessage } from './chats.ts';
 import type { OverlayInput } from './agentVisuals.ts';
 import type { RunView } from './runModel.ts';
 
@@ -145,4 +148,111 @@ test('the marker comes with the glow only, and only when the setting asks for it
   // An ended run is the pill alone: no marker.
   const ended = run({ word: 'finished', touchesPage: false, tabId: null });
   assert.equal(overlayFor(input({ run: ended, marker }))?.marker, null);
+});
+
+const approval = {
+  messageId: 5,
+  partId: 2,
+  toolName: 'type_text',
+  ask: 'Type "hi" into the Search box on shop.example',
+  risky: false,
+  card: null,
+  site: { host: 'shop.example', favicon: null },
+};
+
+test('a step waiting for your approval pops its card out over the page, whatever is on screen', () => {
+  const waiting = run({ word: 'waiting' });
+  const onPage = overlayFor(input({ run: waiting, approval }));
+  assert.equal(onPage?.card, approval);
+  assert.equal(onPage?.glow, true);
+  assert.equal(onPage?.mode, 'frame');
+  // A step about your tabs, on a page that is not the one it names: no glow, but the card.
+  const tabs = run({ word: 'waiting', touchesPage: false, tabId: null });
+  const off = overlayFor(input({ run: tabs, approval, activeTab: null }));
+  assert.equal(off?.card, approval);
+  assert.equal(off?.glow, false);
+  assert.equal(off?.mode, 'frame');
+  // Nothing waiting: no card, and no glow for that step.
+  assert.equal(overlayFor(input({ run: tabs, activeTab: null })), null);
+  // Not while it is only working: the card is for a question.
+  assert.equal(overlayFor(input({ approval }))?.card, null);
+});
+
+test('the card pops out even when the display is turned off, but the glow and pill do not', () => {
+  const settings = {
+    ...defaultAgentVisualSettings(),
+    showWork: 'off' as const,
+  };
+  const state = overlayFor(
+    input({ run: run({ word: 'waiting' }), approval, settings }),
+  );
+  assert.equal(state?.card, approval);
+  assert.equal(state?.glow, false);
+  assert.equal(state?.pill, false);
+  assert.equal(state?.marker, null);
+  // No page area on screen (chat-only view): nothing pops out; the chat holds the question.
+  assert.equal(
+    overlayFor(
+      input({ run: run({ word: 'waiting' }), approval, pageShown: false }),
+    ),
+    null,
+  );
+});
+
+test('the card goes at the bottom, or the top when the marked element is down there', () => {
+  const view = { height: 600 };
+  assert.equal(cardSide(null, view, 280), 'bottom');
+  assert.equal(
+    cardSide({ x: 10, y: 80, width: 200, height: 30 }, view, 280),
+    'bottom',
+  );
+  assert.equal(
+    cardSide({ x: 10, y: 400, width: 200, height: 30 }, view, 280),
+    'top',
+  );
+  // Only just clear of the card's band: still the bottom.
+  assert.equal(
+    cardSide({ x: 10, y: 270, width: 200, height: 30 }, view, 280),
+    'bottom',
+  );
+});
+
+test('the card is built from the waiting step only, and only while the reply is going', () => {
+  const part = {
+    type: 'tool' as const,
+    id: 3,
+    callId: 'c',
+    name: 'type_text',
+    arguments: '{"tab":4}',
+    label: 'Type',
+    status: 'waiting' as const,
+    outcome: '',
+    details: '',
+    ask: 'Type "hi"',
+    risky: true,
+    card: { text: { label: 'Text to type', value: 'hi' } },
+  };
+  const message = (status: 'streaming' | 'done', parts = [part]) =>
+    ({
+      id: 9,
+      role: 'assistant',
+      status,
+      parts,
+      content: '',
+    }) as unknown as ChatMessage;
+  const tabs = [{ id: 4, url: 'https://www.shop.example/x', favicon: null }];
+  const card = popoutOf(message('streaming'), tabs);
+  assert.equal(card?.messageId, 9);
+  assert.equal(card?.partId, 3);
+  assert.equal(card?.risky, true);
+  assert.equal(card?.site?.host, 'shop.example');
+  assert.deepEqual(card?.card, {
+    text: { label: 'Text to type', value: 'hi' },
+  });
+  assert.equal(popoutOf(message('done'), tabs), null);
+  assert.equal(
+    popoutOf(message('streaming', [{ ...part, status: 'ok' as never }]), tabs),
+    null,
+  );
+  assert.equal(popoutOf(undefined, tabs), null);
 });

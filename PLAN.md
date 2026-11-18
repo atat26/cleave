@@ -56,6 +56,11 @@ order of likelihood.
 - While the assistant clicks, types in or chooses from an element of the page on screen, a ring and a short label sit on that exact element: amber "Waiting for you · Search" while its approval is pending, blue "Typing · Search" while it acts, then a grey outline "Typed · Search" for a moment. A step a safety rule blocked shows red "Not done". The label is only the tool's own words and the element's name (never what is typed). It sits above the ring, or below it near the pill, or inside it when there is no room; a ring part off the page is cut to the page, and one that cannot be found is simply not drawn.
 - How: when a click, type or choose step is planned, the plan records the element it is about (even when the tool is set to go ahead). The app measures its box through the browser (scrolling it into view as the click would) as soon as the step starts, so the ring is there while it waits for you, converts it for the page's zoom, and draws it in the same full-page overlay as the glow. The assistant's own action and the measuring take turns on the page's debugger, so neither finds it busy. It follows the "show the work on pages" setting (glow and marker, glow only, off).
 
+**Browser-use visuals: approvals pop out over the page**
+
+- With the page showing (page only, or page and chat), a step waiting for your approval pops its card out over the page, at the bottom or, if the marked element is down there, at the top, so the chat no longer opens up to make room and the page keeps its size. The chat shows a one-line note ("Waiting for you: answer in the card on the page") instead. In chat-only view, or if the card cannot be shown, it stays in the chat. The same card and keys either way; a new card takes the keyboard only when you are not typing. The card pops out whatever the "show the work on pages" setting says, because it is a question.
+- The overlay passes the mouse wheel on to the page, so the page can be scrolled while the assistant works or waits. The ring on the element is measured again (without scrolling the page back) when the window is resized, the page is zoomed or it is scrolled, and is left out until then, so it is never in the wrong place.
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.

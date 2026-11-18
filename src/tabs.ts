@@ -303,7 +303,8 @@ import {
   toOverlayRect,
 } from './marker';
 import type { MarkerView, Rect, StepTarget } from './marker';
-import { PILL_HEIGHT, PILL_MAX_WIDTH } from './agentVisuals';
+import { PILL_HEIGHT, PILL_MAX_WIDTH, popoutOf } from './agentVisuals';
+import { cardMayTakeFocus } from './approvalCard';
 import { resolveInput, searchUrl } from './url';
 import {
   activeEngine,
@@ -828,6 +829,9 @@ export async function createTabs(
   overlayPage.on('will-navigate', (event) => event.preventDefault());
   let overlayReady = false;
   let overlayShown = false;
+  // Is an approval card popped out over the page? And which card has been given the keyboard.
+  let lastPopout = false;
+  let focusedCardKey: string | null = null;
   // The reply the overlay follows, and the replies whose pill you dismissed.
   let overlayReply: { chatId: number; message: chatsModel.ChatMessage } | null =
     null;
@@ -1751,32 +1755,68 @@ export async function createTabs(
     );
     return mine;
   };
-  // The element each step acts on, where it is on its page (null: it could not be found),
-  // and when its step was first seen finished (the grey outline fades after a moment).
+  // The element each step acts on, and where it was measured to be on its page. The box
+  // goes stale when the page changes size or zoom, or is scrolled: it is then measured
+  // again (without scrolling the page back), and the ring is left out until it is.
+  interface MarkerBox {
+    box: Rect | null;
+    width: number;
+    height: number;
+    zoom: number;
+  }
   const stepTargets = new Map<string, StepTarget>();
-  const markerBoxes = new Map<string, Rect | null | 'measuring'>();
+  const markerBoxes = new Map<string, MarkerBox | 'measuring'>();
+  const markerStale = new Set<string>();
+  const markerTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const markerDoneAt = new Map<string, number>();
   const MARKER_DONE_MS = 1500;
+  const REMEASURE_MS = 150;
   const stepKey = (messageId: number, partId: number) =>
     `${messageId}:${partId}`;
-  const measureTarget = (key: string, target: StepTarget) => {
-    if (markerBoxes.has(key)) return;
+  const measureTarget = (key: string, target: StepTarget, scroll: boolean) => {
+    if (markerBoxes.get(key) === 'measuring') return;
     markerBoxes.set(key, 'measuring');
+    markerStale.delete(key);
     const contents = pageContents(target.tabId);
+    const page = pageBounds();
+    const zoom = contents?.getZoomFactor() ?? 1;
     if (!contents) {
-      markerBoxes.set(key, null);
+      markerBoxes.set(key, {
+        box: null,
+        width: page.width,
+        height: page.height,
+        zoom,
+      });
       return;
     }
     void inTurn(target.tabId, () =>
       withCdp(contents, 4000, (cdp) =>
-        locateControl(cdp, target.backendNodeId),
+        locateControl(cdp, target.backendNodeId, scroll),
       ),
     )
       .catch(() => null)
       .then((box) => {
-        markerBoxes.set(key, box);
+        markerBoxes.set(key, {
+          box,
+          width: page.width,
+          height: page.height,
+          zoom,
+        });
         updateOverlay();
       });
+  };
+  // Measure the element of the current step again soon (the page was resized, zoomed or
+  // scrolled). Several calls in a row make one measuring.
+  const remeasureSoon = (key: string, target: StepTarget) => {
+    markerStale.add(key);
+    if (markerTimers.has(key)) return;
+    markerTimers.set(
+      key,
+      setTimeout(() => {
+        markerTimers.delete(key);
+        measureTarget(key, target, false);
+      }, REMEASURE_MS),
+    );
   };
   // The marker to draw now, or null: the current step acts on an element of the page on
   // screen, and the setting asks for markers.
@@ -1795,15 +1835,26 @@ export async function createTabs(
       if (Date.now() - first > MARKER_DONE_MS) return null;
       setTimeout(updateOverlay, MARKER_DONE_MS + 100);
     }
-    const box = markerBoxes.get(key);
-    if (box === undefined) {
-      measureTarget(key, target);
+    const entry = markerBoxes.get(key);
+    if (entry === undefined) {
+      measureTarget(key, target, true);
       return null;
     }
-    if (box === null || box === 'measuring') return null;
+    if (entry === 'measuring') return null;
     const page = pageBounds();
     const zoom = pageContents(activeId)?.getZoomFactor() ?? 1;
-    const rect = toOverlayRect(box, zoom, page);
+    // The page changed size or zoom since it was measured, or was scrolled: measure again.
+    if (
+      markerStale.has(key) ||
+      entry.width !== page.width ||
+      entry.height !== page.height ||
+      entry.zoom !== zoom
+    ) {
+      if (tone !== 'done') remeasureSoon(key, target);
+      return null;
+    }
+    if (entry.box === null) return null;
+    const rect = toOverlayRect(entry.box, zoom, page);
     if (!rect) return null;
     const stepPart = overlayReply.message.parts.find(
       (p) => p.type === 'tool' && p.id === run.partId,
@@ -1821,6 +1872,15 @@ export async function createTabs(
       }),
     };
   };
+  // The page was scrolled (the wheel was passed on to it): the ring has moved with its
+  // element, so measure it again.
+  const markerPageScrolled = () => {
+    const run = overlayReply ? runOf(overlayReply.message) : null;
+    if (!run || !overlayReply) return;
+    const key = stepKey(overlayReply.message.id, run.partId);
+    const target = stepTargets.get(key);
+    if (target) remeasureSoon(key, target);
+  };
 
   // Show, move or hide the overlay for what the assistant is doing now (see
   // agentVisuals.ts for the rules). Called when the reply changes, and whenever the
@@ -1828,22 +1888,32 @@ export async function createTabs(
   const updateOverlay = () => {
     if (win.isDestroyed() || overlayPage.isDestroyed()) return;
     const activeId = activeTabId();
-    const onScreen =
-      activeId !== null &&
-      views.has(activeId) &&
-      pageIsShown() &&
-      htmlFullscreen === null;
+    // Is the page area on screen (whatever is in it)? And is a web page in it?
+    const pageArea = pageIsShown() && htmlFullscreen === null;
+    const webTab =
+      pageArea && activeId !== null && views.has(activeId) ? activeId : null;
     const run = overlayReply ? runOf(overlayReply.message) : null;
     const next = overlayFor({
       run,
-      activeTab: onScreen ? activeId : null,
-      pageShown: onScreen,
+      activeTab: webTab,
+      pageShown: pageArea,
       dismissed: overlayReply
         ? dismissedReplies.has(overlayReply.message.id)
         : false,
       settings: agentVisualSettings,
-      marker: onScreen ? markerFor(run, activeId) : null,
+      marker: webTab !== null ? markerFor(run, webTab) : null,
+      // Only once the overlay can show it: until then the chat holds the question.
+      approval:
+        overlayReady && overlayReply
+          ? popoutOf(overlayReply.message, state.tabs)
+          : null,
     });
+    // Tell the chat whether the card is popped out (so it does not also show it).
+    const poppedOut = next?.card != null;
+    if (poppedOut !== lastPopout && !win.webContents.isDestroyed()) {
+      lastPopout = poppedOut;
+      win.webContents.send('overlay:popout', poppedOut);
+    }
     if (!next) {
       if (overlayShown) {
         overlayShown = false;
@@ -1860,6 +1930,26 @@ export async function createTabs(
     overlayView.setVisible(true);
     if (!wasShown) restack();
     if (overlayReady) overlayPage.send('overlay:state', next);
+    // A card that has just appeared asks for the keyboard, unless you are in the middle of
+    // typing (then an Enter you are about to press for something else must not answer it).
+    const cardKey = next.card
+      ? stepKey(next.card.messageId, next.card.partId)
+      : null;
+    if (cardKey !== focusedCardKey) {
+      focusedCardKey = cardKey;
+      if (cardKey !== null) {
+        void win.webContents
+          .executeJavaScript(
+            `(() => { const a = document.activeElement; return a ? { tagName: a.tagName, isContentEditable: a.isContentEditable, type: a.type } : null; })()`,
+          )
+          .then((active) => {
+            if (cardMayTakeFocus(active) && !overlayPage.isDestroyed()) {
+              overlayPage.focus();
+            }
+          })
+          .catch(() => undefined);
+      }
+    }
   };
 
   // The window itself full screen (F11, and "Full screen" in the "…" menu).
@@ -3638,7 +3728,7 @@ export async function createTabs(
       stepTargets.set(stepKey(messageId, partId), target);
       // Measure it now (the element scrolls into view), so the ring is there while it
       // waits for your approval, not only once it runs.
-      measureTarget(stepKey(messageId, partId), target);
+      measureTarget(stepKey(messageId, partId), target, true);
     },
     onReplyChanged: (chatId, message) => {
       if (message.role !== 'assistant') return;
@@ -7692,6 +7782,61 @@ ${artifact.content.slice(0, 1500)}`;
     dismissedReplies.add(overlayReply.message.id);
     updateOverlay();
   };
+  // The popped-out card was answered. Only the card the app is showing can be answered, and
+  // only with one of the three answers.
+  const onOverlayDecide = (event: Electron.IpcMainEvent, decision: unknown) => {
+    if (!fromOverlay(event) || !overlayReply) return;
+    if (
+      decision !== 'allow' &&
+      decision !== 'allow-rest' &&
+      decision !== 'deny'
+    ) {
+      return;
+    }
+    const waiting = popoutOf(overlayReply.message, state.tabs);
+    if (!waiting) return;
+    if (decision === 'allow-rest' && waiting.risky) return;
+    chatService?.decide(
+      overlayReply.chatId,
+      waiting.messageId,
+      waiting.partId,
+      decision,
+    );
+  };
+  // The overlay covers the page, so it passes the mouse wheel on to it: the page can still
+  // be scrolled while the assistant works or waits.
+  const onOverlayWheel = (
+    event: Electron.IpcMainEvent,
+    x: unknown,
+    y: unknown,
+    deltaX: unknown,
+    deltaY: unknown,
+  ) => {
+    if (!fromOverlay(event) || !overlayShown) return;
+    if (
+      ![x, y, deltaX, deltaY].every(
+        (n) => typeof n === 'number' && Number.isFinite(n),
+      )
+    ) {
+      return;
+    }
+    const id = activeTabId();
+    const contents = id === null ? undefined : pageContents(id);
+    if (!contents || contents.isDestroyed()) return;
+    const clamp = (n: number) => Math.max(-1200, Math.min(1200, Math.round(n)));
+    contents.sendInputEvent({
+      type: 'mouseWheel',
+      x: Math.round(x as number),
+      y: Math.round(y as number),
+      // The page's own wheel direction is the reverse of the one the overlay saw.
+      deltaX: -clamp(deltaX as number),
+      deltaY: -clamp(deltaY as number),
+      canScroll: true,
+    });
+    markerPageScrolled();
+  };
+  ipcMain.on('overlay:decide', onOverlayDecide);
+  ipcMain.on('overlay:wheel', onOverlayWheel);
   ipcMain.on('overlay:ready', onOverlayReady);
   ipcMain.on('overlay:stop', onOverlayStop);
   ipcMain.on('overlay:dismiss', onOverlayDismiss);
@@ -7869,6 +8014,8 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
     ipcMain.removeListener('overlay:ready', onOverlayReady);
+    ipcMain.removeListener('overlay:decide', onOverlayDecide);
+    ipcMain.removeListener('overlay:wheel', onOverlayWheel);
     ipcMain.removeListener('overlay:stop', onOverlayStop);
     ipcMain.removeListener('overlay:dismiss', onOverlayDismiss);
     ipcMain.removeHandler('agent-visuals:get');
