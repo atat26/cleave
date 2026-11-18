@@ -46,7 +46,7 @@ This is a personal browser, built for one person (its owner). It is not going to
 
 ## Next
 
-1. Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet: the brief for the designer is `docs/design/browser-use-visuals-brief.md` (mock-ups first, then build, like the new-tab page). Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
+1. Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Designed: the brief, the mock-ups (`browser-use-visuals.html`) and the hand-off are in `docs/design/browser-use/`. Build order, each its own branch: (1) the step list and a run bar in the chat; (2) approval cards; (3) the page overlay (frame and run pill with Stop, then the element marker, then the assistant cursor); (4) sidebar markers and the run chip; (5) page-only and chat-only views; (6) screenshot thumbnails, the "your own data" block, and the run moments (limit, stop, finished). Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
 2. AI prompt pipeline inspection: a full review of the life of every feature that calls the model (chat, the assistant's tool use, skills, naming chats and Spaces, quick-search Ask, and so on). For each one, trace what is sent at every stage: the system prompt, the context built from links and pages, the tools offered, the history kept, and what comes back. Then work out what to cut, shrink, reorder or add, to get better behaviour with smaller context windows. Output: a map of each pipeline with token counts, a list of changes, and a way to see exactly what was sent (for example a "what the model saw" view per message).
 3. Multiple windows, then incognito (a private window that keeps no history, cookies or chats, plus a private chat mode). Incognito needs multiple windows first.
 4. The small ones, whenever there is a gap: remember the window's size and position, a single-instance lock, and an end-to-end test (`npm run test:e2e`).
@@ -56,7 +56,7 @@ This is a personal browser, built for one person (its owner). It is not going to
 
 Add a line here whenever a feature needs a setting, so the Settings work at the end starts from a complete list.
 
-- (none recorded yet)
+- From browser-use visuals (names are suggestions, defaults in brackets): show the assistant's work on pages: border glow and marker / border glow only / off [glow and marker]; show the assistant's cursor [on]; keep the "Finished" pill until dismissed [on]; screenshot thumbnails in the chat [on]; step detail: summary / steps / steps and results [steps and results]; expand groups while running [off]; sidebar markers: dots and tags / dots only [dots and tags]; notification when it needs you: off / only when waiting / always [off].
 
 ## Backlog (ideas, not scheduled)
 

@@ -1,6 +1,6 @@
 # Browser-use visuals: design brief
 
-For the designer (another agent). Companion to `browser-ui.html` and `browser-ui-handoff.md` (the design system: tokens, components, menus). Please read those first and stay inside that language.
+For the designer (another agent). Companion to `../browser-ui.html` and `../browser-ui-handoff.md` (the design system: tokens, components, menus). Please read those first and stay inside that language.
 
 ## The goal
 

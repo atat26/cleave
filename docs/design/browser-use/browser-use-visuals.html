@@ -1,0 +1,3182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Browser-use visuals</title>
+    <style>
+      /* =============== TOKENS (same names and values as browser-ui.html; additions are marked NEW) =============== */
+      :root {
+        --font:
+          'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system,
+          sans-serif;
+        --font-mono: 'Cascadia Mono', Consolas, 'SF Mono', monospace;
+        --fs-xs: 12px;
+        --fs-sm: 13px;
+        --fs-md: 14px;
+        --fs-lg: 16px;
+        --fs-xl: 20px;
+        --fw-medium: 500;
+        --fw-bold: 600;
+        --s-1: 4px;
+        --s-2: 8px;
+        --s-3: 12px;
+        --s-4: 16px;
+        --r-sm: 6px;
+        --r-md: 8px;
+        --r-lg: 10px;
+        --r-xl: 14px;
+        --r-pill: 999px;
+        --h-pill: 26px;
+        --h-sm: 28px;
+        --h-md: 32px;
+        --h-lg: 40px;
+        --dur-fast: 120ms;
+        --dur-med: 220ms;
+        --focus-ring: 2px solid var(--c-focus);
+      }
+      .th {
+        --c-frame: #e6e9ef;
+        --c-surface: #ffffff;
+        --c-surface-2: #f4f6fa;
+        --c-surface-3: #eceff5;
+        --c-hover: rgba(23, 27, 38, 0.06);
+        --c-active: rgba(23, 27, 38, 0.12);
+        --c-border: #dce0e8;
+        --c-border-strong: #7c869b;
+        --c-text: #171b26;
+        --c-text-2: #465065;
+        --c-text-3: #5a6479;
+        --c-on-accent: #ffffff;
+        --c-accent: #2750d9;
+        --c-accent-tint: #e4eafb;
+        --c-focus: #2750d9;
+        --c-danger: #b3261e;
+        --c-danger-tint: #fce9e7;
+        --c-warn: #8a5300;
+        --c-warn-tint: #fff1d6;
+        --c-ok: #11713b;
+        --c-ok-tint: #ddf3e5;
+        --sp-blue: #3b6fe0;
+        --sp-teal: #0f8f83;
+        --sp-amber: #c77a00;
+        --sp-violet: #7b55d6;
+        --sp-tint-mix: 26%;
+        --sh-popup:
+          0 10px 32px rgba(15, 20, 40, 0.2), 0 1px 3px rgba(15, 20, 40, 0.14);
+        --c-warn-edge: #c77a00;
+        --c-page: #ffffff;
+        --c-page-ink: #3a4256;
+        --c-page-soft: #e3e7ef;
+      }
+      .th[data-theme='dark'] {
+        --c-frame: #121419;
+        --c-surface: #1b1e26;
+        --c-surface-2: #232731;
+        --c-surface-3: #2b303b;
+        --c-hover: rgba(233, 236, 243, 0.07);
+        --c-active: rgba(233, 236, 243, 0.14);
+        --c-border: #2e3340;
+        --c-border-strong: #6d7589;
+        --c-text: #e9ecf3;
+        --c-text-2: #b4bbcb;
+        --c-text-3: #9aa2b5;
+        --c-on-accent: #0e1530;
+        --c-accent: #8ea8ff;
+        --c-accent-tint: rgba(142, 168, 255, 0.16);
+        --c-focus: #8ea8ff;
+        --c-danger: #ff8f85;
+        --c-danger-tint: rgba(255, 143, 133, 0.14);
+        --c-warn: #f2b552;
+        --c-warn-tint: rgba(242, 181, 82, 0.14);
+        --c-ok: #6fd39a;
+        --c-ok-tint: rgba(111, 211, 154, 0.14);
+        --sp-blue: #6c97ff;
+        --sp-teal: #3cc1b3;
+        --sp-amber: #f0a93a;
+        --sp-violet: #a58bff;
+        --sp-tint-mix: 22%;
+        --sh-popup:
+          0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+        --c-warn-edge: #f2b552;
+        --c-page: #262a34;
+        --c-page-ink: #c9cfdd;
+        --c-page-soft: #323846;
+      }
+      /* NEW tokens: --c-warn-edge (amber for frames/rings, 3:1 on the page), --c-page, --c-page-ink, --c-page-soft (only for the fake web pages in this mock-up, not product tokens) */
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 400 14px/1.5 var(--font);
+        background: #f7f8fa;
+        color: #171b26;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        background: none;
+        border: 0;
+        padding: 0;
+      }
+      .th {
+        color: var(--c-text);
+      }
+      .th :focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: 2px;
+      }
+      .i {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+        vertical-align: middle;
+      }
+      .i.sm {
+        width: 14px;
+        height: 14px;
+      }
+      .i.lg {
+        width: 20px;
+        height: 20px;
+      }
+
+      /* page chrome of this mock-up (not product) */
+      .top {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: #fff;
+        border-bottom: 1px solid #dce0e8;
+        padding: 10px 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        align-items: center;
+        font-size: 13px;
+        color: #465065;
+      }
+      .top b {
+        color: #171b26;
+      }
+      .top a {
+        color: #2750d9;
+        text-decoration: none;
+        margin-right: 12px;
+      }
+      .top select,
+      .top button {
+        font: inherit;
+        padding: 4px 8px;
+        border: 1px solid #7c869b;
+        border-radius: 6px;
+        background: #fff;
+        color: #171b26;
+      }
+      .wrap {
+        max-width: 1960px;
+        margin: 0 auto;
+        padding: 32px 24px 80px;
+      }
+      h1 {
+        font-size: 28px;
+        margin: 0 0 6px;
+      }
+      h2 {
+        font-size: 22px;
+        margin: 56px 0 4px;
+        scroll-margin-top: 64px;
+      }
+      h3 {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      .lead {
+        max-width: 900px;
+        font-size: 15px;
+        color: #465065;
+        margin: 0 0 16px;
+      }
+      .note {
+        font-size: 13px;
+        color: #465065;
+        max-width: 1000px;
+        margin: 4px 0 14px;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+        gap: 20px;
+        align-items: start;
+      }
+      .pair.wide {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 880px), 1fr));
+      }
+      body[data-view='light'] .th[data-theme='dark'] {
+        display: none;
+      }
+      body[data-view='dark'] .th[data-theme='light'] {
+        display: none;
+      }
+      body[data-view='light'] .pair,
+      body[data-view='dark'] .pair {
+        grid-template-columns: 1fr;
+      }
+      .th.box {
+        background: var(--c-surface-3);
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid var(--c-border);
+      }
+      .cap {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--c-text-2);
+        margin: 0 0 10px;
+      }
+      body.rm * {
+        animation: none !important;
+        transition: none !important;
+      }
+
+      /* =============== SHARED COMPONENTS (as in the design system) =============== */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid var(--c-border-strong);
+        border-radius: var(--r-md);
+        background: var(--c-surface);
+        font-size: 13px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--c-hover);
+      }
+      .btn.primary {
+        background: var(--c-accent);
+        border-color: var(--c-accent);
+        color: var(--c-on-accent);
+      }
+      .btn.warnb {
+        background: var(--c-warn);
+        border-color: var(--c-warn);
+        color: var(--c-surface);
+      }
+      .btn.ghost {
+        border-color: transparent;
+        background: transparent;
+      }
+      .btn.sm {
+        height: 28px;
+      }
+      .kbd {
+        font: 11px var(--font-mono);
+        border: 1px solid var(--c-border-strong);
+        border-radius: 4px;
+        padding: 0 5px;
+        color: var(--c-text-2);
+        background: var(--c-surface);
+      }
+      .btn.primary .kbd,
+      .btn.warnb .kbd {
+        background: transparent;
+        border-color: currentColor;
+        color: inherit;
+        opacity: 0.85;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        height: 18px;
+        padding: 0 6px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        background: var(--c-surface-3);
+        color: var(--c-text-2);
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+      .badge.warn {
+        background: var(--c-warn-tint);
+        color: var(--c-warn);
+      }
+      .badge.danger {
+        background: var(--c-danger-tint);
+        color: var(--c-danger);
+      }
+      .badge.ok {
+        background: var(--c-ok-tint);
+        color: var(--c-ok);
+      }
+      .badge.ai {
+        background: var(--c-accent-tint);
+        color: var(--c-accent);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 10px 0 4px;
+        border: 1px solid var(--c-border);
+        border-radius: 999px;
+        background: var(--c-surface-2);
+        font-size: 12px;
+        max-width: 220px;
+        white-space: nowrap;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 22px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 500;
+        background: color-mix(
+          in srgb,
+          var(--sp, var(--sp-blue)) var(--sp-tint-mix),
+          var(--c-surface)
+        );
+      }
+      .banner {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px;
+        border-radius: var(--r-md);
+        font-size: 13px;
+        background: var(--c-accent-tint);
+        border: 1px solid color-mix(in srgb, var(--c-accent) 35%, transparent);
+      }
+      .banner.warn {
+        background: var(--c-warn-tint);
+        border-color: color-mix(in srgb, var(--c-warn) 40%, transparent);
+      }
+      .banner.neutral {
+        background: var(--c-surface-2);
+        border-color: var(--c-border);
+      }
+      .banner > .i {
+        margin-top: 2px;
+      }
+      .fav {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        display: inline-grid;
+        place-items: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: #fff;
+        flex: none;
+        line-height: 1;
+      }
+      .chip .fav {
+        margin-left: 3px;
+      }
+
+      /* =============== NEW: status language =============== */
+      .s {
+        --tone: var(--c-text-2);
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        color: var(--tone);
+        flex: none;
+      }
+      .s-queued {
+        --tone: var(--c-text-3);
+      }
+      .s-queued .i {
+        stroke-dasharray: 3 3;
+      }
+      .s-running {
+        --tone: var(--c-accent);
+      }
+      .s-running .i {
+        animation: spin 1s linear infinite;
+      }
+      .s-waiting {
+        --tone: var(--c-warn);
+      }
+      .s-allowed {
+        --tone: var(--c-accent);
+      }
+      .s-done {
+        --tone: var(--c-ok);
+      }
+      .s-declined {
+        --tone: var(--c-text-2);
+      }
+      .s-blocked {
+        --tone: var(--c-danger);
+      }
+      .s-failed {
+        --tone: var(--c-danger);
+      }
+      .s-stopped {
+        --tone: var(--c-text-2);
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--c-accent);
+        flex: none;
+        animation: pulse 1.4s infinite;
+      }
+      .dot.wait {
+        background: var(--c-warn-edge);
+        animation: none;
+      }
+      .dot.stuck {
+        background: var(--c-danger);
+        animation: none;
+      }
+      .dot.done {
+        background: var(--c-ok);
+        animation: none;
+      }
+      .dot.hollow {
+        background: transparent;
+        border: 2px solid var(--c-accent);
+        animation: none;
+      }
+      body.rm .s-running .i {
+        stroke-dasharray: 14 6;
+      }
+
+      /* =============== NEW: run pill, page frame, element marker =============== */
+      .pc {
+        position: relative;
+        border-radius: var(--r-lg);
+        background: var(--c-page);
+        border: 1px solid var(--c-border);
+        overflow: hidden;
+        color: var(--c-page-ink);
+      }
+      .pc .frame {
+        --g: var(--c-accent);
+        position: absolute;
+        inset: 0;
+        border-radius: var(--r-lg);
+        pointer-events: none;
+        z-index: 5;
+        box-shadow:
+          inset 0 0 26px 4px color-mix(in srgb, var(--g) 55%, transparent),
+          inset 0 0 8px 1px color-mix(in srgb, var(--g) 70%, transparent);
+      }
+      .pc .frame.wait {
+        --g: var(--c-warn-edge);
+      }
+      .pc .frame.stuck {
+        --g: var(--c-danger);
+      }
+      .pc .frame.dashed {
+        box-shadow:
+          inset 0 0 20px 0 color-mix(in srgb, var(--g) 40%, transparent),
+          inset 0 0 0 1px color-mix(in srgb, var(--g) 30%, transparent);
+      }
+      .pill-run {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 6;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 6px 0 12px;
+        border-radius: 0 0 12px 12px;
+        background: var(--c-accent);
+        color: var(--c-on-accent);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+        max-width: 94%;
+      }
+      .pill-run.wait {
+        background: var(--c-warn-tint);
+        color: var(--c-warn);
+        box-shadow: 0 0 0 2px var(--c-warn-edge) inset;
+      }
+      .pill-run.stuck {
+        background: var(--c-danger-tint);
+        color: var(--c-danger);
+        box-shadow: 0 0 0 2px var(--c-danger) inset;
+      }
+      .pill-run.done {
+        background: var(--c-ok-tint);
+        color: var(--c-ok);
+        box-shadow: 0 0 0 2px var(--c-ok) inset;
+      }
+      .pill-run.idle {
+        background: var(--c-surface-2);
+        color: var(--c-text-2);
+        box-shadow: 0 0 0 2px var(--c-border-strong) inset;
+      }
+      .pill-run .txt {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 500;
+      }
+      .pill-run .sep {
+        width: 1px;
+        height: 14px;
+        background: currentColor;
+        opacity: 0.4;
+      }
+      .pill-run .stop {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+        color: inherit;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .th[data-theme='dark']
+        .pill-run:not(.wait):not(.stuck):not(.done):not(.idle)
+        .stop {
+        background: rgba(14, 21, 48, 0.14);
+      }
+      .pill-run.wait .stop,
+      .pill-run.stuck .stop,
+      .pill-run.done .stop,
+      .pill-run.idle .stop {
+        background: var(--c-surface);
+      }
+      .mk {
+        position: absolute;
+        z-index: 4;
+        border: 2px solid var(--c-accent);
+        border-radius: 7px;
+        box-shadow: 0 0 0 4px
+          color-mix(in srgb, var(--c-accent) 22%, transparent);
+        pointer-events: none;
+      }
+      .mk.warn {
+        border-color: var(--c-warn-edge);
+        box-shadow: 0 0 0 4px
+          color-mix(in srgb, var(--c-warn-edge) 25%, transparent);
+      }
+      .mk.stuck {
+        border-color: var(--c-danger);
+        box-shadow: 0 0 0 4px
+          color-mix(in srgb, var(--c-danger) 22%, transparent);
+      }
+      .mk.read {
+        border-style: dashed;
+        box-shadow: none;
+        border-radius: 8px;
+      }
+      .mk.after {
+        box-shadow: none;
+        border-width: 1px;
+        opacity: 0.9;
+      }
+      .ag {
+        --g: var(--c-accent);
+        position: absolute;
+        z-index: 7;
+        width: 0;
+        height: 0;
+        pointer-events: none;
+      }
+      .ag.wait {
+        --g: var(--c-warn-edge);
+      }
+      .ag svg.cur {
+        position: absolute;
+        left: -3px;
+        top: -2px;
+        width: 22px;
+        height: 26px;
+        fill: var(--g);
+        stroke: var(--c-on-accent);
+        stroke-width: 1.6;
+        stroke-linejoin: round;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+      }
+      .ag .ag-t {
+        position: absolute;
+        left: 16px;
+        top: 20px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: var(--g);
+        color: var(--c-on-accent);
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .ag.wait .ag-t {
+        color: #1b1e26;
+      }
+      .ag .burst {
+        position: absolute;
+        left: -19px;
+        top: -19px;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          color-mix(in srgb, var(--g) 55%, transparent) 0,
+          color-mix(in srgb, var(--g) 30%, transparent) 45%,
+          transparent 70%
+        );
+      }
+      .ag .ibeam {
+        position: absolute;
+        left: -1px;
+        top: -9px;
+        width: 2px;
+        height: 18px;
+        background: var(--g);
+        border-radius: 1px;
+      }
+      .mk-l {
+        position: absolute;
+        left: -2px;
+        bottom: calc(100% + 6px);
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 6px;
+        background: var(--c-accent);
+        color: var(--c-on-accent);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .mk.warn .mk-l {
+        background: var(--c-warn-tint);
+        color: var(--c-warn);
+        box-shadow: 0 0 0 1.5px var(--c-warn-edge) inset;
+      }
+      .mk.stuck .mk-l {
+        background: var(--c-danger-tint);
+        color: var(--c-danger);
+        box-shadow: 0 0 0 1.5px var(--c-danger) inset;
+      }
+      .mk.after .mk-l {
+        background: var(--c-surface);
+        color: var(--c-text-2);
+        box-shadow: 0 0 0 1px var(--c-border-strong) inset;
+      }
+      .chat .ml > * {
+        flex: none;
+      }
+      .mk.inside .mk-l {
+        bottom: auto;
+        top: 6px;
+        left: 6px;
+      }
+      .mk.side .mk-l {
+        left: calc(100% + 12px);
+        bottom: auto;
+        top: 2px;
+      }
+      .mk.below .mk-l {
+        bottom: auto;
+        top: calc(100% + 6px);
+      }
+      .mk-l.right {
+        left: auto;
+        right: -2px;
+      }
+
+      /* fake web page (only for the mock-up) */
+      .fp {
+        position: absolute;
+        inset: 0;
+        padding: 34px 22px 12px;
+        font-size: 12px;
+      }
+      .fp .bar {
+        position: absolute;
+        height: 10px;
+        border-radius: 5px;
+        background: var(--c-page-soft);
+      }
+      .fp .blk {
+        position: absolute;
+        border-radius: 6px;
+        background: var(--c-page-soft);
+      }
+      .fp .t {
+        position: absolute;
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--c-page-ink);
+        white-space: nowrap;
+      }
+      .fp .tx {
+        position: absolute;
+        color: var(--c-page-ink);
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .fp .btnp {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        height: 26px;
+        border-radius: 5px;
+        background: #3a4256;
+        color: #fff;
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .th[data-theme='dark'] .fp .btnp {
+        background: #4a5266;
+      }
+      .fp .fld {
+        position: absolute;
+        height: 26px;
+        border-radius: 5px;
+        border: 1px solid var(--c-border-strong);
+        background: var(--c-page);
+        padding: 3px 8px;
+        font-size: 12px;
+        color: var(--c-page-ink);
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .fp .fld.empty {
+        color: var(--c-text-3);
+      }
+      .fp .fl {
+        position: absolute;
+        font-size: 11px;
+        color: var(--c-text-3);
+      }
+
+      /* =============== window mock-up =============== */
+      .win {
+        display: grid;
+        grid-template-columns: var(--sbw, 204px) minmax(0, 1fr);
+        height: var(--wh, 640px);
+        background: var(--c-frame);
+        border-radius: 10px;
+        overflow: hidden;
+        font-size: 13px;
+        border: 1px solid var(--c-border);
+      }
+      .win.strip {
+        --sbw: 48px;
+      }
+      .sb {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 6px;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .sb .hd {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 6px 6px;
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--c-text-2);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .sb .runchip {
+        margin: 0 2px 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        background: var(--c-accent-tint);
+        border: 1px solid color-mix(in srgb, var(--c-accent) 40%, transparent);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.25;
+      }
+      .sb .runchip.stuck {
+        background: var(--c-danger-tint);
+        border-color: var(--c-danger);
+        color: var(--c-danger);
+      }
+      .sb .runchip.wait {
+        background: var(--c-warn-tint);
+        border-color: var(--c-warn-edge);
+        color: var(--c-warn);
+      }
+      .sg {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .trow {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 8px;
+        border-radius: 7px;
+        font-size: 13px;
+        min-width: 0;
+      }
+      .trow .tt {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .trow.active {
+        background: var(--c-accent-tint);
+      }
+      .trow.move {
+        background: color-mix(in srgb, var(--c-accent) 12%, transparent);
+      }
+      .trow.close {
+        background: color-mix(in srgb, var(--c-danger) 10%, transparent);
+      }
+      .trow .tag {
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .trow .tag.mv {
+        color: var(--c-accent);
+      }
+      .trow .tag.cl {
+        color: var(--c-danger);
+      }
+      .trow .by {
+        color: var(--c-text-3);
+        display: inline-grid;
+      }
+      .tv-b .trow.move,
+      .tv-b .trow.close {
+        background: none;
+        box-shadow: none;
+      }
+      .tv-b .tag {
+        padding: 1px 8px;
+        border-radius: 999px;
+        height: 20px;
+      }
+      .tv-b .tag.mv {
+        background: var(--c-accent-tint);
+      }
+      .tv-b .tag.cl {
+        background: var(--c-danger-tint);
+      }
+      .tv-c .trow.move,
+      .tv-c .trow.close {
+        background: none;
+        box-shadow: none;
+      }
+      .tv-c .trow.close .tt {
+        color: var(--c-text-2);
+      }
+      .fvw {
+        position: relative;
+        display: inline-flex;
+      }
+      .fvw .bg {
+        position: absolute;
+        right: -5px;
+        bottom: -5px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 0 0 2px var(--c-frame);
+        color: var(--c-on-accent);
+      }
+      .fvw .bg svg {
+        width: 9px;
+        height: 9px;
+        stroke-width: 2.4;
+      }
+      .fvw .bg.mv {
+        background: var(--c-accent);
+      }
+      .fvw .bg.cl {
+        background: var(--c-danger);
+        color: #fff;
+      }
+      .tv-e .trow.move,
+      .tv-e .trow.close {
+        background: none;
+        box-shadow: none;
+      }
+      .cbx {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        background: var(--c-accent);
+        color: var(--c-on-accent);
+        display: inline-grid;
+        place-items: center;
+        flex: none;
+      }
+      .cbx.cl {
+        background: var(--c-danger);
+        color: #fff;
+      }
+      .cbx svg {
+        width: 11px;
+        height: 11px;
+        stroke-width: 2.6;
+      }
+      .ghost {
+        opacity: 0.5;
+      }
+      .arr {
+        background: color-mix(in srgb, var(--c-accent) 12%, transparent);
+      }
+      .sgroup {
+        border-left: 2px solid var(--sp, var(--sp-blue));
+        margin: 2px 0 2px 8px;
+        padding-left: 2px;
+      }
+      .tb {
+        height: 44px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px 0 4px;
+        color: var(--c-text-2);
+      }
+      .tb .addr {
+        flex: 1;
+        max-width: 560px;
+        height: 30px;
+        border-radius: 999px;
+        background: var(--c-surface);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        font-size: 12px;
+        color: var(--c-text);
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .tb .ib {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .main > .pc {
+        margin: 0 6px 6px;
+      }
+      .chat {
+        flex: 1;
+        min-height: 0;
+        margin: 0 6px 6px;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: 10px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .chat .ch {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--c-border);
+        font-size: 12px;
+        font-weight: 600;
+        flex: none;
+      }
+      .chat .ml {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .chat .cm {
+        flex: none;
+        padding: 8px 12px 10px;
+        border-top: 1px solid var(--c-border);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .um {
+        align-self: flex-end;
+        max-width: 80%;
+        background: var(--c-surface-3);
+        padding: 6px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+      }
+      .comp {
+        height: 34px;
+        border: 1px solid var(--c-border-strong);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        color: var(--c-text-3);
+        font-size: 13px;
+      }
+      .comp .send {
+        margin-left: auto;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        background: var(--c-accent);
+        color: var(--c-on-accent);
+        display: grid;
+        place-items: center;
+      }
+
+      /* run bar (new) in the chat */
+      .runbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 34px;
+        padding: 4px 10px;
+        border-radius: 9px;
+        background: var(--c-accent-tint);
+        border: 1px solid color-mix(in srgb, var(--c-accent) 40%, transparent);
+        font-size: 12px;
+      }
+      .runbar.wait {
+        background: var(--c-warn-tint);
+        border-color: var(--c-warn-edge);
+      }
+      .runbar.stuck {
+        background: var(--c-danger-tint);
+        border-color: var(--c-danger);
+      }
+      .runbar.done {
+        background: var(--c-ok-tint);
+        border-color: color-mix(in srgb, var(--c-ok) 50%, transparent);
+      }
+      .runbar.idle {
+        background: var(--c-surface-2);
+        border-color: var(--c-border);
+      }
+      .runbar .what {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .runbar .what b {
+        font-weight: 600;
+      }
+      .ticks {
+        display: inline-flex;
+        gap: 3px;
+        align-items: center;
+      }
+      .ticks i {
+        width: 12px;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--c-border-strong);
+        opacity: 0.45;
+        display: block;
+      }
+      .ticks i.d {
+        background: var(--c-ok);
+        opacity: 1;
+      }
+      .ticks i.c {
+        background: var(--c-accent);
+        opacity: 1;
+      }
+      .ticks i.w {
+        background: var(--c-warn-edge);
+        opacity: 1;
+      }
+      .ticks i.x {
+        background: var(--c-text-3);
+        opacity: 1;
+      }
+      .ticks i.q {
+        background: transparent;
+        border: 1.5px dashed var(--c-text-3);
+        opacity: 1;
+      }
+
+      /* steps */
+      .steps {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .st {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        min-height: 28px;
+        padding: 4px 6px;
+        border-radius: 7px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      .st:hover {
+        background: var(--c-hover);
+      }
+      .st .s {
+        margin-top: 0;
+      }
+      .st .lb {
+        flex: 1;
+        min-width: 0;
+      }
+      .st .lb b {
+        font-weight: 600;
+      }
+      .st .res {
+        display: block;
+        font-size: 12px;
+        color: var(--c-text-2);
+      }
+      .st .res.bad {
+        color: var(--c-danger);
+      }
+      .st .r {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: none;
+        color: var(--c-text-3);
+        font-size: 12px;
+      }
+      .st .det {
+        opacity: 0;
+        font-size: 12px;
+        color: var(--c-text-2);
+      }
+      .st:hover .det,
+      .st:focus-within .det {
+        opacity: 1;
+      }
+      .st.q .lb {
+        color: var(--c-text-3);
+      }
+      .st.nd .lb {
+        color: var(--c-text-3);
+      }
+      .stg {
+        margin-left: 26px;
+        border-left: 2px solid var(--c-border);
+        padding-left: 6px;
+      }
+      .favs {
+        display: inline-flex;
+      }
+      .favs .fav {
+        margin-left: -4px;
+        box-shadow: 0 0 0 2px var(--c-surface);
+      }
+      .favs .fav:first-child {
+        margin-left: 0;
+      }
+      .thumb {
+        width: 84px;
+        height: 52px;
+        border-radius: 6px;
+        border: 1px solid var(--c-border);
+        background: var(--c-page);
+        position: relative;
+        overflow: hidden;
+        flex: none;
+      }
+      .thumb i {
+        position: absolute;
+        display: block;
+        background: var(--c-page-soft);
+        border-radius: 2px;
+      }
+      .mono {
+        font: 12px var(--font-mono);
+      }
+      .fold {
+        margin: 4px 0 4px 26px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: var(--c-surface-2);
+        border: 1px solid var(--c-border);
+        font: 12px/1.5 var(--font-mono);
+        color: var(--c-text-2);
+        white-space: pre-wrap;
+      }
+
+      /* approval card */
+      .ac {
+        border: 1px solid var(--c-border-strong);
+        border-radius: var(--r-lg);
+        background: var(--c-surface);
+        overflow: hidden;
+      }
+      .ac.risky {
+        border-color: var(--c-warn-edge);
+        box-shadow: 0 0 0 1px var(--c-warn-edge) inset;
+      }
+      .ac.private {
+        border-color: var(--c-accent);
+      }
+      .ac .h {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--c-surface-2);
+        border-bottom: 1px solid var(--c-border);
+        flex-wrap: wrap;
+      }
+      .ac.risky .h {
+        background: var(--c-warn-tint);
+      }
+      .ac .b {
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .ac .q {
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      .ac .tg {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 8px;
+        border-radius: 8px;
+        background: var(--c-surface-2);
+        border: 1px solid var(--c-border);
+        font-size: 12px;
+      }
+      .ac .eff {
+        font-size: 12px;
+        color: var(--c-text-2);
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+      }
+      .ac .f {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--c-border);
+        flex-wrap: wrap;
+      }
+      .ac .f .dn {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--c-text-2);
+      }
+      .typed {
+        font: 12px var(--font-mono);
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: var(--c-surface);
+        border: 1px solid var(--c-border-strong);
+        color: var(--c-text);
+      }
+      .miniel {
+        display: inline-grid;
+        place-items: center;
+        height: 26px;
+        padding: 0 12px;
+        border-radius: 5px;
+        background: #3a4256;
+        color: #fff;
+        font-weight: 600;
+        font-size: 12px;
+        box-shadow: 0 0 0 3px
+          color-mix(in srgb, var(--c-warn-edge) 45%, transparent);
+      }
+      .plist {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        max-height: 132px;
+        overflow: hidden;
+      }
+      .plist .trow {
+        min-height: 26px;
+      }
+      .skilltext {
+        font: 12px/1.5 var(--font-mono);
+        background: var(--c-surface-2);
+        border: 1px solid var(--c-border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        max-height: 104px;
+        overflow: hidden;
+        position: relative;
+        white-space: pre-wrap;
+      }
+      .skilltext::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 24px;
+        background: linear-gradient(transparent, var(--c-surface-2));
+      }
+      .pop {
+        position: absolute;
+        z-index: 8;
+        box-shadow: var(--sh-popup);
+        border-radius: var(--r-xl);
+        background: var(--c-surface);
+      }
+
+      /* cards for the surfaces sections */
+      .card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .sgrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 12px;
+      }
+      .tbl {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .tbl th,
+      .tbl td {
+        text-align: left;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--c-border);
+        vertical-align: top;
+      }
+      .tbl th {
+        font-size: 12px;
+        color: var(--c-text-2);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body data-view="both">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="M5 12l5 5L20 7" />
+        </symbol>
+        <symbol id="i-x" viewBox="0 0 24 24">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </symbol>
+        <symbol id="i-circle" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="8" />
+        </symbol>
+        <symbol id="i-spin" viewBox="0 0 24 24">
+          <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+        </symbol>
+        <symbol id="i-warn" viewBox="0 0 24 24">
+          <path d="M12 3l10 18H2zM12 10v5M12 18v.5" />
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />
+        </symbol>
+        <symbol id="i-ban" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M6 6l12 12" />
+        </symbol>
+        <!-- NEW icon: stop (square) -->
+        <symbol id="i-stop" viewBox="0 0 24 24">
+          <rect x="6" y="6" width="12" height="12" rx="2" />
+        </symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5" />
+        </symbol>
+        <symbol id="i-cursor" viewBox="0 0 24 24">
+          <path d="M5 3l14 7-6 2-2 6z" />
+        </symbol>
+        <symbol id="i-pencil" viewBox="0 0 24 24">
+          <path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4" />
+        </symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24">
+          <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+        </symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24">
+          <path d="M4 8h4l2-3h4l2 3h4v11H4z" />
+          <circle cx="12" cy="13" r="3" />
+        </symbol>
+        <symbol id="i-sparkle" viewBox="0 0 24 24">
+          <path
+            d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"
+          />
+        </symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24">
+          <path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" />
+        </symbol>
+        <symbol id="i-move" viewBox="0 0 24 24">
+          <path d="M4 12h14M13 6l6 6-6 6" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+          <path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" />
+        </symbol>
+        <symbol id="i-doc" viewBox="0 0 24 24">
+          <path
+            d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6"
+          />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24">
+          <path
+            d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
+          />
+        </symbol>
+        <symbol id="i-history" viewBox="0 0 24 24">
+          <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v5l3 2" />
+        </symbol>
+        <symbol id="i-chat" viewBox="0 0 24 24">
+          <path d="M4 5h16v11H9l-5 4z" />
+        </symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24">
+          <path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3" />
+        </symbol>
+        <symbol id="i-send" viewBox="0 0 24 24">
+          <path d="M12 19V5M5 12l7-7 7 7" />
+        </symbol>
+        <symbol id="i-chev-d" viewBox="0 0 24 24">
+          <path d="M6 9l6 6 6-6" />
+        </symbol>
+        <symbol id="i-chev-r" viewBox="0 0 24 24">
+          <path d="M9 6l6 6-6 6" />
+        </symbol>
+        <symbol id="i-back" viewBox="0 0 24 24">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </symbol>
+        <symbol id="i-fwd" viewBox="0 0 24 24">
+          <path d="M5 12h14M12 5l7 7-7 7" />
+        </symbol>
+        <symbol id="i-reload" viewBox="0 0 24 24">
+          <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />
+        </symbol>
+        <symbol id="i-more" viewBox="0 0 24 24">
+          <circle cx="5" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="19" cy="12" r="1.4" fill="currentColor" />
+        </symbol>
+        <symbol id="i-bookmark" viewBox="0 0 24 24">
+          <path d="M7 4h10v17l-5-4-5 4z" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24">
+          <path d="M3 6h6l2 2h10v11H3z" />
+        </symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24">
+          <path d="M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z" />
+        </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="top">
+      <b>Browser-use visuals</b>
+      <span
+        ><a href="#s-status">Status</a><a href="#s-run">Run bar and pill</a
+        ><a href="#s-steps">Steps</a><a href="#s-approve">Approvals</a
+        ><a href="#s-page">On the page</a><a href="#s-side">Sidebar</a
+        ><a href="#s-views">Views</a><a href="#s-moments">Moments</a
+        ><a href="#s-scen">Scenarios</a
+        ><a href="#s-set">Settings-worthy</a></span
+      >
+      <label
+        >Theme
+        <select id="view">
+          <option value="both">Light and dark</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select></label
+      >
+      <label
+        ><input type="checkbox" id="rm" /> Reduced motion (stops the two
+        loops)</label
+      >
+    </div>
+    <div class="wrap">
+      <h1>Browser-use visuals</h1>
+      <p class="lead">
+        How the assistant's work in the browser reads at a glance. Built on the
+        tokens and components of <code>browser-ui.html</code>. Every state is
+        shown with an icon shape and a word, never colour alone, and nothing
+        needs motion to be understood. New items are marked <b>NEW</b>; changed
+        existing components are listed in the hand-off note.
+      </p>
+      <p class="lead">
+        <b>The one-second answer.</b> A person looks at one of three places and
+        gets state, place, action and progress: the <b>run pill</b> on the page
+        card edge, the <b>run bar</b> above the composer, or the
+        <b>sidebar run chip</b>. The rule that decides which one speaks: the
+        page is framed only when the current step touches that page; tab and
+        Space changes speak in the sidebar; changes to the app's own store
+        (artifacts, skills, Spaces) speak in the chat and the sidebar row they
+        create.
+      </p>
+
+      <h2 id="s-status">
+        1 · Status language <span class="badge ai">NEW</span>
+      </h2>
+      <p class="note">
+        Nine states, used the same way in the chat, on the page and in the
+        sidebar. Waiting for you is always amber, never moves, and always says
+        what it is waiting for. Blocked by a safety rule is not an error: it is
+        red with a shield and carries the reason in plain words.
+      </p>
+      <div id="status"></div>
+
+      <h2 id="s-run">
+        2 · Run bar (chat) and run pill (page) <span class="badge ai">NEW</span>
+      </h2>
+      <p class="note">
+        The run bar sits above the composer, in the compact bar and in the
+        expanded chat. The pill hangs from the top edge of the page card, drawn
+        by the app above the page. Both carry: state word, verb and target, step
+        position, Stop. Step position is a row of ticks (done, current, to do)
+        so the count reads without numbers; when the plan is not known it reads
+        "Step 4 · up to 25".
+      </p>
+      <div id="runs"></div>
+
+      <h2 id="s-steps">3 · The step list</h2>
+      <p class="note">
+        Changed: the ToolCallRow gains a site chip, a result line and group
+        rows. Raw tool names and arguments move behind a quiet "Details" that
+        appears on hover or keyboard focus (and in the row's menu). Groups
+        collapse repeated reads into one row with the sites' icons; the group's
+        status is the worst unfinished child.
+      </p>
+      <div id="steps"></div>
+
+      <h2 id="s-approve">4 · The approval card</h2>
+      <p class="note">
+        Changed: ApprovalCard now shows where (site chip), what (target in plain
+        words, with a picture of the element where there is one), what goes in
+        (exact typed text or cleaned link), what happens next, the risk, and
+        what happens if the person does nothing. Keys are suggested: Enter
+        allows, Shift+Enter allows the rest of the reply, Esc does not allow;
+        risky cards need Ctrl+Enter and have no "rest".
+      </p>
+      <div id="approvals"></div>
+
+      <h2 id="s-page">5 · On the page</h2>
+      <p class="note">
+        Everything here is drawn by the app in its own layer above the web page,
+        so the page cannot fake it, hide it or read it. The edge frame says "the
+        assistant is in this page"; the marker says "this exact element"; both
+        go away the moment the step ends. After a click or type, a quiet
+        outlined label stays on the element ("Clicked", "Typed") until the next
+        step starts. Titles and sites in the pill are cleaned (no query
+        strings).
+      </p>
+      <div id="pagelayer"></div>
+
+      <h2 id="s-side">6 · Sidebar and strip</h2>
+      <p class="note">
+        Changed: TabRow and SpaceGroup. The existing blue working dot is kept
+        and gets three siblings: amber (waiting), red (stuck), hollow (will be
+        changed by a batch waiting for approval). Tabs the assistant opened
+        carry a small sparkle that explains itself on hover. The collapsed strip
+        shows the same dot on the favicon and a count on the Space icon.
+      </p>
+      <div id="sidebars"></div>
+      <h2 id="s-tabvar">
+        6b · Tab management: five ways to mark tabs a batch will change
+      </h2>
+      <p class="note">
+        The dotted outlines are gone. Same state in every column: six tabs will
+        move (three to Shopping, three to Research), three will close, one is
+        untouched, and the approval card is waiting. <b>A</b> is the one used in
+        the scenarios now (recommended). All five clear on approve, decline or
+        Stop, and all pair a word with the colour.
+      </p>
+      <div id="tabvar"></div>
+
+      <h2 id="s-views">7 · View modes</h2>
+      <p class="note">
+        Page only: the pill on the page edge is the whole interface; hovering or
+        focusing it opens the last three steps, and approvals appear as a
+        popup-layer card on the page. Chat only: the run bar names the page
+        being worked on (cleaned title, site, Space) with a small screenshot on
+        hover, because the page itself is not on screen. Full frames for both
+        are scenarios 7 and 8 below.
+      </p>
+      <div id="views"></div>
+
+      <h2 id="s-recall">
+        8 · Looking, screenshots, and recalling your own data
+      </h2>
+      <div id="looks"></div>
+
+      <h2 id="s-moments">9 · Run-level moments</h2>
+      <p class="note">
+        Starting, waiting on a page, waking a sleeping tab, a tab closed by the
+        person, a limit, Stop, finishing, and finishing while the person is
+        elsewhere. The finished and stopped pills stay until dismissed (click,
+        Esc, or the next prompt): nothing disappears on a timer, and an old
+        frame can never look like current work.
+      </p>
+      <div id="moments"></div>
+
+      <h2 id="s-scen">10 · Scenarios, light and dark</h2>
+      <div id="scenarios"></div>
+
+      <h2 id="s-set">11 · Settings-worthy</h2>
+      <div id="settings"></div>
+    </div>
+    <script>
+      (function () {
+        const $ = (id) => document.getElementById(id);
+        const ic = (n, c = '') =>
+          `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+        const SITES = {
+          A: ['A', '#2F6FDE', 'Shop A', 'shop-a.example'],
+          B: ['B', '#B4492A', 'Shop B', 'shop-b.example'],
+          C: ['C', '#0F7F72', 'Shop C', 'shop-c.example'],
+          D: ['D', '#7B55D6', 'Shop D', 'shop-d.example'],
+          R: ['R', '#8A5300', 'Review site', 'reviews.example'],
+          G: ['W', '#5A6479', 'Web search', 'search'],
+          M: ['M', '#5A6479', 'Mail', 'mail.example'],
+        };
+        const fav = (k) =>
+          `<span class="fav" style="background:${SITES[k][1]}" aria-hidden="true">${SITES[k][0]}</span>`;
+        const chip = (k) => `<span class="chip">${fav(k)}${SITES[k][2]}</span>`;
+        const ST = {
+          queued: ['circle', 'Queued'],
+          running: ['spin', 'Running'],
+          waiting: ['clock', 'Waiting for you'],
+          allowed: ['check', 'Allowed'],
+          declined: ['ban', 'Declined'],
+          blocked: ['shield', 'Blocked'],
+          done: ['check', 'Done'],
+          failed: ['warn', 'Failed'],
+          stopped: ['stop', 'Stopped'],
+        };
+        const si = (s) =>
+          `<span class="s s-${s}" role="img" aria-label="${ST[s][1]}">${ic(ST[s][0])}</span>`;
+        const both = (fn, cls = '', wrapCls = 'box') =>
+          ['light', 'dark']
+            .map(
+              (t) =>
+                `<div class="th ${wrapCls} ${cls}" data-theme="${t}">${fn(t)}</div>`,
+            )
+            .join('');
+        const pair = (inner, wide) =>
+          `<div class="pair ${wide ? 'wide' : ''}">${inner}</div>`;
+
+        /* ---------- components ---------- */
+        function ticks(a) {
+          return `<span class="ticks" aria-hidden="true">${a.map((x) => `<i class="${x}"></i>`).join('')}</span>`;
+        }
+        function runbar(o) {
+          // o:{tone,state,what,ticks,stop,extra}
+          const t = o.tone || '';
+          const icon = {
+            '': 'running',
+            wait: 'waiting',
+            stuck: 'blocked',
+            done: 'done',
+            idle: 'stopped',
+          }[t];
+          const word = {
+            '': 'Working',
+            wait: 'Waiting for you',
+            stuck: 'Stuck',
+            done: 'Finished',
+            idle: 'Stopped',
+          }[t];
+          return `<div class="runbar ${t}" role="status">${si(icon)}<span class="what"><b>${o.word || word}</b> · ${o.what}</span>${o.ticks ? ticks(o.ticks) : ''}${o.pos ? `<span style="color:var(--c-text-2);white-space:nowrap">${o.pos}</span>` : ''}${o.stop === false ? '' : `<button class="btn sm"><span style="display:inline-flex">${ic('stop', 'sm')}</span>Stop <span class="kbd">Ctrl .</span></button>`}${o.extra || ''}</div>`;
+        }
+        function pillrun(o) {
+          const t = o.tone || '';
+          const word = {
+            '': 'Working',
+            wait: 'Waiting for you',
+            stuck: 'Stuck',
+            done: 'Finished',
+            idle: 'Stopped',
+          }[t];
+          const icon = {
+            '': 'running',
+            wait: 'waiting',
+            stuck: 'blocked',
+            done: 'done',
+            idle: 'stopped',
+          }[t];
+          const sic = `<span class="s s-${icon}" style="--tone:currentColor" role="img" aria-label="${word}">${ic(ST[icon][0])}</span>`;
+          const end =
+            t === 'done' || t === 'idle'
+              ? `<button class="stop" aria-label="Dismiss">${ic('x', 'sm')}Dismiss</button>`
+              : `<button class="stop">${ic('stop', 'sm')}Stop <span class="kbd" style="color:inherit;border-color:currentColor;background:transparent">Ctrl .</span></button>`;
+          return `<div class="pill-run ${t}" role="status">${sic}<span>${o.word || word}</span><span class="sep"></span><span class="txt">${o.what}</span>${o.pos ? `<span style="font-weight:600">${o.pos}</span>` : ''}${end}</div>`;
+        }
+        function step(o) {
+          const cls = (o.s === 'queued' ? 'q' : '') + (o.nd ? ' nd' : '');
+          const st = o.nd ? 'queued' : o.s;
+          return `<div class="st ${cls}" tabindex="0">${si(st)}<span class="lb">${o.l}${o.res ? `<span class="res ${o.bad ? 'bad' : ''}">${o.res}</span>` : ''}${o.thumb ? thumb() : ''}</span><span class="r">${o.tag ? `<span class="badge ${o.tagc || ''}">${o.tag}</span>` : ''}${o.site ? chip(o.site) : ''}<span class="det">Details</span></span></div>${o.fold ? `<div class="fold">${o.fold}</div>` : ''}`;
+        }
+        function group(o) {
+          return `<div class="st" tabindex="0"><span style="color:var(--c-text-3);display:inline-grid;width:18px;height:18px;place-items:center">${ic(o.open ? 'chev-d' : 'chev-r', 'sm')}</span>${si(o.s)}<span class="lb"><b>${o.l}</b>${o.res ? `<span class="res">${o.res}</span>` : ''}</span><span class="r"><span class="favs">${o.sites.map(fav).join('')}</span></span></div>${o.open ? `<div class="stg">${o.kids.map(step).join('')}</div>` : ''}`;
+        }
+        function thumb() {
+          return `<span style="display:flex;gap:8px;align-items:flex-end;margin-top:4px"><span class="thumb" aria-label="Screenshot, kept for this session only"><i style="left:6px;top:6px;width:36px;height:5px"></i><i style="left:6px;top:16px;width:70px;height:4px"></i><i style="left:6px;top:24px;width:56px;height:4px"></i><i style="left:6px;top:36px;width:30px;height:10px;background:var(--c-text-3)"></i></span><span class="res">Seen by the assistant. Kept for this session only.</span></span>`;
+        }
+
+        function approval(o) {
+          const risky = o.risk === 'risky';
+          const badges = (o.badges || [])
+            .map((b) => `<span class="badge ${b[1] || ''}">${b[0]}</span>`)
+            .join('');
+          const keys = risky
+            ? { allow: 'Ctrl Enter' }
+            : { allow: 'Enter', rest: 'Shift Enter' };
+          return `<div class="ac ${risky ? 'risky' : ''} ${o.risk === 'private' ? 'private' : ''}" role="group" aria-label="Approval needed">
+ <div class="h">${si('waiting')}<span style="font-weight:600;font-size:12px">Needs your OK</span>${o.site ? chip(o.site) : ''}${badges}</div>
+ <div class="b"><div class="q">${o.q}</div>${o.body || ''}${o.eff ? `<div class="eff">${ic(risky ? 'warn' : 'eye', 'sm')}<span>${o.eff}</span></div>` : ''}</div>
+ <div class="f"><button class="btn ${risky ? 'warnb' : 'primary'}">Allow <span class="kbd">${keys.allow}</span></button>${risky || o.norest ? '' : `<button class="btn">Allow the rest of this reply <span class="kbd">${keys.rest}</span></button>`}<button class="btn">Don't allow <span class="kbd">Esc</span></button><span class="dn">${o.dn || 'If you do nothing, it waits. Nothing happens until you answer.'}</span></div></div>`;
+        }
+
+        /* ---------- fake pages (absolute coords for a ~660 px wide card) ---------- */
+        function page(kind, o = {}) {
+          o = Object.assign({ f: [] }, o);
+          const P = {
+            shop: `<div class="fp"><div class="blk" style="left:22px;top:48px;width:150px;height:130px"></div><div class="t" style="left:190px;top:46px;font-size:15px">Graphics card RTX 5070</div><div class="tx" style="left:190px;top:72px;font-size:20px;font-weight:700">£549</div><div class="tx" style="left:190px;top:104px;color:var(--c-text-3)">In stock · free delivery</div><div class="bar" style="left:190px;top:128px;width:260px"></div><div class="btnp" style="left:190px;top:152px;width:120px">Add to cart</div><div class="bar" style="left:22px;top:196px;width:400px"></div><div class="bar" style="left:22px;top:214px;width:300px"></div></div>`,
+            form: `<div class="fp"><div class="t" style="left:22px;top:38px">Shipping details</div>
+  <div class="fl" style="left:22px;top:60px">Full name</div><div class="fld ${o.f[0] ? '' : 'empty'}" style="left:22px;top:76px;width:300px">${o.f[0] || ''}</div>
+  <div class="fl" style="left:340px;top:60px">City</div><div class="fld ${o.f[2] ? '' : 'empty'}" style="left:340px;top:76px;width:200px">${o.f[2] || ''}</div>
+  <div class="fl" style="left:22px;top:112px">Address</div><div class="fld ${o.f[1] ? '' : 'empty'}" style="left:22px;top:128px;width:300px">${o.f[1] || ''}</div>
+  <div class="fl" style="left:340px;top:112px">Postcode</div><div class="fld ${o.f[3] ? '' : 'empty'}" style="left:340px;top:128px;width:200px">${o.f[3] || ''}</div>
+  <div class="fl" style="left:22px;top:164px">Country</div><div class="fld ${o.f[4] ? '' : 'empty'}" style="left:22px;top:180px;width:300px">${o.f[4] || ''}</div>
+  <div class="btnp" style="left:340px;top:180px;width:140px">Place order</div></div>`,
+            signin: `<div class="fp"><div class="t" style="left:22px;top:40px;font-size:15px">Sign in to Shop A</div>
+  <div class="fl" style="left:22px;top:66px">Email</div><div class="fld" style="left:22px;top:82px;width:300px">alex@example.com</div>
+  <div class="fl" style="left:22px;top:118px">Password</div><div class="fld empty" style="left:22px;top:134px;width:300px">&nbsp;</div>
+  <div class="btnp" style="left:22px;top:200px;width:100px">Sign in</div><div class="bar" style="left:360px;top:90px;width:200px"></div><div class="bar" style="left:360px;top:110px;width:150px"></div></div>`,
+            overview: `<div class="fp"><div class="t" style="left:22px;top:38px;font-size:15px">🛒 GPU shopping</div><div class="blk" style="left:22px;top:70px;width:190px;height:60px"></div><div class="blk" style="left:226px;top:70px;width:190px;height:60px"></div><div class="blk" style="left:430px;top:70px;width:190px;height:60px"></div></div>`,
+          };
+          return P[kind];
+        }
+        function mk(o) {
+          return `<div class="mk ${o.c || ''} ${o.below ? 'below' : ''} ${o.side ? 'side' : ''} ${o.inside ? 'inside' : ''}" style="left:${o.x}px;top:${o.y}px;width:${o.w}px;height:${o.h}px"><span class="mk-l ${o.r ? 'right' : ''}">${o.i ? ic(o.i, 'sm') : ''}${o.l}</span></div>`;
+        }
+
+        function cur(o) {
+          // o:{x,y,tag,mode:'click'|'move'|'type'|'scroll'|'wait'}
+          const w = o.mode === 'wait';
+          const arrow = `<svg class="cur" viewBox="0 0 22 26" aria-hidden="true"><path d="M3 2l14 9-6.2 1.6L14.6 20l-3.1 1.5-3.7-7.6L3 18z"/></svg>`;
+          return `<div class="ag ${w ? 'wait' : ''}" style="left:${o.x}px;top:${o.y}px" aria-hidden="true">${o.mode === 'click' ? '<span class="burst"></span>' : ''}${o.mode === 'type' ? '<span class="ibeam"></span>' : ''}${o.mode === 'type' ? '' : arrow}<span class="ag-t">${o.tag || 'Assistant'}</span></div>`;
+        }
+        function pc(o) {
+          // page card
+          return `<div class="pc" style="${o.h ? `height:${o.h}px;` : 'flex:1;min-height:0;'}">${o.page}${o.frame !== undefined ? `<div class="frame ${o.frame}"></div>` : ''}${o.marker || ''}${o.cur || ''}${o.pill || ''}${o.extra || ''}</div>`;
+        }
+        let TV = 'a';
+        function trow(o) {
+          const t = o.t;
+          let f = fav(o.s || 'A');
+          let dot = '',
+            tag = '',
+            cls = o.a ? 'active' : '',
+            lead = '';
+          if (o.w === 'run')
+            dot = '<span class="dot" title="Assistant is working here"></span>';
+          if (o.w === 'wait')
+            dot = '<span class="dot wait" title="Waiting for you"></span>';
+          if (o.w === 'stuck')
+            dot = '<span class="dot stuck" title="Stuck"></span>';
+          if (o.w === 'done')
+            dot = '<span class="dot done" title="Finished"></span>';
+          if (o.mv) {
+            cls += ' move';
+            tag = `<span class="tag mv">${TV === 'b' ? '' : ic('move', 'sm')}${o.mv}</span>`;
+          }
+          if (o.cl) {
+            cls += ' close';
+            tag = `<span class="tag cl">${TV === 'b' ? '' : ic('x', 'sm')}Close</span>`;
+          }
+          if (TV === 'c' && (o.mv || o.cl)) {
+            f = `<span class="fvw">${f}<span class="bg ${o.mv ? 'mv' : 'cl'}">${ic(o.mv ? 'move' : 'x')}</span></span>`;
+            if (o.cl) tag = `<span class="tag cl">Close</span>`;
+            if (o.mv) tag = `<span class="tag mv">${o.mv}</span>`;
+          }
+          if (TV === 'e' && (o.mv || o.cl)) {
+            lead = `<span class="cbx ${o.cl ? 'cl' : ''}" role="checkbox" aria-checked="true" aria-label="Include this tab">${ic('check')}</span>`;
+          }
+          return `<div class="trow ${cls}" tabindex="0">${lead}${f}<span class="tt">${t}</span>${o.by ? `<span class="by" title="Opened by the assistant">${ic('sparkle', 'sm')}</span>` : ''}${tag}${dot}</div>`;
+        }
+        function sidebar(o) {
+          let h = `<div class="sb" aria-label="Tabs">`;
+          h += `<div class="hd">${o.title || 'Tabs'}</div>`;
+          if (o.chip)
+            h += `<div class="runchip ${o.chip.tone || ''}">${si(o.chip.s)}<span>${o.chip.t}</span></div>`;
+          (o.groups || []).forEach((g) => {
+            if (g.name) {
+              h += `<div class="sg"><span class="pill" style="--sp:var(--sp-${g.c || 'blue'})">${g.name}</span>${g.badge ? `<span class="badge ai">${g.badge}</span>` : ''}</div><div class="sgroup" style="--sp:var(--sp-${g.c || 'blue'})">`;
+            }
+            h += g.rows.map(trow).join('');
+            if (g.name) h += '</div>';
+          });
+          return h + '</div>';
+        }
+        function toolbar(addr) {
+          return `<div class="tb"><span class="ib">${ic('back')}</span><span class="ib" style="opacity:.5">${ic('fwd')}</span><span class="ib">${ic('reload')}</span><div class="addr">${ic('lock', 'sm')}${addr}</div><span class="ib" style="margin-left:auto">${ic('more')}</span></div>`;
+        }
+        function chatBox(o) {
+          return `<div class="chat" role="region" aria-label="Chat"><div class="ch">${ic('chat', 'sm')}${o.name || 'Chat'}${o.ctx || ''}</div><div class="ml" role="log">${o.msgs}</div><div class="cm">${o.runbar || ''}<div class="comp"><span>Ask, or type @</span><span class="send">${ic('send', 'sm')}</span></div></div></div>`;
+        }
+        function win(o) {
+          return `<div class="win ${o.strip ? 'strip' : ''}" style="${o.wh ? `--wh:${o.wh}px;` : ''}${o.sbw ? `--sbw:${o.sbw}px;` : ''}"><div>${o.sb}</div><div class="main">${toolbar(o.addr)}${o.page || ''}${o.chat || ''}</div></div>`;
+        }
+        const U = (t) => `<div class="um">${t}</div>`;
+        const steps = (a) => `<div class="steps">${a.join('')}</div>`;
+
+        /* ---------- 1 status table ---------- */
+        (function () {
+          const rows = [
+            [
+              'queued',
+              'Planned, not started',
+              'Dashed circle, grey',
+              'Step greyed, no marker',
+              '—',
+              'The step list only',
+            ],
+            [
+              'running',
+              'Happening now',
+              'Spinner, blue',
+              'Frame + pill + marker if it touches the page',
+              'Blue pulsing dot on the tab',
+              'Run bar says "Working"',
+            ],
+            [
+              'waiting',
+              'It needs an answer',
+              'Clock, amber',
+              'Amber frame, "Waiting for you" pill, amber marker',
+              'Amber dot on the tab / chip',
+              'Approval card appears; run bar turns amber',
+            ],
+            [
+              'allowed',
+              'You said yes',
+              'Check, blue',
+              'Briefly the marker, then running',
+              'Unchanged',
+              'Row shows "Allowed" tag',
+            ],
+            [
+              'declined',
+              'You said no',
+              'Ban, grey',
+              'Marker removed',
+              'Dot removed',
+              'Row says "Declined by you"; the run goes on with what is left',
+            ],
+            [
+              'blocked',
+              'A safety rule says no',
+              'Shield, red',
+              'Red frame and marker with the reason',
+              'Red dot',
+              'Row names the reason in plain words; run bar says "Stuck" if it cannot go on',
+            ],
+            [
+              'done',
+              'It worked',
+              'Check, green',
+              'Quiet outline label ("Clicked") until the next step',
+              '—',
+              'Row shows the result in one line',
+            ],
+            [
+              'failed',
+              'It tried and could not',
+              'Warning triangle, red',
+              'Red marker with the reason',
+              '—',
+              'Row shows the reason; "Try again" in the row menu',
+            ],
+            [
+              'stopped',
+              'You pressed Stop',
+              'Square, grey',
+              'Frame off; pill reads "Stopped" until dismissed',
+              'Dot removed',
+              'Unfinished steps listed as "Not done"',
+            ],
+          ];
+          const t = (th) =>
+            `<table class="tbl"><thead><tr><th style="width:150px">State</th><th>Meaning</th><th>Icon</th><th>On the page</th><th>In the sidebar</th><th>In the chat</th></tr></thead><tbody>${rows.map((r) => `<tr><td><span style="display:inline-flex;gap:8px;align-items:center">${si(r[0])}<b>${ST[r[0]][1]}</b></span></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</tbody></table>`;
+          $('status').innerHTML = pair(both(t));
+        })();
+
+        /* ---------- 2 run bars and pills ---------- */
+        (function () {
+          const R = [
+            [
+              '',
+              'Reading 3 pages',
+              'Step 5 of 6',
+              ['d', 'd', 'd', 'd', 'c', 'q'],
+            ],
+            [
+              'wait',
+              'Press <b>Place order</b> on shop-a.example',
+              'Step 4 of 5',
+              ['d', 'd', 'd', 'w', 'q'],
+            ],
+            [
+              'stuck',
+              'Can’t type in password fields',
+              'Step 3 of 5',
+              ['d', 'd', 'f', 'q', 'q'],
+            ],
+            [
+              'done',
+              'Compared 3 shops, summary written',
+              '6 steps',
+              ['d', 'd', 'd', 'd', 'd', 'd'],
+            ],
+            [
+              'idle',
+              'at step 4 of 7 · 3 not done',
+              '',
+              ['d', 'd', 'd', 'x', 'q', 'q', 'q'],
+            ],
+          ];
+          const pillsDef = [
+            ['', 'Reading Shop D', '5/6'],
+            ['wait', 'Press Place order', '4/5'],
+            ['stuck', 'Needs you to sign in', '3/5'],
+            ['done', '5 steps done', ''],
+            ['idle', 'Step 4 of 7', ''],
+          ];
+          const inner = (
+            t,
+          ) => `<p class="cap">Run bar (chat)</p><div style="display:flex;flex-direction:column;gap:8px">${R.map((r) => runbar({ tone: r[0], what: r[1], pos: r[2], ticks: r[3].map((x) => (x === 'f' ? 'x' : x)), stop: !(r[0] === 'done' || r[0] === 'idle') })).join('')}</div>
+ <p class="cap" style="margin-top:16px">Compact chat bar (one line + latest reply)</p>
+ <div class="chat" style="margin:0;height:auto"><div class="cm" style="border-top:0">${runbar({ what: 'Reading Shop D', pos: '5 of 6', ticks: ['d', 'd', 'd', 'd', 'c', 'q'] })}<div class="comp"><span>Ask, or type @</span><span class="send">${ic('send', 'sm')}</span></div></div></div>
+ <p class="cap" style="margin-top:16px">Run pill (on the page card edge)</p>
+ <div style="display:flex;flex-direction:column;gap:6px">${pillsDef.map((p) => `<div style="position:relative;height:34px;border-radius:8px;background:var(--c-page);border:1px solid var(--c-border)">${pillrun({ tone: p[0], what: p[1], pos: p[2] })}</div>`).join('')}</div>`;
+          $('runs').innerHTML = pair(both(inner));
+        })();
+
+        /* ---------- 3 steps ---------- */
+        (function () {
+          const a = (t) =>
+            `<p class="cap">Step list, grouped</p>` +
+            steps([
+              step({
+                s: 'done',
+                l: 'Looked at <b>this page</b>',
+                res: 'RTX 5070 · £549 · in stock',
+                site: 'A',
+              }),
+              step({
+                s: 'done',
+                l: 'Searched the web for <b>“RTX 5070 price UK”</b>',
+                res: '8 results',
+                site: 'G',
+                tag: 'Allowed',
+                tagc: 'ai',
+              }),
+              group({
+                s: 'running',
+                l: 'Reading 3 pages',
+                open: true,
+                sites: ['B', 'C', 'D'],
+                res: '2 of 3 read',
+                kids: [
+                  {
+                    s: 'done',
+                    l: 'Read <b>Shop B – RTX 5070</b>',
+                    res: '£579 · in stock',
+                    site: 'B',
+                  },
+                  {
+                    s: 'done',
+                    l: 'Read <b>Shop C</b>',
+                    res: '£629 · 2 left',
+                    site: 'C',
+                  },
+                  { s: 'running', l: 'Reading <b>Shop D</b>', site: 'D' },
+                ],
+              }),
+              step({ s: 'queued', l: 'Write the comparison' }),
+            ]);
+          const b = (t) =>
+            `<p class="cap">Row with the Details fold open (hover or focus shows “Details”)</p>` +
+            steps([
+              step({
+                s: 'done',
+                l: 'Typed <b>12 Elm Street, Leeds</b> in <b>Address</b>',
+                site: 'A',
+                fold: 'type_text\n  tab: Checkout – Shop A\n  field: “Address” (text)\n  text: “12 Elm Street, Leeds”',
+              }),
+              step({
+                s: 'blocked',
+                l: 'Typing in <b>Password</b>',
+                res: 'Not done. I never type into password fields. You can type it yourself.',
+                bad: true,
+                site: 'A',
+              }),
+              step({
+                s: 'failed',
+                l: 'Clicked <b>Next</b>',
+                res: 'The button was not on the page any more. The page changed.',
+                bad: true,
+                site: 'A',
+              }),
+              step({
+                s: 'declined',
+                l: 'Read <b>shop-e.example</b>',
+                res: 'Declined by you. Carrying on with the other three.',
+                site: 'G',
+              }),
+              step({
+                s: 'stopped',
+                l: 'Typing in <b>City</b>',
+                res: 'Stopped by you. Nothing was submitted.',
+                site: 'A',
+              }),
+            ]);
+          $('steps').innerHTML = pair(both(a)) + pair(both(b));
+        })();
+
+        /* ---------- 4 approvals ---------- */
+        (function () {
+          const tgtBtn = `<div class="tg"><span class="miniel">Place order</span><span>The <b>Place order</b> button at the bottom of the form on <b>Checkout</b></span></div>`;
+          const A1 = approval({
+            site: 'A',
+            q: 'Type this into <b>Full name</b>?',
+            body: `<div class="typed">Alex Tracy</div>`,
+            eff: 'Goes into the page only. Nothing is sent until the form is submitted.',
+            norest: false,
+          });
+          const A2 = approval({
+            risk: 'risky',
+            site: 'A',
+            badges: [
+              ['Changes a page', 'warn'],
+              ['Can’t be undone', 'danger'],
+            ],
+            q: 'Press <b>Place order</b>?',
+            body: tgtBtn,
+            eff: 'Sends your name, address and card choice to shop-a.example and places the order.',
+            dn: 'Risky actions always ask. If you do nothing, it waits.',
+          });
+          const A3 = approval({
+            site: 'G',
+            q: 'Search the web for <b>“RTX 5070 price UK”</b>?',
+            body: `<div class="tg">${ic('search')}<span>Sends this text to <b>DuckDuckGo</b>. Results are read by the assistant.</span></div>`,
+            eff: 'The search text leaves your computer.',
+          });
+          const A4 = approval({
+            site: 'G',
+            q: 'Take a screenshot of <b>Sign in – Shop A</b>?',
+            body: `<div class="tg">${ic('camera')}<span>Screenshots of sign-in pages can show account details. It is shown to the assistant and kept for this session only.</span></div>`,
+            badges: [['Sign-in page', 'warn']],
+            eff: 'Never saved to disk.',
+          });
+          const A5 = approval({
+            risk: 'private',
+            site: 'G',
+            badges: [['Your own data', 'ai']],
+            q: 'Search your <b>history</b> for “GPU”?',
+            body: `<div class="tg">${ic('history')}<span>What it finds (titles and addresses of up to 10 pages) is <b>sent to the model</b> to answer you.</span></div>`,
+            eff: 'Nothing is changed. Kept in this chat.',
+          });
+          const A6 = approval({
+            site: 'G',
+            badges: [
+              ['Makes a skill', 'ai'],
+              ['Asks again: it read web pages', 'warn'],
+            ],
+            q: 'Make the skill <b>“Compare prices”</b>?',
+            body: `<div class="skilltext">When asked to compare prices:\n1. List the pages in this Space.\n2. Read each page and note price,\n   stock and delivery.\n3. Put the results in a table sorted\n   by total price.\n4. Say which one you would pick\n   and why, in two sentences.</div><div style="font-size:12px;color:var(--c-text-2)">Full text · 14 lines · scroll to read all</div>`,
+            eff: 'Runs later when you ask for it. You can change or delete it in Skills.',
+          });
+          const mvRows = (l) =>
+            l
+              .map(
+                (r) =>
+                  `<div class="trow">${fav(r[0])}<span class="tt">${r[1]}</span></div>`,
+              )
+              .join('');
+          const A7 = approval({
+            site: 'G',
+            q: 'Move <b>6 tabs</b> into 2 Spaces?',
+            badges: [['Changes your tabs', 'warn']],
+            body: `<div class="plist"><div class="sg"><span class="pill" style="--sp:var(--sp-blue)">→ Shopping · 3</span></div>${mvRows(
+              [
+                ['B', 'Shoe sale – Shop B'],
+                ['B', 'Compare shoes'],
+                ['B', 'Cart – Shop B'],
+              ],
+            )}<div class="sg"><span class="pill" style="--sp:var(--sp-violet)">→ Research · 3</span></div>${mvRows(
+              [
+                ['R', 'Intel Arc review'],
+                ['R', 'GPU benchmark'],
+                ['R', 'Driver notes'],
+              ],
+            )}</div>`,
+            eff: 'Tabs stay open. You can move them back.',
+          });
+          const A8 = approval({
+            risk: 'risky',
+            site: 'G',
+            badges: [['Closes tabs', 'warn']],
+            q: 'Close <b>3 tabs</b>?',
+            body: `<div class="plist">${mvRows([
+              ['G', 'New tab'],
+              ['G', 'New tab'],
+              ['G', 'Untitled'],
+            ])}</div>`,
+            eff: 'Closed tabs go to Recently closed. Reopen with Ctrl+Shift+T.',
+            dn: 'Closing always asks.',
+          });
+          const cell = (cap, h) => `<div><p class="cap">${cap}</p>${h}</div>`;
+          $('approvals').innerHTML =
+            pair(
+              both(
+                (t) =>
+                  cell('Typing text (normal)', A1) +
+                  '<div style="height:14px"></div>' +
+                  cell('Search the web', A3) +
+                  '<div style="height:14px"></div>' +
+                  cell('Screenshot of a sign-in page', A4),
+              ),
+            ) +
+            pair(
+              both(
+                (t) =>
+                  cell('Risky: submit', A2) +
+                  '<div style="height:14px"></div>' +
+                  cell('Recalling your own data', A5) +
+                  '<div style="height:14px"></div>' +
+                  cell('Making a skill: full text is shown', A6),
+              ),
+            ) +
+            pair(
+              both(
+                (t) =>
+                  cell('Batch: move tabs (one card)', A7) +
+                  '<div style="height:14px"></div>' +
+                  cell('Batch: close tabs (separate card)', A8),
+              ),
+            );
+        })();
+
+        /* ---------- 5 page layer ---------- */
+        (function () {
+          const P = (o) => pc(Object.assign({ h: 236 }, o));
+          const a = (
+            t,
+          ) => `<p class="cap">Click: about to (blue) · Press a risky key (amber)</p><div style="display:flex;flex-direction:column;gap:14px">
+ ${P({ page: page('shop'), frame: '', marker: mk({ x: 190, y: 152, w: 120, h: 26, l: 'Click · Add to cart', i: 'cursor' }), cur: cur({ x: 262, y: 168, mode: 'click', tag: 'Clicking' }), pill: pillrun({ what: 'Clicking Add to cart', pos: '3/6' }) })}
+ ${P({ page: page('form', { f: ['Alex Tracy', '12 Elm Street, Leeds', 'Leeds', 'LS1 4AB', 'United Kingdom'] }), frame: 'wait', marker: mk({ x: 340, y: 180, w: 140, h: 26, l: 'Press · Place order · asks you', i: 'warn', c: 'warn', side: true }), cur: cur({ x: 440, y: 196, mode: 'wait', tag: 'Waiting for you' }), pill: pillrun({ tone: 'wait', what: 'Press Place order', pos: '4/5' }) })}</div>`;
+          const b = (
+            t,
+          ) => `<p class="cap">Blocked (red, with the reason) · After it types (quiet label, no frame)</p><div style="display:flex;flex-direction:column;gap:14px">
+ ${P({ page: page('signin'), frame: 'stuck', marker: mk({ x: 22, y: 134, w: 300, h: 26, l: 'Password · I never type here', i: 'shield', c: 'stuck', below: true }), pill: pillrun({ tone: 'stuck', what: 'Can’t type in password fields', pos: '3/5' }) })}
+ ${P({ page: page('form', { f: ['Alex Tracy', '12 Elm Street, Leeds', '', '', ''] }), marker: mk({ x: 22, y: 128, w: 300, h: 26, l: 'Typed · Address', i: 'check', c: 'after', r: true }), pill: pillrun({ tone: 'idle', what: 'Step 4 of 7', pos: '' }) })}</div>`;
+          const c = (
+            t,
+          ) => `<p class="cap">Reading (soft wide glow: “I am looking at this page”) · Find on page (the page scrolls to the match)</p><div style="display:flex;flex-direction:column;gap:14px">
+ ${P({ page: page('shop'), frame: '', marker: mk({ x: 14, y: 34, w: 520, h: 190, l: 'Reading this page', i: 'eye', c: 'read', inside: true }), pill: pillrun({ what: 'Reading Shop B', pos: '3/6' }) })}
+ ${P({ page: page('shop').replace('£549', '<span style="background:var(--c-accent-tint);border-radius:3px;outline:2px solid var(--c-accent);padding:0 3px;margin-left:-3px">£549</span>'), frame: '', marker: `<div class="mk" style="left:186px;top:68px;width:70px;height:30px;box-shadow:none"><span class="mk-l">${ic('search', 'sm')}Found “£” · 2 of 5</span></div>`, pill: pillrun({ what: 'Finding “£” on this page', pos: '3/6' }) })}</div>`;
+          const d = (
+            t,
+          ) => `<p class="cap">Assistant cursor: moving to the target · typing · scrolling</p><div style="display:flex;flex-direction:column;gap:14px">
+ ${P({ page: page('shop'), frame: '', cur: cur({ x: 150, y: 120, mode: 'move', tag: 'Assistant' }), marker: mk({ x: 190, y: 152, w: 120, h: 26, l: 'Next · Add to cart', i: 'cursor' }), pill: pillrun({ what: 'Moving to Add to cart', pos: '3/6' }) })}
+ ${P({ page: page('form', { f: ['Alex Tracy', '12 Elm', '', '', ''] }), frame: '', cur: cur({ x: 130, y: 141, mode: 'type', tag: 'Typing' }), marker: mk({ x: 22, y: 128, w: 300, h: 26, l: 'Type · Address', i: 'pencil' }), pill: pillrun({ what: 'Typing in Address', pos: '3/6' }) })}
+ ${P({ page: page('shop'), frame: '', cur: cur({ x: 520, y: 140, mode: 'move', tag: 'Scrolling ↓' }), pill: pillrun({ what: 'Scrolling down', pos: '3/6' }) })}</div>`;
+          const e = (
+            t,
+          ) => `<p class="cap">What the cursor is</p><div class="card" style="font-size:13px;line-height:1.55;display:flex;flex-direction:column;gap:8px">
+ <div>Drawn by the app on its own layer above the page. It is <b>not</b> the person's pointer and never moves it, and the page cannot see or block it.</div>
+ <div><b>Appears</b> when a step acts in the page (click, type, press a key, scroll, choose, go to) and <b>goes</b> the moment the step ends, the run ends, or Stop is pressed. Looking and reading do not show it.</div>
+ <div><b>Moves</b> to the target, then <b>click</b> shows a soft burst under the tip. <b>Typing</b> shows an I-beam in the field with the tag "Typing". <b>Scrolling</b> shows the tag "Scrolling ↓ / ↑". Under reduced motion it jumps straight to the target.</div>
+ <div><b>Waiting for you:</b> amber, rests above the target, no burst, tag "Waiting for you". <b>Blocked:</b> no cursor, the red marker explains.</div>
+ <div>Each tag is a short plain verb. The Stop control stays in the pill; the cursor itself is not clickable.</div></div>`;
+          $('pagelayer').innerHTML =
+            pair(both(a)) +
+            pair(both(b)) +
+            pair(both(c)) +
+            pair(both(d) + both(e));
+        })();
+
+        /* ---------- 6 sidebar ---------- */
+        (function () {
+          const a = (
+            t,
+          ) => `<p class="cap">Expanded sidebar</p><div style="background:var(--c-frame);border-radius:10px;padding:4px;width:300px">${sidebar(
+            {
+              chip: {
+                s: 'running',
+                t: '<b>Assistant</b> is working in 3 tabs',
+              },
+              groups: [
+                {
+                  name: '🛒 GPU shopping',
+                  c: 'blue',
+                  badge: '2 working',
+                  rows: [
+                    { t: 'RTX 5070 – Shop A', s: 'A', a: 1, w: 'run' },
+                    { t: 'Shop B – RTX 5070', s: 'B', by: 1, w: 'done' },
+                    { t: 'Shop C', s: 'C', by: 1, w: 'done' },
+                    { t: 'Shop D RTX 5070', s: 'D', by: 1, w: 'run' },
+                  ],
+                },
+                {
+                  name: '📚 Research',
+                  c: 'violet',
+                  rows: [
+                    { t: 'Intel Arc review', s: 'R', w: 'wait' },
+                    { t: 'GPU benchmark', s: 'R', w: 'stuck' },
+                  ],
+                },
+                { rows: [{ t: 'Mail', s: 'M' }] },
+              ],
+            },
+          )}</div>
+ <p class="cap" style="margin-top:14px">Tabs a batch will change (card waiting)</p><div style="background:var(--c-frame);border-radius:10px;padding:4px;width:300px">${sidebar(
+   {
+     chip: {
+       s: 'waiting',
+       tone: 'wait',
+       t: '<b>Assistant</b> · waiting for you · 2 changes',
+     },
+     groups: [
+       {
+         rows: [
+           { t: 'Shoe sale – Shop B', s: 'B', mv: 'Shopping' },
+           { t: 'Intel Arc review', s: 'R', mv: 'Research' },
+           { t: 'New tab', s: 'G', cl: 1 },
+           { t: 'Mail', s: 'M' },
+         ],
+       },
+     ],
+   },
+ )}</div>`;
+          const b = (
+            t,
+          ) => `<p class="cap">Collapsed strip</p><div style="display:flex;gap:20px;align-items:flex-start"><div style="width:48px;background:var(--c-frame);border-radius:10px;padding:8px 0;display:flex;flex-direction:column;align-items:center;gap:6px">
+ <div style="position:relative;width:36px;height:34px;display:grid;place-items:center">${fav('A')}<span class="dot" style="position:absolute;right:3px;top:4px;box-shadow:0 0 0 2px var(--c-frame)"></span></div>
+ <div style="position:relative;width:36px;height:34px;display:grid;place-items:center">${fav('B')}<span class="dot wait" style="position:absolute;right:3px;top:4px;box-shadow:0 0 0 2px var(--c-frame)"></span></div>
+ <div style="position:relative;width:36px;height:34px;display:grid;place-items:center"><span style="width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:color-mix(in srgb,var(--sp-blue) var(--sp-tint-mix),var(--c-surface))">🛒</span><span class="badge ai" style="position:absolute;right:-2px;top:-2px;padding:0 4px;box-shadow:0 0 0 2px var(--c-frame)">2</span></div>
+ <div style="position:relative;width:36px;height:34px;display:grid;place-items:center">${fav('R')}<span class="dot stuck" style="position:absolute;right:3px;top:4px;box-shadow:0 0 0 2px var(--c-frame)"></span></div></div>
+ <div style="font-size:13px;color:var(--c-text-2);max-width:260px;line-height:1.5">Top to bottom: working tab (blue dot), tab waiting for you (amber), a Space with 2 tabs being worked on (count), a stuck tab (red). Hovering the strip opens the sidebar as usual.</div></div>
+ <p class="cap" style="margin-top:14px">Legend</p><div style="display:flex;flex-direction:column;gap:6px;font-size:13px"><span><span class="dot" style="display:inline-block;vertical-align:middle"></span>&nbsp; Working here (pulses; static when reduced motion is on)</span><span><span class="dot wait" style="display:inline-block;vertical-align:middle"></span>&nbsp; Waiting for you</span><span><span class="dot stuck" style="display:inline-block;vertical-align:middle"></span>&nbsp; Stuck</span><span><span class="dot done" style="display:inline-block;vertical-align:middle"></span>&nbsp; Finished here (until you open the tab)</span><span><span style="display:inline-block;vertical-align:middle;color:var(--c-text-3)">${ic('sparkle', 'sm')}</span>&nbsp; Opened by the assistant</span><span><span style="display:inline-block;width:22px;height:12px;border-radius:3px;vertical-align:middle;background:color-mix(in srgb,var(--c-accent) 12%,transparent)"></span>&nbsp; Will be moved · <span style="display:inline-block;width:22px;height:12px;border-radius:3px;vertical-align:middle;background:color-mix(in srgb,var(--c-danger) 10%,transparent)"></span>&nbsp; will be closed</span></div>`;
+          $('sidebars').innerHTML = pair(both(a)) + pair(both(b));
+        })();
+        /* ---------- 6b tab management variations ---------- */
+        (function () {
+          const MOV = [
+            ['Shoe sale – Shop B', 'B', 'Shopping'],
+            ['Compare shoes', 'B', 'Shopping'],
+            ['Cart – Shop B', 'B', 'Shopping'],
+            ['Intel Arc review', 'R', 'Research'],
+            ['GPU benchmark', 'R', 'Research'],
+            ['Driver notes', 'R', 'Research'],
+          ];
+          const CLS = [
+            ['New tab', 'G'],
+            ['New tab', 'G'],
+            ['Untitled', 'G'],
+          ];
+          const rowsFor = () =>
+            MOV.map((r) => ({ t: r[0], s: r[1], mv: r[2] })).concat(
+              CLS.map((r) => ({ t: r[0], s: r[1], cl: 1 })),
+              [{ t: 'Mail', s: 'M' }],
+            );
+          const chipW = {
+            s: 'waiting',
+            tone: 'wait',
+            t: '<b>Assistant</b> · waiting for you · 2 changes',
+          };
+          const box = (v, name, note) => {
+            TV = v;
+            const h = `<div class="tv-${v}"><p class="cap">${name}</p><div style="background:var(--c-frame);border-radius:10px;padding:4px">${sidebar({ chip: chipW, groups: [{ rows: rowsFor() }] })}</div><p class="note" style="margin:8px 0 0;color:var(--c-text-2)">${note}</p></div>`;
+            TV = 'a';
+            return h;
+          };
+          const ghost = () => {
+            const g = (name, c, exist, arr) =>
+              `<div class="sg"><span class="pill" style="--sp:var(--sp-${c})">${name}</span></div><div class="sgroup" style="--sp:var(--sp-${c})">${exist.map((x) => trow({ t: x, s: 'A' })).join('')}${arr.map((x) => `<div class="trow arr"><span class="fvw">${fav(x[1])}<span class="bg mv">${ic('plus')}</span></span><span class="tt">${x[0]}</span><span class="tag mv">Arriving</span></div>`).join('')}</div>`;
+            const out =
+              MOV.map(
+                (r) =>
+                  `<div class="trow ghost">${fav(r[1])}<span class="tt">${r[0]}</span><span class="tag mv">${ic('move', 'sm')}${r[2]}</span></div>`,
+              ).join('') +
+              CLS.map(
+                (r) =>
+                  `<div class="trow ghost">${fav(r[1])}<span class="tt">${r[0]}</span><span class="tag cl">${ic('x', 'sm')}Close</span></div>`,
+              ).join('') +
+              trow({ t: 'Mail', s: 'M' });
+            return `<div><p class="cap">D · Before and after (ghost rows)</p><div style="background:var(--c-frame);border-radius:10px;padding:4px"><div class="sb"><div class="hd">Tabs</div><div class="runchip wait">${si('waiting')}<span><b>Assistant</b> · waiting for you · 2 changes</span></div>${g('🛒 Shopping', 'blue', ['GPU cards – Shop A'], MOV.slice(0, 3))}${g('📚 Research', 'violet', ['Build notes'], MOV.slice(3))}<div class="sg" style="color:var(--c-text-2)">Where they are now</div>${out}</div></div><p class="note" style="margin:8px 0 0;color:var(--c-text-2)">The destination Spaces show the tabs arriving; the originals fade in place. Tallest, but it shows the result before approving.</p></div>`;
+          };
+          const t = (th) =>
+            `<div class="sgrid" style="grid-template-columns:repeat(auto-fill,minmax(270px,1fr))">` +
+            box(
+              'a',
+              'A · Tint and tags (now used)',
+              'A faint blue (move) or red (close) tint across the row, plus the tag. No bars or outlines. Reads like a selection state the sidebar already has.',
+            ) +
+            box(
+              'b',
+              'B · Tags only',
+              'No row decoration at all: just a filled tag pill, blue for move, red for close. Quietest; easiest to miss in a long list.',
+            ) +
+            box(
+              'c',
+              'C · Badge on the favicon',
+              'A small arrow or ✕ badge on the favicon, plus the tag. Marks the tab itself, so it survives a collapsed or narrow sidebar.',
+            ) +
+            ghost() +
+            box(
+              'e',
+              'E · Checkboxes',
+              'Each affected tab has a ticked box. Unticking leaves that tab out of the batch, and the approval card updates. Most control; adds a control to every row.',
+            ) +
+            `</div>`;
+          $('tabvar').innerHTML = pair(both(t), true);
+        })();
+
+        /* ---------- 7 views, 8 looks ---------- */
+        (function () {
+          const a = (
+            t,
+          ) => `<p class="cap">Page only: hover or focus the pill → last three steps</p>
+ <div class="pc" style="height:230px">${page('shop')}<div class="frame"></div>${pillrun({ what: 'Clicking Add to cart', pos: '3/6' })}
+ <div class="pop" style="top:34px;left:50%;transform:translateX(-50%);width:330px;padding:6px">${steps([step({ s: 'done', l: 'Read <b>Shop B</b>', site: 'B' }), step({ s: 'done', l: 'Looked at <b>this page</b>', site: 'A' }), step({ s: 'running', l: 'Clicking <b>Add to cart</b>', site: 'A' })])}<div style="padding:4px 8px 2px;font-size:12px;color:var(--c-text-2)">Open the chat to see everything</div></div></div>`;
+          const b = (
+            t,
+          ) => `<p class="cap">Chat only: the run bar says which page, hover for a picture</p>
+ <div class="chat" style="margin:0"><div class="cm" style="border-top:0;gap:10px">
+ ${runbar({ what: 'Clicking <b>Add to cart</b>', pos: 'Step 3 of 6', ticks: ['d', 'd', 'c', 'q', 'q', 'q'] })}
+ <div style="display:flex;align-items:center;gap:10px;position:relative"><span style="font-size:12px;color:var(--c-text-2)">Working on</span><span class="chip">${fav('A')}RTX 5070 · shop-a.example</span><span class="pill" style="--sp:var(--sp-blue)">🛒 GPU shopping</span>
+ <div class="pop" style="left:0;top:34px;padding:8px;display:flex;gap:10px;align-items:center;width:310px;border:1px solid var(--c-border)"><span class="thumb" style="width:120px;height:74px">${page('shop').replace('class="fp"', 'class="fp" style="transform:scale(.18);transform-origin:0 0;width:660px;height:400px;padding-top:0"')}</span><span style="font-size:12px;color:var(--c-text-2)"><b style="color:var(--c-text)">What it sees now</b><br>Screenshot, this session only. Not saved.</span></div></div>
+ <div style="height:80px"></div></div></div>`;
+          $('views').innerHTML = pair(both(a)) + pair(both(b));
+          const c = (t) =>
+            `<p class="cap">Read and screenshot rows</p>` +
+            steps([
+              step({
+                s: 'done',
+                l: 'Read <b>Shop B – RTX 5070</b>',
+                res: 'About 1,800 words. Price and stock noted.',
+                site: 'B',
+                tag: 'Page text',
+                fold: 'read_page\n  tab: Shop B – RTX 5070\n  chars: 11,420',
+              }),
+              step({
+                s: 'done',
+                l: 'Took a screenshot of <b>Checkout</b>',
+                thumb: true,
+                site: 'A',
+                tag: 'Allowed',
+                tagc: 'ai',
+              }),
+              step({
+                s: 'done',
+                l: 'Found <b>“in stock”</b> on this page',
+                res: '2 matches. The page scrolled to the first.',
+                site: 'A',
+              }),
+              step({
+                s: 'done',
+                l: 'Read tables on <b>Shop C</b>',
+                res: '1 table · 6 rows · 3 columns',
+                site: 'C',
+              }),
+            ]);
+          const d = (
+            t,
+          ) => `<p class="cap">Your own data (distinct frame: what is found goes to the model)</p>
+ <div style="border:1.5px solid var(--c-accent);border-radius:10px;padding:6px 6px 8px;background:color-mix(in srgb,var(--c-accent) 6%,transparent)">
+ <div style="display:flex;align-items:center;gap:8px;padding:2px 6px 6px;font-size:12px;font-weight:600;color:var(--c-accent)">${ic('history', 'sm')}Your own data · sent to the model<span class="badge ai" style="margin-left:auto">Private</span></div>
+ ${steps([step({ s: 'done', l: 'Searched your <b>history</b> for “GPU”', res: '6 pages found. Titles and addresses were shared.' }), step({ s: 'done', l: 'Searched your <b>bookmarks</b> for “GPU”', res: '1 found' }), step({ s: 'done', l: 'Read your earlier chat <b>“Build a PC”</b>', res: 'Whole chat shared · 24 messages' })])}
+ <div style="padding:4px 8px 0;font-size:12px;color:var(--c-text-2)">Shown to you after: <b>what was shared</b> (hover a row, Details)</div></div>`;
+          $('looks').innerHTML = pair(both(c)) + pair(both(d));
+        })();
+
+        /* ---------- 9 moments ---------- */
+        (function () {
+          const card = (t, h) =>
+            `<div class="card"><p class="cap">${t}</p>${h}</div>`;
+          const m = (
+            th,
+          ) => `<div class="sgrid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+ ${card('Starting (thinking)', runbar({ what: 'Thinking…', ticks: null, stop: true }))}
+ ${card('Waiting for a page to load', steps([step({ s: 'running', l: 'Waiting for <b>Shop D</b> to load', res: 'Still loading. The assistant waits up to 30 s.', site: 'D' })]))}
+ ${card('Waking a sleeping tab', steps([step({ s: 'running', l: 'Waking <b>Docs</b> to read it', tag: 'Was asleep', site: 'G' })]))}
+ ${card('You closed the tab mid-task', steps([step({ s: 'stopped', l: 'Reading <b>Shop C</b>', res: 'You closed this tab, so this step was skipped. Carrying on.', site: 'C' })]))}
+ ${card('Limit reached (not an error)', `<div class="banner neutral">${ic('info'.replace('info', 'clock'))}<div><b>I stopped at 25 actions.</b><br>Done: read 3 shops, wrote the table. Left: check delivery times.<div style="display:flex;gap:8px;margin-top:8px"><button class="btn primary sm">Continue for 25 more</button><button class="btn sm">That’s enough</button></div></div></div>`)}
+ ${card('You pressed Stop', runbar({ tone: 'idle', what: 'at step 4 of 7 · 3 not done', ticks: ['d', 'd', 'd', 'x', 'q', 'q', 'q'], stop: false }) + '<div style="height:6px"></div>' + steps([step({ s: 'stopped', l: 'Typing in <b>City</b>', res: 'Nothing was submitted.' }), step({ s: 'queued', nd: 1, l: 'Type Postcode · not done' }), step({ s: 'queued', nd: 1, l: 'Press Submit · not done' })]))}
+ ${card('Finished', runbar({ tone: 'done', what: 'Compared 3 shops · table in <b>GPU prices</b>', pos: '6 steps', stop: false, extra: `<button class="btn sm">${ic('doc', 'sm')}Open</button>` }))}
+ ${card('Finished while you are elsewhere', `<div style="display:flex;gap:16px;align-items:flex-start"><div style="background:var(--c-frame);border-radius:10px;padding:6px;width:210px">${trow({ t: 'Compare GPU prices', s: 'G', w: 'done' }).replace(fav('G'), ic('chat'))}<div style="padding:2px 8px;font-size:12px"><span class="badge ok">Reply waiting</span></div></div><div style="font-size:12px;color:var(--c-text-2);max-width:170px">The chat row, the strip chat icon and the tab get the green dot and “Reply waiting” (existing marker). Nothing pops up.</div></div>`)}
+ </div>`;
+          $('moments').innerHTML = pair(both(m), true);
+        })();
+
+        /* ---------- 10 scenarios ---------- */
+        const SB = (chip, groups, extra) =>
+          sidebar(Object.assign({ chip, groups }, extra || {}));
+        const SCEN = [
+          {
+            id: 1,
+            t: 'Research: “Compare prices for this GPU.”',
+            n: 'Mostly reading, many steps. Group row keeps the list short. Only the web search asked. The page is outlined as “reading”, no element marker.',
+            f: (th) =>
+              win({
+                wh: 800,
+                addr: 'shop-a.example/graphics-cards/rtx-5070',
+                sb: SB(
+                  { s: 'running', t: '<b>Assistant</b> is working in 2 tabs' },
+                  [
+                    {
+                      name: '🛒 GPU shopping',
+                      c: 'blue',
+                      rows: [
+                        { t: 'RTX 5070 – Shop A', s: 'A', a: 1 },
+                        { t: 'Shop B – RTX 5070', s: 'B', by: 1, w: 'done' },
+                        { t: 'Shop C', s: 'C', by: 1, w: 'done' },
+                        { t: 'Shop D RTX 5070', s: 'D', by: 1, w: 'run' },
+                      ],
+                    },
+                    { rows: [{ t: 'Mail', s: 'M' }] },
+                  ],
+                ),
+                page: pc({
+                  h: 236,
+                  page: page('shop'),
+                  frame: 'dashed',
+                  marker: mk({
+                    x: 14,
+                    y: 34,
+                    w: 520,
+                    h: 190,
+                    l: 'Reading this page',
+                    i: 'eye',
+                    c: 'read',
+                    inside: true,
+                  }),
+                  pill: pillrun({ what: 'Reading 3 pages', pos: '5/6' }),
+                }),
+                chat: chatBox({
+                  name: 'Compare GPU prices',
+                  msgs:
+                    U('Compare prices for this GPU.') +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Looked at <b>this page</b>',
+                        res: 'RTX 5070 · £549 · in stock',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Searched the web for <b>“RTX 5070 price UK”</b>',
+                        res: '8 results',
+                        site: 'G',
+                        tag: 'Allowed',
+                        tagc: 'ai',
+                      }),
+                      group({
+                        s: 'running',
+                        l: 'Reading 3 pages',
+                        open: true,
+                        sites: ['B', 'C', 'D'],
+                        res: '2 of 3 read',
+                        kids: [
+                          {
+                            s: 'done',
+                            l: 'Read <b>Shop B</b>',
+                            res: '£579 · in stock',
+                            site: 'B',
+                          },
+                          {
+                            s: 'done',
+                            l: 'Read <b>Shop C</b>',
+                            res: '£629 · 2 left',
+                            site: 'C',
+                          },
+                          {
+                            s: 'running',
+                            l: 'Reading <b>Shop D</b>',
+                            site: 'D',
+                          },
+                        ],
+                      }),
+                      step({ s: 'queued', l: 'Write the comparison' }),
+                    ]).replace(/^/, ''),
+                  runbar: runbar({
+                    what: 'Reading 3 pages',
+                    pos: 'Step 5 of 6',
+                    ticks: ['d', 'd', 'd', 'd', 'c', 'q'],
+                  }),
+                }),
+              }),
+          },
+          {
+            id: 2,
+            t: 'A form: fills in shipping, then asks to press Submit',
+            n: 'Several Type steps and one dropdown ran without asking (you saw the text before each, in the step label). The risky press is an amber card; the page frame and marker turn amber too. There is no “Allow the rest” on risky actions.',
+            f: (th) =>
+              win({
+                wh: 930,
+                addr: 'shop-a.example/checkout',
+                sb: SB(
+                  {
+                    s: 'waiting',
+                    tone: 'wait',
+                    t: '<b>Assistant</b> · waiting for you',
+                  },
+                  [
+                    {
+                      name: '🛒 Shopping',
+                      c: 'teal',
+                      rows: [
+                        { t: 'Checkout – Shop A', s: 'A', a: 1, w: 'wait' },
+                      ],
+                    },
+                  ],
+                ),
+                page: pc({
+                  h: 236,
+                  page: page('form', {
+                    f: [
+                      'Alex Tracy',
+                      '12 Elm Street, Leeds',
+                      'Leeds',
+                      'LS1 4AB',
+                      'United Kingdom',
+                    ],
+                  }),
+                  frame: 'wait',
+                  marker: mk({
+                    x: 340,
+                    y: 180,
+                    w: 140,
+                    h: 26,
+                    l: 'Press · Place order',
+                    i: 'warn',
+                    c: 'warn',
+                    side: true,
+                  }),
+                  cur: cur({
+                    x: 440,
+                    y: 196,
+                    mode: 'wait',
+                    tag: 'Waiting for you',
+                  }),
+                  pill: pillrun({
+                    tone: 'wait',
+                    what: 'Press Place order',
+                    pos: '4/5',
+                  }),
+                }),
+                chat: chatBox({
+                  name: 'Place my order',
+                  msgs:
+                    U('Fill in my shipping details and place the order.') +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Typed <b>Alex Tracy</b> in <b>Full name</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Typed <b>12 Elm Street, Leeds</b> in <b>Address</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Typed <b>Leeds</b>, <b>LS1 4AB</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Chose <b>United Kingdom</b> in <b>Country</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'waiting',
+                        l: 'Press <b>Place order</b>',
+                        res: 'Needs your OK. This places the order.',
+                        site: 'A',
+                      }),
+                    ]) +
+                    approval({
+                      risk: 'risky',
+                      site: 'A',
+                      badges: [
+                        ['Changes a page', 'warn'],
+                        ['Can’t be undone', 'danger'],
+                      ],
+                      q: 'Press <b>Place order</b>?',
+                      body: `<div class="tg"><span class="miniel">Place order</span><span>The <b>Place order</b> button on <b>Checkout</b></span></div>`,
+                      eff: 'Sends your details to shop-a.example and places the order.',
+                    }),
+                  runbar: runbar({
+                    tone: 'wait',
+                    what: 'Press <b>Place order</b>',
+                    pos: 'Step 6 of 7',
+                    ticks: ['d', 'd', 'd', 'd', 'w', 'q', 'q'],
+                  }),
+                }),
+              }),
+          },
+          {
+            id: 3,
+            t: 'Organising: “Tidy my tabs.”',
+            n: 'It acts on the workspace, not on a page, so the page is not framed. The state lives in the sidebar chip and on the exact rows: dashed blue for “will move”, dashed red for “will close”. One batch card per kind, side by side.',
+            f: (th) =>
+              win({
+                wh: 840,
+                addr: 'GPU shopping · Space overview',
+                sb: SB(
+                  {
+                    s: 'waiting',
+                    tone: 'wait',
+                    t: '<b>Assistant</b> · waiting for you · 2 changes',
+                  },
+                  [
+                    {
+                      rows: [
+                        { t: 'Shoe sale – Shop B', s: 'B', mv: 'Shopping' },
+                        { t: 'Compare shoes', s: 'B', mv: 'Shopping' },
+                        { t: 'Cart – Shop B', s: 'B', mv: 'Shopping' },
+                        { t: 'Intel Arc review', s: 'R', mv: 'Research' },
+                        { t: 'GPU benchmark', s: 'R', mv: 'Research' },
+                        { t: 'Driver notes', s: 'R', mv: 'Research' },
+                        { t: 'New tab', s: 'G', cl: 1 },
+                        { t: 'New tab', s: 'G', cl: 1 },
+                        { t: 'Untitled', s: 'G', cl: 1 },
+                        { t: 'Mail', s: 'M' },
+                        { t: 'Calendar', s: 'M' },
+                        { t: 'Docs', s: 'M' },
+                      ],
+                    },
+                  ],
+                ),
+                page: pc({ h: 96, page: page('overview') }),
+                chat: chatBox({
+                  name: 'Tidy my tabs',
+                  msgs:
+                    U('Tidy my tabs.') +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Listed <b>all your tabs</b>',
+                        res: '14 tabs in 1 window',
+                        tag: 'Allowed',
+                        tagc: 'ai',
+                      }),
+                      step({
+                        s: 'waiting',
+                        l: 'Move <b>6 tabs</b> into <b>2 Spaces</b>',
+                      }),
+                      step({ s: 'queued', l: 'Close <b>3 tabs</b>' }),
+                    ]) +
+                    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${approval({ site: 'G', q: 'Move <b>6 tabs</b>?', badges: [['Changes your tabs', 'warn']], body: `<div class="plist" style="max-height:112px"><div class="sg"><span class="pill" style="--sp:var(--sp-blue)">→ Shopping · 3</span></div><div class="sg"><span class="pill" style="--sp:var(--sp-violet)">→ Research · 3</span></div></div><div class="eff">Shoe sale, Compare shoes, Cart; Intel Arc review, GPU benchmark, Driver notes</div>`, norest: true, eff: 'Tabs stay open. You can move them back.', dn: 'It waits.' })}${approval({ risk: 'risky', site: 'G', badges: [['Closes tabs', 'warn']], q: 'Close <b>3 tabs</b>?', body: `<div class="eff">New tab, New tab, Untitled</div>`, eff: 'They go to Recently closed. Reopen with Ctrl+Shift+T.', dn: 'Closing always asks.' })}</div>`,
+                  runbar: runbar({
+                    tone: 'wait',
+                    what: 'Two changes to your tabs',
+                    pos: 'Step 2 of 3',
+                    ticks: ['d', 'w', 'q'],
+                  }),
+                }),
+              }),
+          },
+          {
+            id: 4,
+            t: 'Blocked: a sign-in page',
+            n: 'The screenshot asked first and was allowed. The password field is refused: red marker on the field, red row, reason in plain words in the same place as any action, and the run says “Stuck” with the way forward.',
+            f: (th) =>
+              win({
+                wh: 740,
+                addr: 'shop-a.example/sign-in',
+                sb: SB(
+                  {
+                    s: 'blocked',
+                    tone: 'stuck',
+                    t: '<b>Assistant</b> is stuck · needs you',
+                  },
+                  [
+                    {
+                      name: '🛒 Shopping',
+                      c: 'teal',
+                      rows: [
+                        { t: 'Sign in – Shop A', s: 'A', a: 1, w: 'stuck' },
+                      ],
+                    },
+                  ],
+                ),
+                page: pc({
+                  h: 236,
+                  page: page('signin'),
+                  frame: 'stuck',
+                  marker: mk({
+                    x: 22,
+                    y: 134,
+                    w: 300,
+                    h: 26,
+                    l: 'Password · not typed',
+                    i: 'shield',
+                    c: 'stuck',
+                    below: true,
+                  }),
+                  pill: pillrun({
+                    tone: 'stuck',
+                    what: 'Needs you to sign in',
+                    pos: '3/5',
+                  }),
+                }),
+                chat: chatBox({
+                  name: 'Check my orders',
+                  msgs:
+                    U('Log in to Shop A and check my orders.') +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Looked at <b>this page</b>',
+                        res: 'A sign-in form: email and password',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Took a screenshot of <b>Sign in</b>',
+                        thumb: true,
+                        site: 'A',
+                        tag: 'Allowed',
+                        tagc: 'ai',
+                      }),
+                      step({
+                        s: 'blocked',
+                        l: 'Typing in <b>Password</b>',
+                        res: 'Not done. I never type into password fields. Sign in yourself, then tell me to carry on.',
+                        bad: true,
+                        site: 'A',
+                      }),
+                      step({ s: 'queued', nd: 1, l: 'Open <b>My orders</b>' }),
+                    ]),
+                  runbar: runbar({
+                    tone: 'stuck',
+                    what: 'Can’t type in password fields. <b>You</b> sign in, then say “continue”',
+                    pos: 'Step 3 of 5',
+                    ticks: ['d', 'd', 'x', 'q', 'q'],
+                    stop: false,
+                  }),
+                }),
+              }),
+          },
+          {
+            id: 5,
+            t: 'Making things: save a page, propose a skill',
+            n: 'Writes to the app’s own store speak in the chat and the sidebar, not on the page (the page is only the source). The skill card shows the full text, and says it asks again because pages were read in this reply.',
+            f: (th) =>
+              win({
+                wh: 830,
+                addr: 'shop-a.example/graphics-cards/rtx-5070',
+                sb: SB(
+                  {
+                    s: 'waiting',
+                    tone: 'wait',
+                    t: '<b>Assistant</b> · waiting for you',
+                  },
+                  [
+                    {
+                      name: '🛒 GPU shopping',
+                      c: 'blue',
+                      rows: [
+                        { t: 'RTX 5070 – Shop A', s: 'A', a: 1 },
+                        { t: 'GPU price comparison', s: 'G', by: 1, w: 'done' },
+                      ],
+                    },
+                  ],
+                ),
+                page: pc({ h: 150, page: page('shop') }),
+                chat: chatBox({
+                  name: 'Save and make a skill',
+                  msgs:
+                    U('Save this page and make a skill for comparing prices.') +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Read <b>this page</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Saved the page as artifact <b>“GPU price comparison”</b>',
+                        res: 'In 🛒 GPU shopping',
+                        tag: 'Allowed',
+                        tagc: 'ai',
+                        site: 'G',
+                      }),
+                      step({
+                        s: 'waiting',
+                        l: 'Make the skill <b>“Compare prices”</b>',
+                        res: 'Full text below. Read it before you allow.',
+                      }),
+                    ]) +
+                    approval({
+                      site: 'G',
+                      badges: [
+                        ['Makes a skill', 'ai'],
+                        ['Asks again: it read web pages', 'warn'],
+                      ],
+                      q: 'Make the skill <b>“Compare prices”</b>?',
+                      body: `<div class="skilltext">When asked to compare prices:\n1. List the pages in this Space.\n2. Read each page and note price,\n   stock and delivery.\n3. Put the results in a table sorted\n   by total price.\n4. Say which one you would pick.</div><div style="font-size:12px;color:var(--c-text-2)">Full text · 14 lines</div>`,
+                      eff: 'Runs only when you ask for it.',
+                      norest: true,
+                    }),
+                  runbar: runbar({
+                    tone: 'wait',
+                    what: 'Make the skill “Compare prices”',
+                    pos: 'Step 3 of 3',
+                    ticks: ['d', 'd', 'w'],
+                  }),
+                }),
+              }),
+          },
+          {
+            id: 6,
+            t: 'Interrupted: Stop in the middle of step 4 of 7',
+            n: 'The cursor is gone. Everything it did stays visible; the step that was running says exactly what was half-done; the rest is listed as “not done”. The pill stays, as “Stopped”, until dismissed. Continue is the one visible action.',
+            f: (th) =>
+              win({
+                wh: 740,
+                addr: 'shop-a.example/checkout',
+                sb: SB(null, [
+                  {
+                    name: '🛒 Shopping',
+                    c: 'teal',
+                    rows: [{ t: 'Checkout – Shop A', s: 'A', a: 1 }],
+                  },
+                ]),
+                page: pc({
+                  h: 236,
+                  page: page('form', {
+                    f: ['Alex Tracy', '12 Elm Street, Leeds', '', '', ''],
+                  }),
+                  marker: mk({
+                    x: 22,
+                    y: 128,
+                    w: 300,
+                    h: 26,
+                    l: 'Last typed · Address',
+                    i: 'check',
+                    c: 'after',
+                    r: true,
+                  }),
+                  pill: pillrun({ tone: 'idle', what: 'Step 4 of 7' }),
+                }),
+                chat: chatBox({
+                  name: 'Fill in my details',
+                  msgs:
+                    U('Fill in my details on this form.') +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Looked at <b>this page</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Typed <b>Alex Tracy</b> in <b>Full name</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Typed <b>12 Elm Street, Leeds</b> in <b>Address</b>',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'stopped',
+                        l: 'Typing in <b>City</b>',
+                        res: 'Stopped by you. Nothing was submitted.',
+                        site: 'A',
+                      }),
+                      step({
+                        s: 'queued',
+                        nd: 1,
+                        l: 'Type <b>Postcode</b> · not done',
+                      }),
+                      step({
+                        s: 'queued',
+                        nd: 1,
+                        l: 'Choose <b>Country</b> · not done',
+                      }),
+                      step({
+                        s: 'queued',
+                        nd: 1,
+                        l: 'Press <b>Submit</b> · not done',
+                      }),
+                    ]),
+                  runbar: runbar({
+                    tone: 'idle',
+                    word: 'Stopped by you',
+                    what: 'step 4 of 7 · 3 not done · nothing was submitted',
+                    ticks: ['d', 'd', 'd', 'x', 'q', 'q', 'q'],
+                    stop: false,
+                    extra: `<button class="btn primary sm">Continue</button>`,
+                  }),
+                }),
+              }),
+          },
+          {
+            id: 7,
+            t: 'Page only: working in the background',
+            n: 'No chat on screen. The edge glow, the pill, the marker and the assistant cursor are the whole interface, plus the dot in the strip. Hover or focus the pill (shown open here) for the last three steps.',
+            f: (th) =>
+              win({
+                wh: 560,
+                strip: 1,
+                addr: 'shop-a.example/graphics-cards/rtx-5070',
+                sb: `<div class="sb" style="padding:8px 0;align-items:center;gap:6px"><div style="position:relative;width:36px;height:34px;display:grid;place-items:center">${fav('A')}<span class="dot" style="position:absolute;right:3px;top:4px;box-shadow:0 0 0 2px var(--c-frame)"></span></div><div style="position:relative;width:36px;height:34px;display:grid;place-items:center">${fav('B')}</div></div>`,
+                page: pc({
+                  page: page('shop'),
+                  frame: '',
+                  marker: mk({
+                    x: 190,
+                    y: 152,
+                    w: 120,
+                    h: 26,
+                    l: 'Click · Add to cart',
+                    i: 'cursor',
+                  }),
+                  cur: cur({ x: 262, y: 168, mode: 'click', tag: 'Clicking' }),
+                  pill: pillrun({ what: 'Clicking Add to cart', pos: '3/6' }),
+                  extra: `<div class="pop" style="top:34px;left:calc(50% - 40px);width:320px;padding:6px;z-index:8">${steps([step({ s: 'done', l: 'Read <b>Shop B</b>', site: 'B' }), step({ s: 'done', l: 'Looked at <b>this page</b>', site: 'A' }), step({ s: 'running', l: 'Clicking <b>Add to cart</b>', site: 'A' })])}</div>`,
+                }),
+              }),
+          },
+          {
+            id: '7b',
+            t: 'Page only: waiting for you (approval on the popup layer)',
+            n: 'With no chat, the approval card is drawn as a popup above the page, anchored to the bottom edge, so it never covers the element it is about to act on. Same card, same keys.',
+            f: (th) =>
+              win({
+                wh: 560,
+                strip: 1,
+                addr: 'shop-a.example/checkout',
+                sb: `<div class="sb" style="padding:8px 0;align-items:center;gap:6px"><div style="position:relative;width:36px;height:34px;display:grid;place-items:center">${fav('A')}<span class="dot wait" style="position:absolute;right:3px;top:4px;box-shadow:0 0 0 2px var(--c-frame)"></span></div></div>`,
+                page: pc({
+                  page: page('form', {
+                    f: [
+                      'Alex Tracy',
+                      '12 Elm Street, Leeds',
+                      'Leeds',
+                      'LS1 4AB',
+                      'United Kingdom',
+                    ],
+                  }),
+                  frame: 'wait',
+                  marker: mk({
+                    x: 340,
+                    y: 180,
+                    w: 140,
+                    h: 26,
+                    l: 'Press · Place order',
+                    i: 'warn',
+                    c: 'warn',
+                    side: true,
+                  }),
+                  cur: cur({
+                    x: 440,
+                    y: 196,
+                    mode: 'wait',
+                    tag: 'Waiting for you',
+                  }),
+                  pill: pillrun({
+                    tone: 'wait',
+                    what: 'Press Place order',
+                    pos: '6/7',
+                  }),
+                  extra: `<div class="pop" style="left:50%;transform:translateX(-50%);bottom:10px;width:min(520px,92%);z-index:8">${approval(
+                    {
+                      risk: 'risky',
+                      site: 'A',
+                      badges: [
+                        ['Changes a page', 'warn'],
+                        ['Can’t be undone', 'danger'],
+                      ],
+                      q: 'Press <b>Place order</b>?',
+                      eff: 'Sends your details to shop-a.example and places the order.',
+                    },
+                  )}</div>`,
+                }),
+              }),
+          },
+          {
+            id: 8,
+            t: 'Chat only: which page, without the page',
+            n: 'The run bar names the page it is acting on, with a thumbnail on hover; each step carries the site chip. The sidebar shows the chat list with the working chat marked.',
+            f: (th) =>
+              win({
+                wh: 560,
+                addr: 'Compare GPU prices',
+                sb: `<div class="sb"><div class="hd">Chats</div><div class="trow active">${ic('chat')}<span class="tt">Compare GPU prices</span><span class="dot"></span></div><div class="trow">${ic('chat')}<span class="tt">Build a PC</span></div><div class="trow">${ic('chat')}<span class="tt">Tidy my tabs</span></div></div>`,
+                chat: chatBox({
+                  name: 'Compare GPU prices',
+                  ctx: `<span style="margin-left:auto;font-weight:400;color:var(--c-text-2)">Chat only</span>`,
+                  msgs:
+                    U('Compare prices for this GPU.') +
+                    `<div style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--c-border);border-radius:10px;background:var(--c-surface-2)"><span class="thumb" style="width:92px;height:58px">${page('shop').replace('class="fp"', 'class="fp" style="transform:scale(.14);transform-origin:0 0;width:660px;height:420px;padding-top:0"')}</span><div style="font-size:12px;color:var(--c-text-2);line-height:1.4"><b style="color:var(--c-text);font-size:13px">Working on</b><br>${chip('D')} <span class="pill" style="--sp:var(--sp-blue)">🛒 GPU shopping</span><br>Screenshot is this session only</div></div>` +
+                    steps([
+                      step({
+                        s: 'done',
+                        l: 'Read <b>Shop B</b>',
+                        res: '£579 · in stock',
+                        site: 'B',
+                      }),
+                      step({
+                        s: 'done',
+                        l: 'Read <b>Shop C</b>',
+                        res: '£629 · 2 left',
+                        site: 'C',
+                      }),
+                      step({
+                        s: 'running',
+                        l: 'Reading <b>Shop D</b>',
+                        site: 'D',
+                      }),
+                      step({ s: 'queued', l: 'Write the comparison' }),
+                    ]),
+                  runbar: runbar({
+                    what: 'Reading <b>Shop D</b> · shop-d.example',
+                    pos: 'Step 5 of 6',
+                    ticks: ['d', 'd', 'd', 'd', 'c', 'q'],
+                  }),
+                }),
+              }),
+          },
+        ];
+        $('scenarios').innerHTML = SCEN.map(
+          (s) =>
+            `<h3 style="margin:28px 0 2px">Scenario ${s.id} · ${s.t}</h3><p class="note">${s.n}</p>` +
+            pair(both(s.f), true),
+        ).join('');
+
+        /* ---------- 11 settings-worthy ---------- */
+        $('settings').innerHTML = pair(
+          both(
+            (
+              t,
+            ) => `<table class="tbl"><thead><tr><th>Setting (suggested names)</th><th>Options</th><th>Default</th></tr></thead><tbody>
+<tr><td><b>Show the assistant's work on pages</b></td><td>Frame and marker · Frame only · Off</td><td>Frame and marker</td></tr>
+<tr><td><b>Keep the “Finished” pill until dismissed</b></td><td>On · Off (hides the pill when the run ends; the chat and sidebar still show it)</td><td>On</td></tr>
+<tr><td><b>Screenshot thumbnails in the chat</b></td><td>On · Off (rows say “Looked at a screenshot”)</td><td>On</td></tr>
+<tr><td><b>Step detail</b></td><td>Summary (groups only) · Steps · Steps and results</td><td>Steps and results</td></tr>
+<tr><td><b>Expand groups while running</b></td><td>On · Off</td><td>Off</td></tr>
+<tr><td><b>Sidebar markers</b></td><td>Dots and tags · Dots only</td><td>Dots and tags</td></tr>
+<tr><td><b>Sound or system notification when it needs you</b> (suggested)</td><td>Off · Only when waiting · Always</td><td>Off</td></tr>
+</tbody></table><p class="note" style="margin:10px 0 0">Not settings: the state words, the amber waiting state, risk badges, Stop, and the approval card contents. Those are always on.</p>`,
+          ),
+        );
+
+        /* ---------- controls ---------- */
+        $('view').addEventListener('change', (e) =>
+          document.body.setAttribute('data-view', e.target.value),
+        );
+        $('rm').addEventListener('change', (e) =>
+          document.body.classList.toggle('rm', e.target.checked),
+        );
+      })();
+    </script>
+  </body>
+</html>
