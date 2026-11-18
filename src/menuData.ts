@@ -538,6 +538,38 @@ export function parseChatChoice(id: string): ChatChoice | null {
   };
 }
 
+// ---- A step of the assistant's work --------------------------------------------------
+
+export type StepChoice = { action: 'details' } | { action: 'retry' };
+
+// Right-click on a step in the chat. "Try again" is greyed unless it can be used.
+export function stepMenuItems(hints: {
+  retry: boolean;
+  open: boolean;
+}): MenuItem[] {
+  return [
+    {
+      type: 'item',
+      id: 'step.details',
+      label: hints.open ? 'Hide details' : 'Show details',
+      icon: 'eye',
+    },
+    {
+      type: 'item',
+      id: 'step.retry',
+      label: 'Try again',
+      icon: 'retry',
+      disabled: !hints.retry,
+    },
+  ];
+}
+
+export function parseStepChoice(id: string): StepChoice | null {
+  if (id === 'step.details') return { action: 'details' };
+  if (id === 'step.retry') return { action: 'retry' };
+  return null;
+}
+
 // ---- Skills ------------------------------------------------------------------------
 
 export type SkillChoice =

@@ -764,6 +764,20 @@ export interface BrowserApi {
     content: string,
     revision: number,
   ) => Promise<ArtifactWriteResult>;
+  // A step of the assistant's work in the chat: its right-click menu (what it can do
+  // depends on the hints), "Show details" chosen from it, and "Try again".
+  showStepMenu: (
+    chatId: number,
+    messageId: number,
+    partId: number,
+    x: number,
+    y: number,
+    hints: { retry: boolean; open: boolean },
+  ) => void;
+  onStepToggle: (
+    callback: (messageId: number, partId: number) => void,
+  ) => () => void;
+  chatRetryStep: (chatId: number, messageId: number, partId: number) => void;
   // The popup layer (see PopupApp.tsx): the page asks for it to show a menu at a
   // place in the window, and reports what was chosen. Only that page uses these.
   onPopupShow: (

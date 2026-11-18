@@ -492,6 +492,18 @@ const browserApi: BrowserApi = {
     };
   },
   showTabMenu: (id, x, y) => ipcRenderer.send('tab:menu', id, x, y),
+  showStepMenu: (chatId, messageId, partId, x, y, hints) =>
+    ipcRenderer.send('step:menu', chatId, messageId, partId, x, y, hints),
+  onStepToggle: (callback) => {
+    const listener = (_event: unknown, messageId: number, partId: number) =>
+      callback(messageId, partId);
+    ipcRenderer.on('step:toggle', listener);
+    return () => {
+      ipcRenderer.removeListener('step:toggle', listener);
+    };
+  },
+  chatRetryStep: (chatId, messageId, partId) =>
+    ipcRenderer.send('chat:retry-step', chatId, messageId, partId),
   onPopupShow: (callback) => {
     const listener = (_event: unknown, menu: Parameters<typeof callback>[0]) =>
       callback(menu);

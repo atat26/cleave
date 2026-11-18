@@ -9,6 +9,8 @@ import { Markdown } from './MarkdownView';
 import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
+import { blocksOf, stepView } from './runModel';
+import { StepGroup, StepRow } from './StepList';
 import type {
   ArtifactInfo,
   ChatMessage,
@@ -275,12 +277,19 @@ function ToolBlock({
   part,
   chatId,
   messageId,
+  messageStatus,
+  tabs,
+  isNewestReply,
+  busy,
 }: {
   part: ToolPart;
   chatId: number;
   messageId: number;
+  messageStatus: ChatMessage['status'];
+  tabs: TabInfo[];
+  isNewestReply: boolean;
+  busy: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const decide = (decision: 'allow' | 'allow-rest' | 'deny') =>
     window.browserApi.chatDecide(chatId, messageId, part.id, decision);
 
@@ -340,65 +349,14 @@ function ToolBlock({
   }
 
   return (
-    <div className="tool" data-status={part.status}>
-      <button
-        type="button"
-        className="tool-summary"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        title={open ? 'Hide what was called' : 'Show what was called'}
-      >
-        <span className="st">
-          <Icon name={STATUS_ICON[part.status]} />
-        </span>
-        <span className="truncate grow" style={{ textAlign: 'left' }}>
-          {part.label}
-        </span>
-        <Icon name={open ? 'chev-u' : 'chev-d'} />
-      </button>
-      {open && (
-        <dl className="tool-detail">
-          <dt>Called</dt>
-          <dd>{part.name || '(unknown)'}</dd>
-          <dt>Arguments</dt>
-          <dd style={{ whiteSpace: 'pre-wrap' }}>
-            {showArguments(part.arguments)}
-          </dd>
-          {part.details !== '' && (
-            <>
-              <dt>Found</dt>
-              <dd
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: 220,
-                  overflowY: 'auto',
-                }}
-              >
-                {part.details}
-              </dd>
-            </>
-          )}
-          {part.ask !== '' && (
-            <>
-              <dt>Asked</dt>
-              <dd>{part.ask}</dd>
-            </>
-          )}
-          <dt>Result</dt>
-          <dd>
-            {part.status === 'running'
-              ? 'still running'
-              : part.outcome || (part.status === 'ok' ? 'done' : 'failed')}
-          </dd>
-          {part.callId !== '' && (
-            <>
-              <dt>Call id</dt>
-              <dd style={{ color: 'var(--c-text-3)' }}>{part.callId}</dd>
-            </>
-          )}
-        </dl>
-      )}
-    </div>
+    <StepRow
+      step={stepView(part, messageStatus)}
+      chatId={chatId}
+      messageId={messageId}
+      tabs={tabs}
+      isNewestReply={isNewestReply}
+      busy={busy}
+    />
   );
 }
 
@@ -667,15 +625,31 @@ function MessageView({
       style={{ margin: '10px 0' }}
     >
       {/* Everything that happened, in the order it happened. */}
-      {message.parts.map((part, i) => {
+      {blocksOf(message.parts).map((block) => {
+        if (block.type === 'group') {
+          const groupParts = block.indexes.map(
+            (index) => message.parts[index] as ToolPart,
+          );
+          return (
+            <StepGroup
+              key={`g${block.indexes[0]}`}
+              parts={groupParts}
+              message={message}
+              chatId={chatId}
+              tabs={tabs}
+              isNewestReply={isLast}
+              busy={busy}
+            />
+          );
+        }
+        const i = block.index;
+        const part = message.parts[i];
         const last = i === message.parts.length - 1;
         // The part being worked on right now gets a spinner beside it.
         const active =
           streaming &&
           last &&
-          (part.type === 'thinking' ||
-            part.type === 'text' ||
-            (part.type === 'tool' && part.status === 'running'));
+          (part.type === 'thinking' || part.type === 'text');
         const wrap = (node: ReactNode) =>
           active ? <ActiveRow key={i}>{node}</ActiveRow> : node;
         // Nothing to show for blank text (older chats may have some): no gap.
@@ -708,6 +682,10 @@ function MessageView({
               part={part}
               chatId={chatId}
               messageId={message.id}
+              messageStatus={message.status}
+              tabs={tabs}
+              isNewestReply={isLast}
+              busy={busy}
             />,
           );
         }

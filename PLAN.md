@@ -36,6 +36,11 @@ order of likelihood.
 - Tools panel: four approval levels per tool, presets (Cautious, Balanced, Hands-off), search, groups. Safety refusals can never be overridden.
 - Skills: global reusable instructions with a panel, starters, import/export, "/" in the message box, the assistant using and making them (you approve the full text), and "Make a skill from this chat".
 
+**Browser-use visuals, part 1 (steps and run bar)**
+
+- The assistant's tool calls in the chat are now steps: a status icon with one of seven states (running, waiting for you, done, declined, blocked by a safety rule or limit, failed, stopped), the action with its target in bold, a result line, and the site's icon and name. Three or more page reads in a row fold into one line ("Reading 3 pages"). The raw call is behind a click, and the right-click menu has Show details and Try again; "Try again" (on a failed or cut-off step in the newest reply) asks the assistant to try the step again, in fixed words, through the normal approvals.
+- A run bar above the message box says Working, Waiting for you, Stuck, Finished or Stopped, what it is doing, a tick per step, and Stop; the finished, stopped or stuck bar stays until dismissed or the next message. The step count is shown only as "Step N" (no total) because the assistant states no plan yet. Settings it will need (step detail, group expansion) are in the settings list.
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.

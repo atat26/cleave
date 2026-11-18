@@ -191,7 +191,12 @@ export function createChatRunner(deps: RunnerDeps) {
                   chatId,
                   replyId,
                   added.partId,
-                  { ok: false, label: plan.label, outcome: plan.note },
+                  {
+                    ok: false,
+                    blocked: true,
+                    label: plan.label,
+                    outcome: plan.note,
+                  },
                 ),
               );
               changed();
@@ -276,6 +281,7 @@ export function createChatRunner(deps: RunnerDeps) {
                 added.partId,
                 {
                   ok: outcome.ok,
+                  blocked: outcome.blocked,
                   label: outcome.label,
                   outcome: outcome.note,
                   details: outcome.details,
