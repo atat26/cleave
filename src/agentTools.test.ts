@@ -739,6 +739,7 @@ test('a search asks first, shows the query, and asks as risky when it could carr
     kind: 'ask',
     text: 'Search the web for "giant pandas diet"',
     risky: false,
+    card: { text: { label: 'Search for', value: 'giant pandas diet' } },
   });
   for (const query of [
     'my email is a@b.com',
@@ -865,6 +866,7 @@ test('an address from a search result is known: it asks normally; one made up as
     kind: 'ask',
     text: 'Read the page at https://zoo.example/pandas',
     risky: false,
+    card: { destination: 'https://zoo.example/pandas' },
   });
   // The same page with something added to the address is not the one that was seen.
   const changed = tools.plan(

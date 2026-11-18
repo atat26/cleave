@@ -1340,25 +1340,6 @@ button {
   word-break: break-word;
   user-select: text;
 }
-.approval {
-  border: 1px solid var(--c-accent);
-  border-radius: var(--r-lg);
-  background: var(--c-surface);
-  padding: var(--s-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  font-size: var(--fs-sm);
-}
-.approval.risky {
-  border-color: var(--c-warn);
-  background: var(--c-warn-tint);
-}
-.approval .actions {
-  display: flex;
-  gap: var(--s-2);
-  flex-wrap: wrap;
-}
 .choices {
   display: flex;
   gap: var(--s-2);
@@ -3110,4 +3091,102 @@ button {
   .composer:has(.composer-add:focus-within) .composer-text {
     transition: margin-left 160ms ease;
   }
+}
+
+/* The approval card (StepList.tsx, approvalCard.ts). */
+.approval-card {
+  margin: 0 0 var(--s-2);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.approval-card:focus-visible {
+  box-shadow: 0 0 0 2px var(--c-focus);
+}
+.approval-card.is-risky {
+  border: 2px solid var(--c-warn-edge);
+}
+.ac-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 8px 12px 4px;
+}
+.ac-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 4px;
+}
+.ac-body {
+  display: grid;
+  gap: var(--s-2);
+  padding: 4px 12px 8px;
+}
+.ac-question {
+  overflow-wrap: anywhere;
+  line-height: var(--lh-body);
+}
+.ac-field {
+  display: grid;
+  gap: 2px;
+}
+.ac-label {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.ac-mono {
+  display: block;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.ac-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.ac-full {
+  margin: 0;
+  padding: 6px 8px;
+  max-height: 200px;
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ac-next {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.ac-foot {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--c-border);
+}
+.ac-foot .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.ac-wait {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.btn-warn-allow {
+  background: var(--c-warn-edge);
+  border-color: var(--c-warn-edge);
+  color: var(--c-surface);
 }

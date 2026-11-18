@@ -5,6 +5,8 @@
 //
 // Linked Spaces/tabs (`refs`) are reserved here and filled in by the "@" feature
 // (a later step); for now they are always empty.
+import { cleanCard } from './approvalCard.ts';
+import type { CardDetails } from './approvalCard.ts';
 import { cleanEmoji } from './emoji.ts';
 import { isWebUrl } from './model.ts';
 import { isValidModelId } from './openrouter.ts';
@@ -77,6 +79,8 @@ export type MessagePart =
       risky: boolean;
       // Stopped by a safety rule or a limit, not by a failure (shown differently).
       blocked?: boolean;
+      // The details of the approval card while the step waits for you (not saved).
+      card?: CardDetails;
     };
 
 export interface Mention extends ChatRef {
@@ -1120,6 +1124,7 @@ export function addToolPart(
     // If it needs your approval: the card's words, and whether it always asks.
     ask?: string;
     risky?: boolean;
+    card?: CardDetails;
   },
 ): { state: ChatsState; partId: number } | null {
   const message = findMessage(state, chatId, messageId);
@@ -1148,6 +1153,7 @@ export function addToolPart(
           ask: (call.ask ?? '').slice(0, 400),
           risky: call.risky === true,
           blocked: false,
+          ...(call.ask ? { card: cleanCard(call.card) } : {}),
         },
       ],
     })),
@@ -1189,7 +1195,12 @@ export function setToolStatus(
     ...m,
     parts: m.parts.map((p) =>
       p.type === 'tool' && p.id === partId
-        ? { ...p, status, outcome: outcome ?? p.outcome }
+        ? {
+            ...p,
+            status,
+            outcome: outcome ?? p.outcome,
+            card: status === 'waiting' ? p.card : undefined,
+          }
         : p,
     ),
   }));
@@ -1218,6 +1229,7 @@ export function finishToolPart(
             ...p,
             status: result.declined ? 'declined' : result.ok ? 'ok' : 'error',
             blocked: result.blocked === true,
+            card: undefined,
             label:
               result.label === undefined
                 ? p.label

@@ -502,7 +502,19 @@ export function createTabTools(
             `Only ${MAX_TAB_CHANGES - changes} more tab changes are allowed in this reply.`,
           );
         }
-        return { kind: 'ask', text: movesText(parsed.moves), risky: false };
+        return {
+          kind: 'ask',
+          text: movesText(parsed.moves),
+          risky: false,
+          card: {
+            list: parsed.moves
+              .slice(0, CARD_LINES)
+              .map((m) => `"${tabLabel(m.tab)}" → ${spaceName(m.spaceId)}`),
+            ...(parsed.moves.length > CARD_LINES
+              ? { more: parsed.moves.length - CARD_LINES }
+              : {}),
+          },
+        };
       }
       case 'close_tab':
       case 'sleep_tab':
@@ -593,6 +605,12 @@ export function createTabTools(
           text: `${note.mode === 'replace' ? 'Rewrite' : 'Add to'} the note of "${spaceName(space.id)}": ${shown}`,
           // A note is background for later chats: after web content, it always asks.
           risky: readWebContent(),
+          card: {
+            text: {
+              label: note.mode === 'replace' ? 'New note' : 'Text to add',
+              value: shown,
+            },
+          },
         };
       }
     }
@@ -613,6 +631,10 @@ export function createTabTools(
         kind: 'ask',
         text: own.kind === 'ask' ? own.text : describe(call),
         risky: true,
+        card: {
+          ...(own.kind === 'ask' ? own.card : undefined),
+          askAgain: true,
+        },
       };
     }
     return applied;

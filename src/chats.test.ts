@@ -5,6 +5,7 @@ import {
   addChoicesPart,
   addToolPart,
   finishToolPart,
+  setToolStatus,
   MAX_DETAILS,
   addRef,
   addUserMessage,
@@ -1202,4 +1203,39 @@ test('searching skips untouched chats and cuts a long match down to a snippet', 
   assert.ok(match.snippet);
   assert.ok(match.snippet.startsWith('…') && match.snippet.endsWith('…'));
   assert.ok(match.snippet.length < 130);
+});
+
+test('the details of an approval card live with the waiting step and are dropped once it is answered', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'go', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = reply.state;
+  const added = addToolPart(state, chatId, reply.id, {
+    callId: 'a',
+    name: 'type_text',
+    arguments: '{}',
+    label: 'Type',
+    ask: 'Type "hi"',
+    card: { text: { label: 'Text to type', value: 'hi' }, evil: 'x' } as never,
+  })!;
+  state = added.state;
+  const waiting = findMessage(state, chatId, reply.id)!.parts[0];
+  assert.deepEqual(waiting.type === 'tool' && waiting.card, {
+    text: { label: 'Text to type', value: 'hi' },
+  });
+  // Answered: running. The card is gone.
+  state = setToolStatus(state, chatId, reply.id, added.partId, 'running');
+  const running = findMessage(state, chatId, reply.id)!.parts[0];
+  assert.equal(running.type === 'tool' && running.card, undefined);
+  // A step that needed no approval never has one.
+  const quiet = addToolPart(state, chatId, reply.id, {
+    callId: 'b',
+    name: 'click',
+    arguments: '{}',
+    label: 'Click',
+    card: { destination: 'https://a.example' },
+  })!;
+  const part = findMessage(quiet.state, chatId, reply.id)!.parts[1];
+  assert.equal(part.type === 'tool' && part.card, undefined);
 });

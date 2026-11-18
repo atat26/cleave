@@ -462,6 +462,7 @@ export function createAgentTools(
       kind: 'ask',
       text: `Search the web for "${cleanLabel(query, 120)}"`,
       risky: searchQueryRisk(query),
+      card: { text: { label: 'Search for', value: cleanLabel(query, 120) } },
     };
   };
 
@@ -555,12 +556,14 @@ export function createAgentTools(
       );
     }
     const shown = cleanLabel(checked.url.href, 300);
+    const card = { destination: shown };
     return checked.known
-      ? { kind: 'ask', text: `Read the page at ${shown}`, risky: false }
+      ? { kind: 'ask', text: `Read the page at ${shown}`, risky: false, card }
       : {
           kind: 'ask',
           text: `Read the page at an address that did not come from your tabs or a search: ${shown}`,
           risky: true,
+          card,
         };
   };
 
@@ -602,6 +605,10 @@ export function createAgentTools(
           kind: 'ask',
           text: `${text} (I read web content in this reply)`,
           risky: true,
+          card: {
+            ...(own.kind === 'ask' ? own.card : undefined),
+            askAgain: true,
+          },
         };
       }
       return applied;

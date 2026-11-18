@@ -3,8 +3,14 @@
 // reads folded into one line, and the run bar that says at a glance whether it is
 // working, waiting for you, finished, stopped or stuck. The words and states come
 // from runModel.ts; the look is in components.css (.step, .run-bar).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import {
+  answerFor,
+  badgesFor,
+  cardMayTakeFocus,
+  nextLine,
+} from './approvalCard';
 import {
   canRetry,
   groupState,
@@ -17,7 +23,7 @@ import {
 import type { RunView, StepState, StepView, ToolPartView } from './runModel';
 import type { ChatMessage } from './chats';
 import type { TabInfo } from './types';
-import { Button, IconButton } from './ui/controls';
+import { Badge, Button, IconButton } from './ui/controls';
 import { Icon } from './ui/Icon';
 import type { IconName } from './ui/Icon';
 
@@ -397,6 +403,184 @@ export function RunBar({
           onClick={onDismiss}
         />
       )}
+    </div>
+  );
+}
+
+// ---- The approval card ----------------------------------------------------------------
+
+// The bold parts of a question are the things in quotes (a button, a tab, some text).
+function Emphasised({ text }: { text: string }) {
+  const pieces = text.split(/"([^"]+)"/);
+  return (
+    <>
+      {pieces.map((piece, i) =>
+        i % 2 === 1 ? (
+          <strong key={i}>{piece}</strong>
+        ) : (
+          <span key={i}>{piece}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+// What the assistant is asking to do, and the ways to answer. Where it happens (the
+// site), why it is risky (badges), the exact words or address involved, the tabs in a
+// batch or the full text of a skill, what happens next, and Allow / Allow the rest /
+// Don't allow. It takes the keyboard only if you are not typing; then Enter allows,
+// Shift+Enter allows the rest, Esc does not allow, and a risky one needs Ctrl+Enter.
+export function ApprovalCard({
+  part,
+  chatId,
+  messageId,
+  tabs,
+}: {
+  part: ToolPartView;
+  chatId: number;
+  messageId: number;
+  tabs: TabInfo[];
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [focused, setFocused] = useState(false);
+  const card = part.card;
+  const site = stepSite(part, tabs);
+  const badges = badgesFor(part.name, part.risky, card);
+  const decide = (decision: 'allow' | 'allow-rest' | 'deny') =>
+    window.browserApi.chatDecide(chatId, messageId, part.id, decision);
+
+  // A new card asks for the keyboard, unless you are in the middle of typing.
+  useEffect(() => {
+    if (cardMayTakeFocus(document.activeElement as HTMLElement | null)) {
+      ref.current?.focus({ preventScroll: true });
+    }
+    ref.current?.scrollIntoView({ block: 'nearest' });
+  }, []);
+
+  // With a list or a full text under it, the question is just the first line.
+  const lines = part.ask.split('\n');
+  const question = card?.list || card?.full ? lines[0] : part.ask;
+  const fullLines = card?.full ? card.full.value.split('\n').length : 0;
+
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      role="group"
+      aria-label="Approval needed"
+      className={part.risky ? 'approval-card is-risky' : 'approval-card'}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocused(false);
+        }
+      }}
+      onKeyDown={(event) => {
+        const answer = answerFor(event, part.risky);
+        if (answer === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        decide(answer);
+      }}
+    >
+      <div className="ac-head">
+        <StatusIcon state="waiting" />
+        <strong>Needs your OK</strong>
+        <span className="grow" />
+        {site && <SiteChip host={site.host} favicon={site.favicon} />}
+      </div>
+      {badges.length > 0 && (
+        <div className="ac-badges">
+          {badges.map((badge, i) => (
+            <Badge
+              key={badge}
+              tone={part.risky && i === 0 ? 'warn' : 'neutral'}
+            >
+              {badge}
+            </Badge>
+          ))}
+        </div>
+      )}
+      <div className="ac-body">
+        <div className="ac-question">
+          <Emphasised text={question} />
+        </div>
+        {card?.text && (
+          <div className="ac-field">
+            <span className="ac-label">{card.text.label}</span>
+            <code className="ac-mono">{card.text.value}</code>
+          </div>
+        )}
+        {card?.destination && (
+          <div className="ac-field">
+            <span className="ac-label">Goes to</span>
+            <code className="ac-mono">{card.destination}</code>
+          </div>
+        )}
+        {card?.list && (
+          <ul className="ac-list">
+            {card.list.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+            {card.more ? (
+              <li className="muted">…and {card.more} more</li>
+            ) : null}
+          </ul>
+        )}
+        {card?.full && (
+          <div className="ac-field">
+            <span className="ac-label">
+              {card.full.label} · {fullLines} line{fullLines === 1 ? '' : 's'}
+            </span>
+            <pre className="ac-full">{card.full.value}</pre>
+          </div>
+        )}
+        <div className="ac-next">{nextLine(part.name)}</div>
+      </div>
+      <div className="ac-foot">
+        <div className="actions">
+          <Button
+            variant="primary"
+            size="sm"
+            className={part.risky ? 'btn-warn-allow' : undefined}
+            onClick={() => decide('allow')}
+            title={part.risky ? 'Allow (Ctrl+Enter)' : 'Allow (Enter)'}
+          >
+            Allow
+          </Button>
+          {!part.risky && (
+            <Button
+              size="sm"
+              onClick={() => decide('allow-rest')}
+              title="Go ahead with the rest of this reply without asking again, except for risky actions (Shift+Enter)"
+            >
+              Allow the rest of this reply
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={() => decide('deny')}
+            title="Don't allow (Esc)"
+          >
+            Don't allow
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => window.browserApi.chatStop(chatId)}
+            title="Stop this reply"
+          >
+            Stop
+          </Button>
+        </div>
+        <div className="ac-wait">
+          If you do nothing, it waits. Nothing happens until you answer.
+          {focused &&
+            (part.risky
+              ? ' Ctrl+Enter allows, Esc does not.'
+              : ' Enter allows, Shift+Enter allows the rest, Esc does not.')}
+        </div>
+      </div>
     </div>
   );
 }

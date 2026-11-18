@@ -176,6 +176,7 @@ export function createChatRunner(deps: RunnerDeps) {
             label: plan.kind === 'refuse' ? plan.label : tools.describe(call),
             ask: mustAsk && plan.kind === 'ask' ? plan.text : undefined,
             risky: plan.kind === 'ask' ? plan.risky : false,
+            card: plan.kind === 'ask' ? plan.card : undefined,
           });
           if (added) {
             deps.setState(added.state);
