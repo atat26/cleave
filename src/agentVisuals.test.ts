@@ -16,6 +16,8 @@ const run = (over: Partial<RunView> = {}): RunView => ({
   target: 'Add to cart',
   ticks: ['done', 'running'],
   stepNumber: 2,
+  partId: 2,
+  state: 'running',
   tabId: 7,
   touchesPage: true,
   reading: false,
@@ -122,4 +124,25 @@ test('the glow covers the page; the pill is a strip at the top, so the page belo
   const narrow = overlayBounds('pill', { x: 0, y: 0, width: 300, height: 20 });
   assert.equal(narrow.width, 276);
   assert.equal(narrow.height, 20);
+});
+
+test('the marker comes with the glow only, and only when the setting asks for it', () => {
+  const marker = {
+    rect: { x: 10, y: 40, width: 120, height: 30 },
+    tone: 'acting' as const,
+    label: 'Clicking · Add to cart',
+    placement: 'above' as const,
+  };
+  assert.deepEqual(overlayFor(input({ marker }))?.marker, marker);
+  // No marker given: none.
+  assert.equal(overlayFor(input())?.marker, null);
+  // "Glow only": the marker is not drawn.
+  const glowOnly = {
+    ...defaultAgentVisualSettings(),
+    showWork: 'glow' as const,
+  };
+  assert.equal(overlayFor(input({ marker, settings: glowOnly }))?.marker, null);
+  // An ended run is the pill alone: no marker.
+  const ended = run({ word: 'finished', touchesPage: false, tabId: null });
+  assert.equal(overlayFor(input({ run: ended, marker }))?.marker, null);
 });

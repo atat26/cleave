@@ -3276,3 +3276,67 @@ button {
 .ao-pill .st[data-state='running'] .i {
   animation: spin 1s linear infinite;
 }
+
+/* The marker: a ring on the element the assistant is acting on (OverlayApp.tsx, marker.ts). */
+.ao-marker {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--mk);
+  border-radius: 7px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mk) 22%, transparent);
+  pointer-events: none;
+  transition:
+    left 220ms var(--ease-out),
+    top 220ms var(--ease-out),
+    width 220ms var(--ease-out),
+    height 220ms var(--ease-out);
+  --mk: var(--c-accent);
+}
+.ao-marker-waiting {
+  --mk: var(--c-warn-edge);
+}
+.ao-marker-blocked {
+  --mk: var(--c-danger);
+}
+.ao-marker-done {
+  --mk: var(--c-text-3);
+  box-shadow: none;
+}
+.ao-marker-label {
+  position: absolute;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--mk);
+  color: var(--c-on-accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ao-marker-waiting .ao-marker-label {
+  color: #1b1200;
+}
+.ao-marker-done .ao-marker-label {
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  border: 1px solid var(--mk);
+}
+.ao-marker-label.is-above {
+  left: -2px;
+  bottom: calc(100% + 6px);
+}
+.ao-marker-label.is-below {
+  left: -2px;
+  top: calc(100% + 6px);
+}
+.ao-marker-label.is-inside {
+  left: 4px;
+  top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ao-marker {
+    transition: none;
+  }
+}

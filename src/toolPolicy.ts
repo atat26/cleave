@@ -453,9 +453,14 @@ export function applyPolicy(
         'The user has turned this tool off, so it cannot be used. Do not try it again. Tell them briefly, and use offer_choices to suggest another way to go on.',
     };
   }
-  if (level === 'always') return { kind: 'auto' };
+  // (An action keeps the element it is about, for the marker on the page.)
+  const going: Plan =
+    plan.kind === 'ask' && plan.target
+      ? { kind: 'auto', target: plan.target }
+      : { kind: 'auto' };
+  if (level === 'always') return going;
   if (level === 'if-safe') {
-    return plan.kind === 'ask' && plan.risky ? plan : { kind: 'auto' };
+    return plan.kind === 'ask' && plan.risky ? plan : going;
   }
   // ask
   return plan.kind === 'auto'

@@ -10,6 +10,7 @@
 //     network request. It never reaches the UI.
 //   - Model replies are only ever sent on as plain text; nothing here turns them
 //     into markup.
+import type { StepTarget } from './marker';
 import { clipboard, ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { createAgentTools } from './agentTools';
@@ -184,6 +185,13 @@ export function createChatService(options: {
   onMeta(): void;
   // A reply changed (as the window is told about it): what the page overlay follows.
   onReplyChanged?(chatId: number, message: chats.ChatMessage): void;
+  // A step acts on an element of a page (see chatRunner.ts).
+  onStepTarget?(
+    chatId: number,
+    messageId: number,
+    partId: number,
+    target: StepTarget,
+  ): void;
   openSettings(): void;
   // Show a menu in the popup layer at a place in the window; `choose` gets the
   // id of the item picked. The keyboard goes back to `opener` afterwards.
@@ -305,6 +313,8 @@ export function createChatService(options: {
     },
     now: Date.now,
     onMessage: markDirty,
+    onStepTarget: (chatId, messageId, partId, target) =>
+      options.onStepTarget?.(chatId, messageId, partId, target),
     onRunningChange: () => {
       flush();
       options.onMeta();

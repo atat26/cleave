@@ -8,6 +8,7 @@ import {
 } from './agentActions.ts';
 import type { ActionContext } from './agentActions.ts';
 import type { OutlineElement } from './pageOutline.ts';
+import { applyPolicy } from './toolPolicy.ts';
 
 const control = (
   id: number,
@@ -67,6 +68,8 @@ test('an ordinary click asks first, in words written from the real control', () 
     kind: 'ask',
     text: 'Click the button "Search" on shop.example',
     risky: false,
+    // The element it acts on, for the marker on the page.
+    target: { tabId: 1, backendNodeId: 101, name: 'Search' },
   });
 });
 
@@ -108,6 +111,7 @@ test('typing shows exactly what will be typed, and never goes into sensitive fie
     risky: false,
     // The exact words are also shown apart from the question, in a box.
     card: { text: { label: 'Text to type', value: 'me@example.com' } },
+    target: { tabId: 1, backendNodeId: 102, name: 'Email' },
   });
   assert.equal(
     plan('type_text', { tab: 1, element: 3, text: 'x' }).kind,
@@ -262,4 +266,24 @@ test('only plain web addresses open in a new tab, and only so many per reply', (
     ).kind,
     'refuse',
   );
+});
+
+test('an action keeps the element it is about even when the tool is set to go ahead', () => {
+  const asked = plan('click', { tab: 1, element: 1 });
+  assert.ok(asked.kind === 'ask');
+  const always = applyPolicy(asked, 'always', 'Click');
+  assert.deepEqual(always, {
+    kind: 'auto',
+    target: { tabId: 1, backendNodeId: 101, name: 'Search' },
+  });
+  assert.deepEqual(applyPolicy(asked, 'if-safe', 'Click'), always);
+  // A risky one still asks, and still names its element.
+  const risky = plan('click', { tab: 1, element: 6 });
+  assert.ok(risky.kind === 'ask');
+  assert.equal(applyPolicy(risky, 'if-safe', 'Click'), risky);
+  assert.ok(risky.target);
+  // Actions with no element (scrolling, a key) have no target.
+  assert.deepEqual(applyPolicy({ kind: 'auto' }, 'always', 'x'), {
+    kind: 'auto',
+  });
 });
