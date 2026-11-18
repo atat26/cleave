@@ -5,6 +5,7 @@
 // the web page. The look is in components.css (.ao).
 import { useEffect, useState } from 'react';
 import type { OverlayState } from './agentVisuals';
+import type { MarkerView } from './marker';
 import { RUN_WORDS } from './runModel';
 import type { StepState } from './runModel';
 import { StatusIcon } from './StepList';
@@ -17,6 +18,27 @@ const TONE_ICON: Record<OverlayState['tone'], StepState> = {
   finished: 'done',
   stopped: 'stopped',
 };
+
+// The ring on the element the assistant is acting on, with a short label.
+function Marker({ marker }: { marker: MarkerView }) {
+  const { rect } = marker;
+  return (
+    <div
+      className={`ao-marker ao-marker-${marker.tone}`}
+      style={{
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }}
+      aria-hidden="true"
+    >
+      <span className={`ao-marker-label is-${marker.placement}`}>
+        {marker.label}
+      </span>
+    </div>
+  );
+}
 
 export function OverlayApp() {
   const [state, setState] = useState<OverlayState | null>(null);
@@ -37,6 +59,7 @@ export function OverlayApp() {
       className={`ao ao-${state.tone}${state.soft ? ' is-soft' : ''}${framed ? ' is-framed' : ''}`}
     >
       {framed && <div className="ao-glow" aria-hidden="true" />}
+      {framed && state.marker && <Marker marker={state.marker} />}
       <div className="ao-pill" role="status">
         <StatusIcon state={TONE_ICON[state.tone]} />
         <span className="ao-word">{RUN_WORDS[state.word]}</span>

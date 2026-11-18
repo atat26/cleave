@@ -12,6 +12,8 @@
 // It takes a tiny `Cdp` object (send a command, get the answer), not Electron, so
 // it can be tested with a fake page. Everything the page sends back is untrusted
 // and is only ever checked for shape.
+import { rectFromQuads } from './marker.ts';
+import type { Rect } from './marker.ts';
 import { looksSensitive } from './pageOutline.ts';
 
 export interface Cdp {
@@ -261,6 +263,23 @@ async function reachable(
 }
 
 // ---- The actions ---------------------------------------------------------------------------------
+
+// Where an element is on the page, in the page's own pixels, after scrolling it into view (as
+// a click would). Null if it cannot be found or has no visible box. Changes nothing else.
+export async function locateControl(
+  cdp: Cdp,
+  backendNodeId: number,
+): Promise<Rect | null> {
+  try {
+    await cdp.send('DOM.enable');
+    await cdp.send('DOM.scrollIntoViewIfNeeded', { backendNodeId });
+    return rectFromQuads(
+      await cdp.send('DOM.getContentQuads', { backendNodeId }),
+    );
+  } catch {
+    return null;
+  }
+}
 
 export function clickControl(
   cdp: Cdp,

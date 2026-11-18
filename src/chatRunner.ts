@@ -5,6 +5,7 @@
 //
 // At most one reply is generated per chat at a time. Other chats are unaffected
 // (a chat keeps generating while you look at another one).
+import type { StepTarget } from './marker.ts';
 import { buildMessages } from './chatContext.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
@@ -35,6 +36,14 @@ export interface RunnerDeps {
   // A message in a chat changed (it may change many times a second while a reply
   // streams in; the app decides how much of that to pass on to the screen).
   onMessage(chatId: number, messageId: number): void;
+  // A step that acts on an element of a page was added: which element (so the page can
+  // mark it while it waits for you and while it runs).
+  onStepTarget?(
+    chatId: number,
+    messageId: number,
+    partId: number,
+    target: StepTarget,
+  ): void;
   // A chat started or stopped generating.
   onRunningChange(): void;
   // Ask you to approve something the assistant wants to do, and wait for your
@@ -181,6 +190,13 @@ export function createChatRunner(deps: RunnerDeps) {
           if (added) {
             deps.setState(added.state);
             changed();
+            const target =
+              plan.kind === 'ask' || plan.kind === 'auto'
+                ? plan.target
+                : undefined;
+            if (target) {
+              deps.onStepTarget?.(chatId, replyId, added.partId, target);
+            }
           }
 
           // Refused outright: say so, do nothing.

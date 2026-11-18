@@ -113,6 +113,7 @@ import type {
 import {
   chooseOption,
   clickControl,
+  locateControl,
   pressKey as pressKeyInPage,
   readLinkAddress,
   scrollPage,
@@ -295,6 +296,14 @@ import {
 } from './agentVisuals';
 import type { AgentVisualSettings } from './agentVisuals';
 import { runOf } from './runModel';
+import {
+  labelPlacement,
+  markerLabel,
+  markerTone,
+  toOverlayRect,
+} from './marker';
+import type { MarkerView, Rect, StepTarget } from './marker';
+import { PILL_HEIGHT, PILL_MAX_WIDTH } from './agentVisuals';
 import { resolveInput, searchUrl } from './url';
 import {
   activeEngine,
@@ -1729,6 +1738,90 @@ export async function createTabs(
     );
   };
 
+  // ---- The marker on the element a step acts on -------------------------------------
+  // One debugger user at a time per page: the assistant's own action and the measuring of
+  // its element take turns, so neither finds the page "busy".
+  const debuggerTurns = new Map<number, Promise<unknown>>();
+  const inTurn = <T>(tabId: number, work: () => Promise<T>): Promise<T> => {
+    const before = debuggerTurns.get(tabId) ?? Promise.resolve();
+    const mine = before.catch(() => undefined).then(work);
+    debuggerTurns.set(
+      tabId,
+      mine.catch(() => undefined),
+    );
+    return mine;
+  };
+  // The element each step acts on, where it is on its page (null: it could not be found),
+  // and when its step was first seen finished (the grey outline fades after a moment).
+  const stepTargets = new Map<string, StepTarget>();
+  const markerBoxes = new Map<string, Rect | null | 'measuring'>();
+  const markerDoneAt = new Map<string, number>();
+  const MARKER_DONE_MS = 1500;
+  const stepKey = (messageId: number, partId: number) =>
+    `${messageId}:${partId}`;
+  const measureTarget = (key: string, target: StepTarget) => {
+    if (markerBoxes.has(key)) return;
+    markerBoxes.set(key, 'measuring');
+    const contents = pageContents(target.tabId);
+    if (!contents) {
+      markerBoxes.set(key, null);
+      return;
+    }
+    void inTurn(target.tabId, () =>
+      withCdp(contents, 4000, (cdp) =>
+        locateControl(cdp, target.backendNodeId),
+      ),
+    )
+      .catch(() => null)
+      .then((box) => {
+        markerBoxes.set(key, box);
+        updateOverlay();
+      });
+  };
+  // The marker to draw now, or null: the current step acts on an element of the page on
+  // screen, and the setting asks for markers.
+  const markerFor = (
+    run: ReturnType<typeof runOf>,
+    activeId: number | null,
+  ): MarkerView | null => {
+    if (!run || !overlayReply || activeId === null) return null;
+    const key = stepKey(overlayReply.message.id, run.partId);
+    const target = stepTargets.get(key);
+    const tone = markerTone(run.state);
+    if (!target || tone === null || target.tabId !== activeId) return null;
+    if (tone === 'done') {
+      const first = markerDoneAt.get(key) ?? Date.now();
+      markerDoneAt.set(key, first);
+      if (Date.now() - first > MARKER_DONE_MS) return null;
+      setTimeout(updateOverlay, MARKER_DONE_MS + 100);
+    }
+    const box = markerBoxes.get(key);
+    if (box === undefined) {
+      measureTarget(key, target);
+      return null;
+    }
+    if (box === null || box === 'measuring') return null;
+    const page = pageBounds();
+    const zoom = pageContents(activeId)?.getZoomFactor() ?? 1;
+    const rect = toOverlayRect(box, zoom, page);
+    if (!rect) return null;
+    const stepPart = overlayReply.message.parts.find(
+      (p) => p.type === 'tool' && p.id === run.partId,
+    );
+    const toolName = stepPart?.type === 'tool' ? stepPart.name : '';
+    const pillWidth = Math.min(PILL_MAX_WIDTH, page.width - 24);
+    return {
+      rect,
+      tone,
+      label: markerLabel(toolName, tone, target.name),
+      placement: labelPlacement(rect, page, {
+        x: (page.width - pillWidth) / 2,
+        width: pillWidth,
+        height: PILL_HEIGHT,
+      }),
+    };
+  };
+
   // Show, move or hide the overlay for what the assistant is doing now (see
   // agentVisuals.ts for the rules). Called when the reply changes, and whenever the
   // page moves or another tab comes to the front.
@@ -1740,14 +1833,16 @@ export async function createTabs(
       views.has(activeId) &&
       pageIsShown() &&
       htmlFullscreen === null;
+    const run = overlayReply ? runOf(overlayReply.message) : null;
     const next = overlayFor({
-      run: overlayReply ? runOf(overlayReply.message) : null,
+      run,
       activeTab: onScreen ? activeId : null,
       pageShown: onScreen,
       dismissed: overlayReply
         ? dismissedReplies.has(overlayReply.message.id)
         : false,
       settings: agentVisualSettings,
+      marker: onScreen ? markerFor(run, activeId) : null,
     });
     if (!next) {
       if (overlayShown) {
@@ -3111,13 +3206,15 @@ export async function createTabs(
     focusTab(tabId);
     let done: DoneResult;
     try {
-      done = await withCdp(ready.contents, 15_000, async (cdp) => {
-        // Act as if the page has the keyboard, even though the chat does.
-        await cdp
-          .send('Emulation.setFocusEmulationEnabled', { enabled: true })
-          .catch(() => undefined);
-        return work(cdp);
-      });
+      done = await inTurn(tabId, () =>
+        withCdp(ready.contents, 15_000, async (cdp) => {
+          // Act as if the page has the keyboard, even though the chat does.
+          await cdp
+            .send('Emulation.setFocusEmulationEnabled', { enabled: true })
+            .catch(() => undefined);
+          return work(cdp);
+        }),
+      );
     } catch {
       return { ok: false, reason: 'unavailable' };
     }
@@ -3537,6 +3634,12 @@ export async function createTabs(
       chatsSaver.schedule();
     },
     onMeta: sendState,
+    onStepTarget: (_chatId, messageId, partId, target) => {
+      stepTargets.set(stepKey(messageId, partId), target);
+      // Measure it now (the element scrolls into view), so the ring is there while it
+      // waits for your approval, not only once it runs.
+      measureTarget(stepKey(messageId, partId), target);
+    },
     onReplyChanged: (chatId, message) => {
       if (message.role !== 'assistant') return;
       if (!message.parts.some((part) => part.type === 'tool')) return;

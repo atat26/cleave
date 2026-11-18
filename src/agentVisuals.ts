@@ -3,6 +3,7 @@
 // settings for that and the rule for what to show right now. Pure code with no Electron
 // and no React, so it is easy to test. The drawing is in OverlayApp.tsx; the view that
 // holds it, above the page, is managed in tabs.ts.
+import type { MarkerView } from './marker.ts';
 import type { RunView, RunWord } from './runModel.ts';
 
 export type ShowWork = 'glow-marker' | 'glow' | 'off';
@@ -59,6 +60,8 @@ export interface OverlayState {
   step: number;
   // It has finished, stopped or got stuck (the pill then has a way to dismiss it).
   ended: boolean;
+  // The ring on the element it is acting on, if there is one to show.
+  marker: MarkerView | null;
 }
 
 export interface OverlayInput {
@@ -69,6 +72,8 @@ export interface OverlayInput {
   // You dismissed the pill of this run.
   dismissed: boolean;
   settings: AgentVisualSettings;
+  // The marker worked out by the app (only shown with the glow, and when the setting says).
+  marker?: MarkerView | null;
 }
 
 // What to show now, or null for nothing. While the assistant works on the page that is on
@@ -76,7 +81,7 @@ export interface OverlayInput {
 // stopped or got stuck, a pill stays until you dismiss it. Nothing is shown for a step that
 // is not on this page (tabs, your history, artifacts...): those speak in the chat.
 export function overlayFor(input: OverlayInput): OverlayState | null {
-  const { run, activeTab, pageShown, dismissed, settings } = input;
+  const { run, activeTab, pageShown, dismissed, settings, marker } = input;
   if (settings.showWork === 'off' || run === null) return null;
   if (!pageShown || activeTab === null) return null;
   const base = {
@@ -93,6 +98,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
       soft: run.reading && run.word === 'working',
       tone: run.word,
       ended: false,
+      marker: settings.showWork === 'glow-marker' ? (marker ?? null) : null,
     };
   }
   if (!settings.keepFinished || dismissed) return null;
@@ -102,6 +108,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     soft: false,
     tone: run.word,
     ended: true,
+    marker: null,
   };
 }
 

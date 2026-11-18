@@ -277,6 +277,9 @@ export interface RunView {
   ticks: StepState[];
   // Which step this is ("Step 4"); the total is not known unless there is a plan.
   stepNumber: number;
+  // Which step it is (its number in the reply) and how it is going.
+  partId: number;
+  state: StepState;
   // The tab the current step is in (from its arguments), if it names one.
   tabId: number | null;
   // The current step reads or acts in that page (not tabs, history, artifacts...).
@@ -331,6 +334,8 @@ export function runOf(message: ChatMessage | undefined): RunView | null {
     target: current.target,
     ticks: steps.slice(-MAX_TICKS).map((s) => s.state),
     stepNumber: steps.indexOf(current) + 1,
+    partId: current.part.id,
+    state: current.state,
     tabId,
     touchesPage:
       tabId !== null && (current.kind === 'read' || current.kind === 'act'),

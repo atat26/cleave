@@ -17,6 +17,8 @@
 //   - At most MAX_ACTIONS actions per reply.
 // Pure code with no Electron, so every rule can be tested.
 import type { CardDetails } from './approvalCard.ts';
+import { MAX_MARKER_NAME } from './marker.ts';
+import type { StepTarget } from './marker.ts';
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
 import type { OutlineElement } from './pageOutline.ts';
@@ -186,9 +188,16 @@ export const ACTION_DEFINITIONS: ToolDefinition[] = [
 
 export type Plan =
   // Goes ahead with no question (only things that change nothing).
-  | { kind: 'auto' }
+  | { kind: 'auto'; target?: StepTarget }
   // Waits for the user. `text` is what the card says.
-  | { kind: 'ask'; text: string; risky: boolean; card?: CardDetails }
+  | {
+      kind: 'ask';
+      text: string;
+      risky: boolean;
+      card?: CardDetails;
+      // The element it acts on (for the marker on the page).
+      target?: StepTarget;
+    }
   // Not done at all, and the model is told why.
   | { kind: 'refuse'; label: string; note: string; result: string };
 
@@ -454,6 +463,11 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
     );
   }
   const what = describeControl(control);
+  const target: StepTarget = {
+    tabId,
+    backendNodeId: control.backendNodeId,
+    name: cleanLabel(control.name, MAX_MARKER_NAME),
+  };
 
   if (name === 'type_text') {
     const text = args.text;
@@ -477,6 +491,7 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
       text: `Type "${shown}" into the ${what} on ${site}`,
       risky: false,
       card: { text: { label: 'Text to type', value: shown } },
+      target,
     };
   }
 
@@ -499,6 +514,7 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
           value: cleanLabel(option, MAX_SHOWN_TEXT),
         },
       },
+      target,
     };
   }
 
@@ -518,7 +534,7 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
   const text = goesElsewhere
     ? `Click the ${what} on ${site}, which goes to a different website (${hostOf(control.url)})`
     : `Click the ${what} on ${site}`;
-  return { kind: 'ask', text, risky };
+  return { kind: 'ask', text, risky, target };
 }
 
 // What makes the page change, so the numbered list of controls must be thrown away.
