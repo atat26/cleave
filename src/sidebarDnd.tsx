@@ -19,8 +19,10 @@ import {
 import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
 import {
   hasArtifactDrag,
+  itemDragData,
   readArtifactDrag,
   ARTIFACT_DRAG,
+  ITEM_DRAG,
 } from './artifactDrag.ts';
 import {
   applyDrop,
@@ -162,9 +164,12 @@ export function DndProvider({
 
   const begin = useCallback(
     (item: DragItem, event: DragEvent, from: HTMLElement) => {
-      event.dataTransfer.effectAllowed = 'move';
+      // Moved within the sidebar, or copied onto the chat (as a link).
+      event.dataTransfer.effectAllowed = 'copyMove';
       // Some browsers refuse to drag without data.
       event.dataTransfer.setData('text/plain', keyOf(item));
+      // What the chat looks for, to link it (see artifactDrag.ts).
+      event.dataTransfer.setData(ITEM_DRAG, itemDragData(item.kind, item.id));
       startGhost(event, from);
       dragRef.current = item;
       // Set after the browser has taken the ghost picture (the row fades then).

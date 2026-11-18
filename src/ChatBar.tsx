@@ -2,7 +2,10 @@ import {
   ARTIFACT_DRAG,
   hasArtifactDrag,
   hasFileDrag,
+  hasItemDrag,
+  ITEM_DRAG,
   readArtifactDrag,
+  readItemDrag,
 } from './artifactDrag';
 import { useEffect, useRef, useState } from 'react';
 import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
@@ -186,11 +189,13 @@ export function ChatBar({
         ]
           .filter(Boolean)
           .join(' ')}
-        // An artifact dragged from the Artifacts panel, or files dragged in from the
-        // computer, are added to the chat.
+        // An artifact dragged from the Artifacts panel, a tab, Space or artifact
+        // dragged from the sidebar, or files dragged in from the computer, are added
+        // to the chat.
         onDragOver={(event) => {
           if (
             !hasArtifactDrag(event.dataTransfer.types) &&
+            !hasItemDrag(event.dataTransfer.types) &&
             !hasFileDrag(event.dataTransfer.types)
           ) {
             return;
@@ -218,6 +223,14 @@ export function ChatBar({
                 chats.activeId,
                 Array.from(event.dataTransfer.files),
               );
+            }
+            return;
+          }
+          if (hasItemDrag(event.dataTransfer.types)) {
+            event.preventDefault();
+            const item = readItemDrag(event.dataTransfer.getData(ITEM_DRAG));
+            if (item !== null && chats.activeId !== null) {
+              window.browserApi.chatLink(chats.activeId, item.kind, item.id);
             }
             return;
           }
