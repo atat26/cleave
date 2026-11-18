@@ -61,7 +61,10 @@ order of likelihood.
 - With the page showing (page only, or page and chat), a step waiting for your approval pops its card out over the page, at the bottom or, if the marked element is down there, at the top, so the chat no longer opens up to make room and the page keeps its size. The chat shows a one-line note ("Waiting for you: answer in the card on the page") instead. In chat-only view, or if the card cannot be shown, it stays in the chat. The same card and keys either way; a new card takes the keyboard only when you are not typing. The card pops out whatever the "show the work on pages" setting says, because it is a question.
 - The overlay passes the mouse wheel on to the page, so the page can be scrolled while the assistant works or waits. The ring on the element is measured again (without scrolling the page back) when the window is resized, the page is zoomed or it is scrolled, and is left out until then, so it is never in the wrong place.
 
-**Search and between features**
+**Browser-use visuals: one place for each fact**
+
+- Each thing is shown once. The state ("Working", "Waiting for you", "Finished") is in the pill on the page while the page shows it; when the pill is not up (page not on screen, the step is not about a page, the display is off) it is the one-line run bar in the chat. The chat's run bar no longer has a Stop: Stop is on the page's pill and on the message box. The approval question is only in the popped-out card (the chat holds a one-line note); in chat-only view it stays in the chat. The list of steps stays in the open chat. Dismissing the "Finished" pill on the page also clears the chat's copy.
+- The popped-out card can be minimized (the "−" in its header): it shrinks to the strip at the top, "Waiting for you · <the question>" with Review (brings the card back), Go to tab (when its step is in another tab than the one on screen) and Stop, and the page is yours to scroll and click meanwhile. A new question always pops out again. The card also has a Go to tab button when its step is in another tab. The card shows its own Stop only when the pill (which has one) is not shown.
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.
 

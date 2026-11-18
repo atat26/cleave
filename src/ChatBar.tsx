@@ -9,6 +9,8 @@ import {
 } from './artifactDrag';
 import { useEffect, useRef, useState } from 'react';
 import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
+import { noOverlayFlags } from './agentVisuals';
+import type { OverlayFlags } from './agentVisuals';
 import { runOf } from './runModel';
 import { RunBar } from './StepList';
 import { ChatComposer } from './ChatComposer';
@@ -92,8 +94,27 @@ export function ChatBar({
     setEndedFor(null);
     wasGenerating.current = false;
   }, [chats.activeId]);
+  // What the page already shows (see agentVisuals.ts): while its pill is up, the chat does
+  // not show the same status a second time; while a card is popped out or minimized, the
+  // chat holds only a note.
+  const [onPage, setOnPage] = useState<OverlayFlags>(noOverlayFlags());
+  useEffect(() => {
+    const stop = window.browserApi.onOverlayFlags(setOnPage);
+    void window.browserApi.overlayFlagsGet().then(setOnPage);
+    return stop;
+  }, []);
+  // The pill on the page was dismissed: the chat's copy of that status goes with it.
+  useEffect(
+    () =>
+      window.browserApi.onOverlayDismissed((messageId) =>
+        setEndedFor((current) => (current === messageId ? null : current)),
+      ),
+    [],
+  );
   const barVisible =
-    run !== null && (generating || (newest && endedFor === newest.id));
+    run !== null &&
+    !onPage.pill &&
+    (generating || (newest && endedFor === newest.id));
 
   // A reply that finishes while the chat is too slim to show it: say so, until the
   // chat is opened enough to read it (or something new is sent).
@@ -123,10 +144,9 @@ export function ChatBar({
   // The slim chat needs room for the notice too, or it would be out of sight.
   // An approval card popped out over the page: the chat does not have to open up to
   // show it, so the page keeps its room.
-  const [poppedOut, setPoppedOut] = useState(false);
-  useEffect(() => window.browserApi.onOverlayPopout(setPoppedOut), []);
+  const poppedOut = onPage.card;
   const rawNeed = chatNeedOf(messages, generating);
-  const baseNeed = poppedOut && rawNeed === 'approval' ? 'activity' : rawNeed;
+  const baseNeed = poppedOut && rawNeed === 'approval' ? 'none' : rawNeed;
   const need =
     baseNeed === 'none' && (notice || (barVisible && !full && !chatOnly))
       ? 'activity'
@@ -319,22 +339,14 @@ export function ChatBar({
           />
         )}
         {(full || chatOnly) && !showNew && barVisible && run && chat && (
-          <RunBar
-            run={run}
-            chatId={chat.id}
-            onDismiss={() => setEndedFor(null)}
-          />
+          <RunBar run={run} onDismiss={() => setEndedFor(null)} />
         )}
         {!full && !chatOnly && barVisible && run && chat && (
           <div className="chat-live">
-            <RunBar
-              run={run}
-              chatId={chat.id}
-              onDismiss={() => setEndedFor(null)}
-            />
+            <RunBar run={run} onDismiss={() => setEndedFor(null)} />
           </div>
         )}
-        {!full && !chatOnly && !barVisible && live?.working && (
+        {!full && !chatOnly && !barVisible && !onPage.pill && live?.working && (
           <div className="chat-live" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
             <span className="truncate">{live.text}</span>

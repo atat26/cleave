@@ -131,6 +131,34 @@ export interface OverlayState {
   marker: MarkerView | null;
   // The approval card popped out over the page.
   card: PopoutCard | null;
+  // The card was minimized: only its strip is shown (what it asks, Review, Go to tab, Stop),
+  // and the page is yours to use meanwhile.
+  minimized: boolean;
+  // The step's tab is open but not the one on screen, so there is a "Go to tab" button.
+  goToTab: boolean;
+  // The question's first line (for the minimized strip), or null.
+  askLine: string | null;
+}
+
+// What the chat needs to know of the overlay, so each fact is shown in one place: while the
+// pill is on the page the chat leaves out its own run bar, and while a card is popped out (or
+// minimized) the chat shows a note instead of the card.
+export interface OverlayFlags {
+  pill: boolean;
+  card: boolean;
+}
+
+export const noOverlayFlags = (): OverlayFlags => ({
+  pill: false,
+  card: false,
+});
+
+export function overlayFlags(state: OverlayState | null): OverlayFlags {
+  if (state === null) return noOverlayFlags();
+  return {
+    pill: state.pill,
+    card: state.card !== null || state.minimized,
+  };
 }
 
 export interface OverlayInput {
@@ -146,6 +174,10 @@ export interface OverlayInput {
   marker?: MarkerView | null;
   // The step waiting for your approval, if any.
   approval?: PopoutCard | null;
+  // You minimized that card.
+  minimized?: boolean;
+  // The step's tab is open and is not the one on screen.
+  goToTab?: boolean;
 }
 
 // What to show now, or null for nothing. While the assistant works on the page that is on
@@ -171,6 +203,24 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     const glow = showWork && onPage;
     const card = run.word === 'waiting' ? (approval ?? null) : null;
     if (!glow && !card) return null;
+    // Minimized: just the strip, so the page below it is yours (a question is never hidden
+    // away completely, whatever the display setting says).
+    if (card && input.minimized) {
+      return {
+        ...base,
+        mode: 'pill',
+        glow: false,
+        pill: true,
+        soft: false,
+        tone: 'waiting',
+        ended: false,
+        marker: null,
+        card: null,
+        minimized: true,
+        goToTab: input.goToTab === true,
+        askLine: card.ask.split('\n')[0],
+      };
+    }
     return {
       ...base,
       mode: 'frame',
@@ -182,6 +232,9 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
       marker:
         glow && settings.showWork === 'glow-marker' ? (marker ?? null) : null,
       card,
+      minimized: false,
+      goToTab: card !== null && input.goToTab === true,
+      askLine: null,
     };
   }
   if (!showWork || !settings.keepFinished || dismissed) return null;
@@ -195,6 +248,9 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     ended: true,
     marker: null,
     card: null,
+    minimized: false,
+    goToTab: false,
+    askLine: null,
   };
 }
 

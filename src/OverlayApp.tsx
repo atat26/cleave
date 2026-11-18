@@ -78,7 +78,12 @@ function PoppedOutCard({ state }: { state: OverlayState }) {
           site: card.site,
         }}
         onDecide={(decision) => window.browserApi.overlayDecide(decision)}
-        onStop={() => window.browserApi.overlayStop()}
+        // Stop is on the pill; the card has its own only when the pill is not shown.
+        onStop={state.pill ? undefined : () => window.browserApi.overlayStop()}
+        onMinimize={() => window.browserApi.overlayMinimize(true)}
+        onGoToTab={
+          state.goToTab ? () => window.browserApi.overlayGoToTab() : undefined
+        }
         takeKeyboard
       />
     </div>
@@ -124,15 +129,43 @@ export function OverlayApp() {
         <div className="ao-pill" role="status">
           <StatusIcon state={TONE_ICON[state.tone]} />
           <span className="ao-word">{RUN_WORDS[state.word]}</span>
-          <span className="ao-what truncate">
-            {state.verb}
-            {state.target !== null && (
-              <>
-                : <strong>{state.target}</strong>
-              </>
-            )}
-          </span>
-          {!state.ended && <span className="ao-step">Step {state.step}</span>}
+          {state.minimized ? (
+            <span className="ao-what truncate">{state.askLine}</span>
+          ) : (
+            <span className="ao-what truncate">
+              {state.verb}
+              {state.target !== null && (
+                <>
+                  : <strong>{state.target}</strong>
+                </>
+              )}
+            </span>
+          )}
+          {!state.ended && !state.minimized && (
+            <span className="ao-step">Step {state.step}</span>
+          )}
+          {state.minimized && (
+            <>
+              <Button
+                size="sm"
+                variant="primary"
+                title="Show the question again"
+                onClick={() => window.browserApi.overlayMinimize(false)}
+              >
+                Review
+              </Button>
+              {state.goToTab && (
+                <Button
+                  size="sm"
+                  icon="ext-link"
+                  title="Show the tab this is about"
+                  onClick={() => window.browserApi.overlayGoToTab()}
+                >
+                  Go to tab
+                </Button>
+              )}
+            </>
+          )}
           {state.ended ? (
             <IconButton
               icon="x"

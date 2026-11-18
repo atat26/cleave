@@ -343,16 +343,15 @@ const RUN_ICON: Record<RunView['word'], StepState> = {
   stopped: 'stopped',
 };
 
-// One line above the message box: its state in a word, what it is doing, a tick for
-// each step so far, and Stop while it works. When it has finished, stopped or got
-// stuck it stays until you dismiss it (the x, or Esc) or send your next message.
+// One line above the message box: its state in a word, what it is doing, and a tick for
+// each step so far. It has no Stop of its own: Stop is on the message box below it (or on
+// the page's pill), once, not twice. When it has finished, stopped or got stuck it stays
+// until you dismiss it (the x, or Esc) or send your next message.
 export function RunBar({
   run,
-  chatId,
   onDismiss,
 }: {
   run: RunView;
-  chatId: number;
   onDismiss: () => void;
 }) {
   const active = run.word === 'working' || run.word === 'waiting';
@@ -386,16 +385,7 @@ export function RunBar({
           ? `Step ${run.stepNumber}`
           : `${run.ticks.length} step${run.ticks.length === 1 ? '' : 's'}`}
       </span>
-      {active ? (
-        <Button
-          size="sm"
-          icon="stop"
-          title="Stop this reply"
-          onClick={() => window.browserApi.chatStop(chatId)}
-        >
-          Stop
-        </Button>
-      ) : (
+      {!active && (
         <IconButton
           icon="x"
           size="sm"
@@ -444,11 +434,19 @@ export function ApprovalCardView({
   view,
   onDecide,
   onStop,
+  onMinimize,
+  onGoToTab,
   takeKeyboard,
 }: {
   view: ApprovalView;
   onDecide: (decision: 'allow' | 'allow-rest' | 'deny') => void;
-  onStop: () => void;
+  // Stop is shown only where nothing else on screen already has one (so, not in the chat,
+  // where the message box has it, and not over a page that shows its pill).
+  onStop?: () => void;
+  // Shrink the card to a strip (popped out over the page only).
+  onMinimize?: () => void;
+  // Show the tab this step is about (only when it is another tab than the one on screen).
+  onGoToTab?: () => void;
   // Ask for the keyboard when it appears (unless you are typing). The popped-out card does
   // not: the app gives it the keyboard itself, since it is in another view.
   takeKeyboard: boolean;
@@ -499,6 +497,22 @@ export function ApprovalCardView({
         <strong>Needs your OK</strong>
         <span className="grow" />
         {site && <SiteChip host={site.host} favicon={site.favicon} />}
+        {onGoToTab && (
+          <IconButton
+            icon="ext-link"
+            size="sm"
+            label="Go to tab"
+            onClick={onGoToTab}
+          />
+        )}
+        {onMinimize && (
+          <IconButton
+            icon="minus"
+            size="sm"
+            label="Minimize: work in the page, answer later"
+            onClick={onMinimize}
+          />
+        )}
       </div>
       {badges.length > 0 && (
         <div className="ac-badges">
@@ -572,14 +586,16 @@ export function ApprovalCardView({
           >
             Don't allow
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onStop}
-            title="Stop this reply"
-          >
-            Stop
-          </Button>
+          {onStop && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onStop}
+              title="Stop this reply"
+            >
+              Stop
+            </Button>
+          )}
         </div>
         <div className="ac-wait">
           If you do nothing, it waits. Nothing happens until you answer.
@@ -617,7 +633,6 @@ export function ApprovalCard({
       onDecide={(decision) =>
         window.browserApi.chatDecide(chatId, messageId, part.id, decision)
       }
-      onStop={() => window.browserApi.chatStop(chatId)}
       takeKeyboard
     />
   );
@@ -634,7 +649,7 @@ export function PoppedOutNote({ ask }: { ask: string }) {
             <Emphasised text={ask.split('\n')[0]} />
           </span>
           <span className="step-result">
-            Waiting for you: answer in the card on the page.
+            Waiting for you: answer on the page.
           </span>
         </span>
       </div>
