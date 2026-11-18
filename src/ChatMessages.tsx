@@ -10,7 +10,7 @@ import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import { blocksOf, stepView } from './runModel';
-import { StepGroup, StepRow } from './StepList';
+import { ApprovalCard, StepGroup, StepRow } from './StepList';
 import type {
   ArtifactInfo,
   ChatMessage,
@@ -290,61 +290,15 @@ function ToolBlock({
   isNewestReply: boolean;
   busy: boolean;
 }) {
-  const decide = (decision: 'allow' | 'allow-rest' | 'deny') =>
-    window.browserApi.chatDecide(chatId, messageId, part.id, decision);
-
-  // Waiting for you: the question, always visible, with the ways to answer it.
+  // Waiting for you: the approval card.
   if (part.status === 'waiting') {
     return (
-      <div
-        role="group"
-        aria-label="Approve this action"
-        className={part.risky ? 'approval risky' : 'approval'}
-        style={{ margin: '0 0 8px' }}
-      >
-        <div style={{ ...muted }}>The assistant wants to:</div>
-        <div
-          style={{
-            fontWeight: 600,
-            overflowWrap: 'anywhere',
-            whiteSpace: 'pre-line',
-          }}
-        >
-          {part.ask}
-        </div>
-        {part.risky && (
-          <div>
-            <Badge tone="warn" icon="warn">
-              This kind of action always asks you first
-            </Badge>
-          </div>
-        )}
-        <div className="actions">
-          <Button variant="primary" size="sm" onClick={() => decide('allow')}>
-            Allow
-          </Button>
-          {!part.risky && (
-            <Button
-              size="sm"
-              onClick={() => decide('allow-rest')}
-              title="Go ahead with the rest of this reply without asking again, except for risky actions"
-            >
-              Allow the rest of this reply
-            </Button>
-          )}
-          <Button size="sm" onClick={() => decide('deny')}>
-            Don't allow
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => window.browserApi.chatStop(chatId)}
-            title="Stop this reply"
-          >
-            Stop
-          </Button>
-        </div>
-      </div>
+      <ApprovalCard
+        part={part}
+        chatId={chatId}
+        messageId={messageId}
+        tabs={tabs}
+      />
     );
   }
 

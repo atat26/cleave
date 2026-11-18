@@ -16,6 +16,7 @@
 //     another website.
 //   - At most MAX_ACTIONS actions per reply.
 // Pure code with no Electron, so every rule can be tested.
+import type { CardDetails } from './approvalCard.ts';
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
 import type { OutlineElement } from './pageOutline.ts';
@@ -187,7 +188,7 @@ export type Plan =
   // Goes ahead with no question (only things that change nothing).
   | { kind: 'auto' }
   // Waits for the user. `text` is what the card says.
-  | { kind: 'ask'; text: string; risky: boolean }
+  | { kind: 'ask'; text: string; risky: boolean; card?: CardDetails }
   // Not done at all, and the model is told why.
   | { kind: 'refuse'; label: string; note: string; result: string };
 
@@ -337,12 +338,14 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
     const shown = cleanLabel(url.href, 300);
     // A site one of the linked tabs is already on is not a new place to go.
     const known = context.linkedTabs().some((t) => hostOf(t.url) === url.host);
+    const card = { destination: shown };
     return known
-      ? { kind: 'ask', text: `Open a new tab at ${shown}`, risky: false }
+      ? { kind: 'ask', text: `Open a new tab at ${shown}`, risky: false, card }
       : {
           kind: 'ask',
           text: `Open a new tab at a different website: ${shown}`,
           risky: true,
+          card,
         };
   }
 
@@ -421,12 +424,14 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
     // The whole address is shown: an address can carry information in it, so you
     // see exactly where it would go.
     const shown = cleanLabel(url.href, 300);
+    const card = { destination: shown };
     return url.host === hostOf(address)
-      ? { kind: 'ask', text: `Go to ${shown}`, risky: false }
+      ? { kind: 'ask', text: `Go to ${shown}`, risky: false, card }
       : {
           kind: 'ask',
           text: `Go to a different website: ${shown}`,
           risky: true,
+          card,
         };
   }
 
@@ -471,6 +476,7 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
       kind: 'ask',
       text: `Type "${shown}" into the ${what} on ${site}`,
       risky: false,
+      card: { text: { label: 'Text to type', value: shown } },
     };
   }
 
@@ -487,6 +493,12 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
       kind: 'ask',
       text: `Choose "${cleanLabel(option, MAX_SHOWN_TEXT)}" in the ${what} on ${site}`,
       risky: false,
+      card: {
+        text: {
+          label: 'Option to choose',
+          value: cleanLabel(option, MAX_SHOWN_TEXT),
+        },
+      },
     };
   }
 

@@ -342,6 +342,7 @@ export function createSkillTools(
         kind: 'ask',
         text: cardText('Make a new skill:', made.value),
         risky,
+        card: { full: { label: 'Full text', value: cardText('', made.value) } },
       };
     }
     // edit_skill
@@ -371,6 +372,22 @@ export function createSkillTools(
             : made.value.instructions,
       }),
       risky,
+      card: {
+        full: {
+          label: 'What changes',
+          value: cardText('', {
+            name: made.changes.name === undefined ? undefined : made.value.name,
+            description:
+              made.changes.description === undefined
+                ? undefined
+                : made.value.description,
+            instructions:
+              made.changes.instructions === undefined
+                ? undefined
+                : made.value.instructions,
+          }),
+        },
+      },
     };
   };
 
@@ -388,6 +405,10 @@ export function createSkillTools(
         kind: 'ask',
         text: own.kind === 'ask' ? own.text : describe(call),
         risky: true,
+        card: {
+          ...(own.kind === 'ask' ? own.card : undefined),
+          askAgain: true,
+        },
       };
     }
     return applied;

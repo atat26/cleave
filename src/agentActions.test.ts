@@ -106,6 +106,8 @@ test('typing shows exactly what will be typed, and never goes into sensitive fie
     kind: 'ask',
     text: 'Type "me@example.com" into the text field "Email" on shop.example',
     risky: false,
+    // The exact words are also shown apart from the question, in a box.
+    card: { text: { label: 'Text to type', value: 'me@example.com' } },
   });
   assert.equal(
     plan('type_text', { tab: 1, element: 3, text: 'x' }).kind,
@@ -224,6 +226,7 @@ test('opening a new tab: a site already linked asks normally, a new site is risk
     kind: 'ask',
     text: 'Open a new tab at https://shop.example/cart',
     risky: false,
+    card: { destination: 'https://shop.example/cart' },
   });
   const fresh = plan('open_tab', { url: 'https://duckduckgo.com/?q=pandas' });
   assert.equal(fresh.kind === 'ask' && fresh.risky, true);

@@ -41,6 +41,11 @@ order of likelihood.
 - The assistant's tool calls in the chat are now steps: a status icon with one of seven states (running, waiting for you, done, declined, blocked by a safety rule or limit, failed, stopped), the action with its target in bold, a result line, and the site's icon and name. Three or more page reads in a row fold into one line ("Reading 3 pages"). The raw call is behind a click, and the right-click menu has Show details and Try again; "Try again" (on a failed or cut-off step in the newest reply) asks the assistant to try the step again, in fixed words, through the normal approvals.
 - A run bar above the message box says Working, Waiting for you, Stuck, Finished or Stopped, what it is doing, a tick per step, and Stop; the finished, stopped or stuck bar stays until dismissed or the next message. The step count is shown only as "Step N" (no total) because the assistant states no plan yet. Settings it will need (step detail, group expansion) are in the settings list.
 
+**Browser-use visuals, part 2 (approval cards)**
+
+- An approval is now a card: "Needs your OK", the site chip, risk badges (why it is risky, what kind of thing it is, and "Asks again: it read web pages"), the question with its target in bold, then the specifics in their own block (the exact text to type or search for, where a link or address goes, the tabs in a batch, the full text of a skill), a line saying what happens next, and Allow / Allow the rest / Don't allow / Stop. A risky card has an amber edge and amber Allow and no "Allow the rest".
+- Keys: Enter allows, Shift+Enter allows the rest, Esc does not allow; a risky card needs Ctrl+Enter (a stray Enter can never do something that cannot be undone). The card takes the keyboard only when you are not typing in a text box. The details come from values the app has already checked and cleaned, never the model's raw words, and are dropped once the step is answered.
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.

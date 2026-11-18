@@ -138,6 +138,10 @@ test('making a skill asks by default with the FULL text on the card, and saves i
     ].join('\n'),
   );
   assert.equal(plan.risky, false);
+  // The whole text is also in the card's own box, apart from the question.
+  assert.equal(plan.card?.full?.label, 'Full text');
+  assert.ok(plan.card?.full?.value.includes('2. Wipe it.'));
+  assert.ok(plan.card?.full?.value.includes('Name: Tidy desk'));
   const out = await tools.run(call('create_skill', args));
   assert.equal(out.ok, true);
   assert.deepEqual(log, ['make Tidy desk']);
@@ -152,6 +156,9 @@ test('after web content was read, making or changing a skill always asks as risk
   const make = w.tools.plan(call('create_skill', args));
   assert.ok(make.kind === 'ask');
   assert.equal(make.risky, true);
+  // It says why it is asking even though the tool is set to go ahead.
+  assert.equal(make.card?.askAgain, true);
+  assert.ok(make.card?.full);
   const edit = w.tools.plan(
     call('edit_skill', { skill: 'Compare prices', instructions: 'new' }),
   );

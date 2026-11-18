@@ -132,6 +132,13 @@ test('moving tabs is one card listing the moves, and the moves happen when it ru
   assert.equal(plan.kind, 'ask');
   assert.equal(plan.kind === 'ask' && plan.risky, false);
   assert.ok(plan.kind === 'ask');
+  // Each move is also a line of the card's list.
+  assert.deepEqual(plan.card?.list, [
+    '"Loose page" → Fish',
+    '"Goldfish food" → Travel',
+    '"Pet shop" → no Space',
+  ]);
+  assert.equal(plan.card?.more, undefined);
   assert.equal(
     plan.text,
     [

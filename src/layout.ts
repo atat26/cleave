@@ -53,7 +53,7 @@ export const CHAT_COMPACT_HEIGHT = 64;
 //             set) until it is answered, so the question is never out of sight.
 export type ChatNeed = 'none' | 'activity' | 'approval';
 export const CHAT_ACTIVITY_HEIGHT = 96;
-export const CHAT_APPROVAL_HEIGHT = 320;
+export const CHAT_APPROVAL_HEIGHT = 470;
 export const CHAT_SNAP_HEIGHT = 110;
 // While the chat is shorter than this it draws the compact look.
 export const CHAT_FULL_MIN_HEIGHT = 120;
