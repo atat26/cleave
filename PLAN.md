@@ -42,6 +42,8 @@ order of likelihood.
 
 ## Next
 
+- Settings page brainstorm: a planning session before any building. What belongs in Settings and what should not, how it is grouped and found (search?), what each part looks like, and what is missing (for example model and provider choices, privacy, shortcuts, extensions, skills and tools, appearance). Output: a short plan, then branches.
+- Menu revamp: rethink the menus, starting with the toolbar "…" menu (what is in it, the order, grouping, shortcuts shown, and what moves to Settings or the right-click menus), keeping the design language and the quiet-UI rule. To be shaped in the same brainstorm as Settings, since they overlap.
 - Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet; to be shaped with a designer hand-off, like the new-tab page. Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
 - Multiple windows, then incognito (a private window that keeps no history, cookies or chats, plus a private chat mode). Incognito needs multiple windows first.
 - Packaging: installer, auto-update, and shipping the extension library's preload file (`node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js`) so extension popups work when packaged. Parked until the features are done, since it matters only once there are other users.
