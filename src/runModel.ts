@@ -1,0 +1,314 @@
+// What the assistant is doing, worked out for the screen: each tool call as a step in
+// one of a few states, steps grouped when there are many reads in a row, and one
+// summary of the whole run (for the run bar). Pure code with no Electron and no React,
+// so it is easy to test. The look is in StepList.tsx and components.css.
+import type { ChatMessage, MessagePart } from './chats.ts';
+import { TOOL_CATALOG } from './toolPolicy.ts';
+
+export type ToolPartView = Extract<MessagePart, { type: 'tool' }>;
+
+// How a step is going. (A step that is queued behind another is not shown: steps are
+// added to the reply one at a time as they start.)
+export type StepState =
+  | 'running'
+  | 'waiting' // for you to approve it
+  | 'done'
+  | 'declined' // you said no
+  | 'blocked' // a safety rule, a limit or a setting stopped it
+  | 'failed'
+  | 'stopped'; // the reply was stopped before it finished
+
+export const STATE_WORDS: Record<StepState, string> = {
+  running: 'Running',
+  waiting: 'Waiting for you',
+  done: 'Done',
+  declined: 'Declined by you',
+  blocked: 'Blocked',
+  failed: 'Failed',
+  stopped: 'Stopped',
+};
+
+export function stepState(
+  part: ToolPartView,
+  messageStatus: ChatMessage['status'],
+): StepState {
+  const live = messageStatus === 'streaming';
+  if (part.status === 'waiting') return live ? 'waiting' : 'stopped';
+  if (part.status === 'running') return live ? 'running' : 'stopped';
+  if (part.status === 'ok') return 'done';
+  if (part.status === 'declined') return 'declined';
+  return part.blocked === true ? 'blocked' : 'failed';
+}
+
+// ---- One step ------------------------------------------------------------------------
+
+export type StepKind = 'read' | 'act' | 'tabs' | 'recall' | 'make' | 'talk';
+
+const KIND_OF_GROUP: Record<string, StepKind> = {
+  look: 'read',
+  act: 'act',
+  tabs: 'tabs',
+  recall: 'recall',
+  skills: 'make',
+  artifacts: 'make',
+  chat: 'talk',
+};
+
+export const stepKind = (toolName: string): StepKind => {
+  const tool = TOOL_CATALOG.find((t) => t.name === toolName);
+  return tool ? (KIND_OF_GROUP[tool.group] ?? 'read') : 'read';
+};
+
+// The page-reading tools: three or more in a row fold into one line.
+const READING_TOOLS = new Set([
+  'read_page',
+  'read_link',
+  'look_at_page',
+  'read_tables',
+  'find_in_page',
+  'screenshot_page',
+]);
+export const isReadingTool = (toolName: string): boolean =>
+  READING_TOOLS.has(toolName);
+
+// A step's line is written "Verb: target" ("Read: Best Buy Store Locator"). The target
+// is drawn bold.
+export function splitLabel(label: string): {
+  verb: string;
+  target: string | null;
+} {
+  const match = /^([^:]{1,40}): (.+)$/s.exec(label);
+  return match
+    ? { verb: match[1], target: match[2] }
+    : { verb: label, target: null };
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host.replace(/^www\./i, '');
+  } catch {
+    return '';
+  }
+};
+
+export interface StepSite {
+  host: string;
+  favicon: string | null;
+}
+
+// The site a step is about: the tab it names (from its arguments), or an address it
+// was given.
+export function stepSite(
+  part: ToolPartView,
+  tabs: readonly { id: number; url: string; favicon: string | null }[],
+): StepSite | null {
+  let args: unknown;
+  try {
+    args = JSON.parse(part.arguments);
+  } catch {
+    return null;
+  }
+  if (typeof args !== 'object' || args === null) return null;
+  const { tab, url } = args as { tab?: unknown; url?: unknown };
+  if (typeof tab === 'number') {
+    const found = tabs.find((t) => t.id === tab);
+    if (found) {
+      const host = hostOf(found.url);
+      return host === '' ? null : { host, favicon: found.favicon };
+    }
+  }
+  if (typeof url === 'string') {
+    const host = hostOf(url);
+    if (host !== '') return { host, favicon: null };
+  }
+  return null;
+}
+
+export interface StepView {
+  part: ToolPartView;
+  state: StepState;
+  verb: string;
+  target: string | null;
+  // How it ended, in the app's words (empty while it is still going).
+  result: string;
+  kind: StepKind;
+  risky: boolean;
+  // You approved it on a card.
+  allowed: boolean;
+}
+
+export function stepView(
+  part: ToolPartView,
+  messageStatus: ChatMessage['status'],
+): StepView {
+  const state = stepState(part, messageStatus);
+  const { verb, target } = splitLabel(part.label);
+  return {
+    part,
+    state,
+    verb,
+    target,
+    result: state === 'running' || state === 'waiting' ? '' : part.outcome,
+    kind: stepKind(part.name),
+    risky: part.risky,
+    allowed:
+      part.ask !== '' && (part.status === 'ok' || part.status === 'running'),
+  };
+}
+
+// "Try again" is offered for a step that failed or was cut off, in the newest reply,
+// when nothing else is being written. (Not for a refusal, a decline, or a step that
+// worked.)
+export function canRetry(
+  step: Pick<StepView, 'state'>,
+  isNewestReply: boolean,
+  busy: boolean,
+): boolean {
+  return (
+    isNewestReply &&
+    !busy &&
+    (step.state === 'failed' || step.state === 'stopped')
+  );
+}
+
+// The message sent to the assistant for "Try again". Only fixed words and the tool's
+// own name: nothing from a web page goes into a message that counts as yours.
+export function retryRequest(toolName: string): string {
+  const title = TOOL_CATALOG.find((t) => t.name === toolName)?.title;
+  return title
+    ? `The step "${title}" did not work. Please try it again, or tell me what went wrong.`
+    : 'The last step did not work. Please try it again, or tell me what went wrong.';
+}
+
+// ---- Groups of reads -------------------------------------------------------------------
+
+export const GROUP_MIN = 3;
+
+export type Block =
+  | { type: 'part'; index: number }
+  // Consecutive page reads, shown as one line that opens to the steps.
+  | { type: 'group'; indexes: number[] };
+
+// Walk a reply's parts: three or more reading steps in a row (none waiting for you)
+// become one group; everything else stays as it is.
+export function blocksOf(parts: readonly MessagePart[]): Block[] {
+  const blocks: Block[] = [];
+  let run: number[] = [];
+  const flush = () => {
+    if (run.length >= GROUP_MIN) blocks.push({ type: 'group', indexes: run });
+    else for (const index of run) blocks.push({ type: 'part', index });
+    run = [];
+  };
+  parts.forEach((part, index) => {
+    if (
+      part.type === 'tool' &&
+      isReadingTool(part.name) &&
+      part.status !== 'waiting'
+    ) {
+      run.push(index);
+      return;
+    }
+    flush();
+    blocks.push({ type: 'part', index });
+  });
+  flush();
+  return blocks;
+}
+
+// The line for a group: "Reading 3 pages" while it goes, "Read 3 pages" after.
+export function groupTitle(
+  steps: readonly Pick<StepView, 'state' | 'part'>[],
+): {
+  title: string;
+  progress: string;
+} {
+  const n = steps.length;
+  const finished = steps.filter((s) => s.state !== 'running').length;
+  const everyRead = steps.every(
+    (s) => s.part.name === 'read_page' || s.part.name === 'read_link',
+  );
+  const going = steps.some((s) => s.state === 'running');
+  const word = everyRead
+    ? going
+      ? 'Reading'
+      : 'Read'
+    : going
+      ? 'Looking at'
+      : 'Looked at';
+  return {
+    title: `${word} ${n} pages`,
+    progress: going ? `${finished} of ${n} done` : '',
+  };
+}
+
+// The state a group shows: that of its first step that is not finished, or else the
+// worst thing that happened.
+export function groupState(
+  steps: readonly Pick<StepView, 'state'>[],
+): StepState {
+  const open = steps.find(
+    (s) => s.state === 'running' || s.state === 'waiting',
+  );
+  if (open) return open.state;
+  for (const bad of ['failed', 'blocked', 'stopped', 'declined'] as const) {
+    if (steps.some((s) => s.state === bad)) return bad;
+  }
+  return 'done';
+}
+
+// ---- The whole run ---------------------------------------------------------------------
+
+export type RunWord = 'working' | 'waiting' | 'stuck' | 'finished' | 'stopped';
+
+export const RUN_WORDS: Record<RunWord, string> = {
+  working: 'Working',
+  waiting: 'Waiting for you',
+  stuck: 'Stuck',
+  finished: 'Finished',
+  stopped: 'Stopped',
+};
+
+export interface RunView {
+  word: RunWord;
+  // What it is doing now (or did last): "Read" and "Best Buy Store Locator".
+  verb: string;
+  target: string | null;
+  // One mark per step so far.
+  ticks: StepState[];
+  // Which step this is ("Step 4"); the total is not known unless there is a plan.
+  stepNumber: number;
+}
+
+export const MAX_TICKS = 40;
+
+// A summary of a reply's tool use, or null when it used no tools.
+export function runOf(message: ChatMessage | undefined): RunView | null {
+  if (!message || message.role !== 'assistant') return null;
+  const steps = message.parts
+    .filter((p): p is ToolPartView => p.type === 'tool')
+    .map((p) => stepView(p, message.status));
+  if (steps.length === 0) return null;
+  const current =
+    steps.find((s) => s.state === 'waiting') ??
+    [...steps].reverse().find((s) => s.state === 'running') ??
+    steps[steps.length - 1];
+  const last = steps[steps.length - 1];
+  const bad = last.state === 'failed' || last.state === 'blocked';
+  let word: RunWord;
+  if (message.status === 'streaming') {
+    word = steps.some((s) => s.state === 'waiting') ? 'waiting' : 'working';
+  } else if (message.status === 'stopped') {
+    word = 'stopped';
+  } else if (message.status === 'error') {
+    word = 'stuck';
+  } else {
+    word = bad ? 'stuck' : 'finished';
+  }
+  return {
+    word,
+    verb: current.verb,
+    target: current.target,
+    ticks: steps.slice(-MAX_TICKS).map((s) => s.state),
+    stepNumber: steps.indexOf(current) + 1,
+  };
+}

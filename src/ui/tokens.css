@@ -69,6 +69,7 @@
   --c-danger-tint: #fce9e7;
   --c-warn: #8a5300;
   --c-warn-tint: #fff1d6;
+  --c-warn-edge: #c77a00;
   --c-ok: #11713b;
   --c-ok-tint: #ddf3e5;
   --c-info: #2750d9;
@@ -117,6 +118,7 @@
   --c-danger-tint: rgba(255, 143, 133, 0.14);
   --c-warn: #f2b552;
   --c-warn-tint: rgba(242, 181, 82, 0.14);
+  --c-warn-edge: #f2b552;
   --c-ok: #6fd39a;
   --c-ok-tint: rgba(111, 211, 154, 0.14);
   --c-info: #8ea8ff;

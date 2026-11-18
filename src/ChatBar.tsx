@@ -9,6 +9,8 @@ import {
 } from './artifactDrag';
 import { useEffect, useRef, useState } from 'react';
 import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
+import { runOf } from './runModel';
+import { RunBar } from './StepList';
 import { ChatComposer } from './ChatComposer';
 import { MessageList, useChatMessages } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
@@ -69,6 +71,30 @@ export function ChatBar({
   const generating = chat?.generating ?? false;
   const live = liveLine(messages);
 
+  // The run bar: what the assistant is doing, while it works, and after it has
+  // finished, stopped or got stuck until you dismiss it or send your next message.
+  const newest = messages[messages.length - 1];
+  const run = runOf(newest);
+  const [endedFor, setEndedFor] = useState<number | null>(null);
+  const wasGenerating = useRef(false);
+  const newestRef = useRef(newest);
+  newestRef.current = newest;
+  useEffect(() => {
+    if (generating) {
+      setEndedFor(null);
+    } else if (wasGenerating.current) {
+      const last = newestRef.current;
+      if (runOf(last) !== null) setEndedFor(last.id);
+    }
+    wasGenerating.current = generating;
+  }, [generating]);
+  useEffect(() => {
+    setEndedFor(null);
+    wasGenerating.current = false;
+  }, [chats.activeId]);
+  const barVisible =
+    run !== null && (generating || (newest && endedFor === newest.id));
+
   // A reply that finishes while the chat is too slim to show it: say so, until the
   // chat is opened enough to read it (or something new is sent).
   const [unreadReply, setUnreadReply] = useState(false);
@@ -96,7 +122,10 @@ export function ChatBar({
 
   // The slim chat needs room for the notice too, or it would be out of sight.
   const baseNeed = chatNeedOf(messages, generating);
-  const need = baseNeed === 'none' && notice ? 'activity' : baseNeed;
+  const need =
+    baseNeed === 'none' && (notice || (barVisible && !full && !chatOnly))
+      ? 'activity'
+      : baseNeed;
   useEffect(() => {
     window.browserApi.setChatNeed(need);
   }, [need]);
@@ -283,13 +312,29 @@ export function ChatBar({
             artifacts={artifacts}
           />
         )}
-        {!full && !chatOnly && live?.working && (
+        {(full || chatOnly) && !showNew && barVisible && run && chat && (
+          <RunBar
+            run={run}
+            chatId={chat.id}
+            onDismiss={() => setEndedFor(null)}
+          />
+        )}
+        {!full && !chatOnly && barVisible && run && chat && (
+          <div className="chat-live">
+            <RunBar
+              run={run}
+              chatId={chat.id}
+              onDismiss={() => setEndedFor(null)}
+            />
+          </div>
+        )}
+        {!full && !chatOnly && !barVisible && live?.working && (
           <div className="chat-live" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
             <span className="truncate">{live.text}</span>
           </div>
         )}
-        {!full && !chatOnly && notice && (
+        {!full && !chatOnly && !barVisible && notice && (
           <div className="chat-live">
             <button
               type="button"

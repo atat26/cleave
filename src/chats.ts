@@ -75,6 +75,8 @@ export type MessagePart =
       // whether it was one of the kinds that always asks.
       ask: string;
       risky: boolean;
+      // Stopped by a safety rule or a limit, not by a failure (shown differently).
+      blocked?: boolean;
     };
 
 export interface Mention extends ChatRef {
@@ -288,6 +290,7 @@ function parseParts(raw: unknown): MessagePart[] {
         details: str(r.details, MAX_DETAILS),
         ask: str(r.ask, 400),
         risky: r.risky === true,
+        blocked: r.blocked === true,
       });
     }
   }
@@ -316,6 +319,7 @@ function partsFromOldReply(m: Record<string, unknown>): MessagePart[] {
         details: '',
         ask: '',
         risky: false,
+        blocked: false,
       });
     }
   }
@@ -1143,6 +1147,7 @@ export function addToolPart(
           details: '',
           ask: (call.ask ?? '').slice(0, 400),
           risky: call.risky === true,
+          blocked: false,
         },
       ],
     })),
@@ -1199,6 +1204,7 @@ export function finishToolPart(
   result: {
     ok: boolean;
     declined?: boolean;
+    blocked?: boolean;
     label?: string;
     outcome?: string;
     details?: string;
@@ -1211,6 +1217,7 @@ export function finishToolPart(
         ? {
             ...p,
             status: result.declined ? 'declined' : result.ok ? 'ok' : 'error',
+            blocked: result.blocked === true,
             label:
               result.label === undefined
                 ? p.label

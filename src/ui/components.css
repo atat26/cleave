@@ -1102,54 +1102,225 @@ button {
   user-select: text;
   line-height: var(--lh-body);
 }
-.tool {
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: var(--c-surface);
+/* The assistant's steps in the chat (StepList.tsx, runModel.ts). */
+.step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0 0 2px;
+  border-radius: 7px;
   font-size: var(--fs-sm);
-  margin: 0 0 var(--s-1);
 }
-.tool-summary {
-  width: 100%;
+.step.is-nested {
+  margin-left: 0;
+}
+.step-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  min-height: var(--h-md);
-  padding: 0 var(--s-2);
+  min-height: 28px;
+  padding: 4px 6px;
   border: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--c-text);
-  border-radius: var(--r-md);
+  text-align: left;
   font-size: var(--fs-sm);
 }
-.tool-summary:hover {
+.step-main:hover {
   background: var(--c-hover);
 }
-.tool .st {
-  width: 16px;
-  height: 16px;
-  display: grid;
-  place-items: center;
+.step > .btn {
   flex: none;
 }
-.tool[data-status='ok'] .st {
-  color: var(--c-ok);
+.step .st {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
 }
-.tool[data-status='error'] .st {
-  color: var(--c-danger);
-}
-.tool[data-status='declined'] .st,
-.tool[data-status='waiting'] .st {
-  color: var(--c-text-3);
-}
-.tool[data-status='running'] .st {
+.step .st[data-state='running'],
+.run-bar .st[data-state='running'] {
   color: var(--c-accent);
 }
-.tool[data-status='running'] .st .i {
+.step .st[data-state='running'] .i,
+.run-bar .st[data-state='running'] .i {
   animation: spin 1s linear infinite;
 }
-.tool[data-status='error'] {
+.st[data-state='waiting'] {
+  color: var(--c-warn);
+}
+.st[data-state='done'] {
+  color: var(--c-ok);
+}
+.st[data-state='declined'],
+.st[data-state='stopped'] {
+  color: var(--c-text-2);
+}
+.st[data-state='blocked'],
+.st[data-state='failed'] {
+  color: var(--c-danger);
+}
+.step-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.step-line {
+  display: block;
+}
+.step-result {
+  display: block;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.step[data-state='failed'] .step-result,
+.step[data-state='blocked'] .step-result {
+  color: var(--c-danger);
+}
+.step-tag {
+  flex: none;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.step-site {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  height: 22px;
+  padding: 0 8px 0 5px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.step-site img {
+  border-radius: 3px;
+}
+.step-chev {
+  flex: none;
+  color: var(--c-text-3);
+  opacity: 0;
+}
+.step:hover .step-chev,
+.step:focus-within .step-chev {
+  opacity: 1;
+}
+.step-faces {
+  flex: none;
+  display: inline-flex;
+}
+.step-faces > * {
+  margin-left: -4px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1.5px var(--c-surface);
+}
+.step-faces > *:first-child {
+  margin-left: 0;
+}
+.step-face-globe {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  background: var(--c-surface-3);
+  color: var(--c-text-2);
+}
+.step {
+  min-width: 0;
+}
+.step-children {
+  flex: 1 1 calc(100% - 14px);
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 0 0 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--c-border);
+}
+.step > .tool-detail {
+  flex: 1 1 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* The run bar above the message box: its state in a word, what it is doing, one tick
+   per step, and Stop. */
+.run-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 34px;
+  margin: 0 var(--s-3) var(--s-1);
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--c-accent) 40%, transparent);
+  border-radius: 9px;
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+}
+.run-bar[data-word='waiting'] {
+  border-color: color-mix(in srgb, var(--c-warn-edge) 55%, transparent);
+  background: var(--c-warn-tint);
+}
+.run-bar[data-word='finished'] {
+  border-color: color-mix(in srgb, var(--c-ok) 40%, transparent);
+}
+.run-bar[data-word='stopped'] {
+  border-color: var(--c-border);
+}
+.run-bar[data-word='stuck'] {
   border-color: color-mix(in srgb, var(--c-danger) 45%, transparent);
+}
+.run-word {
+  flex: none;
+  font-weight: 600;
+}
+.run-what {
+  flex: 1;
+  min-width: 0;
+  color: var(--c-text-2);
+}
+.run-what strong {
+  color: var(--c-text);
+}
+.run-ticks {
+  flex: none;
+  display: inline-flex;
+  gap: 3px;
+}
+.run-tick {
+  width: 12px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-ok);
+}
+.run-tick[data-state='running'] {
+  background: var(--c-accent);
+}
+.run-tick[data-state='waiting'] {
+  background: var(--c-warn-edge);
+}
+.run-tick[data-state='failed'],
+.run-tick[data-state='blocked'] {
+  background: var(--c-danger);
+}
+.run-tick[data-state='declined'],
+.run-tick[data-state='stopped'] {
+  background: var(--c-text-3);
+}
+.run-pos {
+  flex: none;
+  color: var(--c-text-2);
+}
+.compact-chat .run-bar,
+.chat-live .run-bar {
+  margin: 0;
+  flex: 1;
 }
 .tool-detail {
   margin: 0;

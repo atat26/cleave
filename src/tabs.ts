@@ -172,6 +172,7 @@ import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
 import { parseQuickChoice, quickSearchItems } from './quickSearch';
+import { retryRequest, stepState } from './runModel';
 import { parseTabSearchChoice, tabSearchItems } from './tabSearch';
 import {
   clearHiddenPickUp,
@@ -346,6 +347,8 @@ import {
   parseAddToChatChoice,
   parseNewSkillChoice,
   parseSkillChoice,
+  parseStepChoice,
+  stepMenuItems,
   parseToolLevelChoice,
   parseToolTarget,
   toolLevelMenuItems,
@@ -3697,6 +3700,32 @@ export async function createTabs(
     }
   };
 
+  // "Try again" on a step: ask the assistant to try it again, with fixed words (nothing
+  // from a page goes into the message). Only for a failed or cut-off step in the
+  // newest reply, when nothing is being written, so it stays in the assistant's own
+  // loop and goes through the usual approvals.
+  const retryStep = (chatId: number, messageId: number, partId: number) => {
+    if (!chatService || chatService.runningChats().includes(chatId)) return;
+    const chat = chatsModel.findConversation(chats, chatId);
+    const message = chat?.messages[chat.messages.length - 1];
+    if (!chat || !message || message.id !== messageId) return;
+    if (message.role !== 'assistant') return;
+    const part = message.parts.find(
+      (p) => p.type === 'tool' && p.id === partId,
+    );
+    if (!part || part.type !== 'tool') return;
+    const state = stepState(part, message.status);
+    if (state !== 'failed' && state !== 'stopped') return;
+    const result = chatService.sendMessage(chatId, retryRequest(part.name), []);
+    if (!result.ok) {
+      void dialog.showMessageBox(win, {
+        type: 'info',
+        message: 'The step could not be tried again.',
+        detail: result.error,
+      });
+    }
+  };
+
   // "Make a skill from this chat…": go to that chat and ask the assistant to write the
   // skill with create_skill (so the whole text is on the approval card).
   const makeSkillFromChat = (chatId: number) => {
@@ -5960,6 +5989,33 @@ export async function createTabs(
         },
         requestSender ?? win.webContents,
       );
+    },
+    // Right-click on a step of the assistant's work in the chat.
+    'step:menu': (chatId, messageId, partId, x, y, hints) => {
+      if (!isId(chatId) || !isId(messageId) || !isId(partId)) return;
+      if (!isNumber(x) || !isNumber(y)) return;
+      const h = hints as { retry?: unknown; open?: unknown } | null;
+      showMenu(
+        stepMenuItems({ retry: h?.retry === true, open: h?.open === true }),
+        x,
+        y,
+        (choice) => {
+          const parsed = parseStepChoice(choice);
+          if (parsed?.action === 'details') {
+            if (!win.webContents.isDestroyed()) {
+              win.webContents.send('step:toggle', messageId, partId);
+            }
+          } else if (parsed?.action === 'retry') {
+            retryStep(chatId, messageId, partId);
+          }
+        },
+        requestSender ?? win.webContents,
+      );
+    },
+    'chat:retry-step': (chatId, messageId, partId) => {
+      if (isId(chatId) && isId(messageId) && isId(partId)) {
+        retryStep(chatId, messageId, partId);
+      }
     },
     'skill:new-menu': (x, y) => {
       if (!isNumber(x) || !isNumber(y)) return;

@@ -190,6 +190,8 @@ export interface AgentEnv
 export interface ToolOutcome {
   label: string;
   ok: boolean;
+  // Not run because of a safety rule, a limit or a setting (not a failure).
+  blocked?: boolean;
   // Set when the assistant offered choices: shown as buttons in the chat.
   choices?: Choices;
   // What the tool found, kept with the call so you can read it later (search
@@ -633,6 +635,7 @@ export function createAgentTools(
     ): ToolOutcome => ({
       label,
       ok: false,
+      blocked: true,
       note,
       result,
     });
@@ -729,6 +732,7 @@ export function createAgentTools(
       return {
         label: 'Turned off in Tools',
         ok: false,
+        blocked: true,
         note: 'You have turned this tool off in the Tools panel.',
         result: 'This tool is turned off. Do not try it again.',
       };
@@ -776,6 +780,7 @@ export function createAgentTools(
       return {
         label: 'Turned off in Tools',
         ok: false,
+        blocked: true,
         note: 'You have turned this tool off in the Tools panel.',
         result: 'This tool is turned off. Do not try it again.',
       };
@@ -1028,6 +1033,7 @@ export function createAgentTools(
         return {
           label: 'Look limit reached',
           ok: false,
+          blocked: true,
           note: `Already looked at pages ${MAX_LOOKS} times in this reply.`,
           result: `You have already looked at pages ${MAX_LOOKS} times in this reply. Stop and tell the user where things stand.`,
         };
@@ -1038,6 +1044,7 @@ export function createAgentTools(
         return {
           label: 'Read limit reached',
           ok: false,
+          blocked: true,
           note: `Already read ${MAX_READS} pages in this reply.`,
           result: `You have already read ${MAX_READS} pages in this reply. Answer with what you have.`,
         };

@@ -7,6 +7,8 @@ import {
   newSkillMenuItems,
   skillMenuItems,
   parseToolLevelChoice,
+  parseStepChoice,
+  stepMenuItems,
   parseToolTarget,
   toolLevelMenuItems,
   chatRowMenuItems,
@@ -1625,4 +1627,17 @@ test('the Tools level menu ticks the current level, marks the default, and reads
   assert.equal(parseToolTarget('else'), null);
   assert.equal(parseToolTarget(5), null);
   assert.equal(parseToolTarget('tool:' + 'x'.repeat(100)), null);
+});
+
+test('the step menu has Show or Hide details and Try again, greyed unless it can be used', () => {
+  const closed = stepMenuItems({ retry: false, open: false });
+  assert.deepEqual(menuIds(closed), ['step.details', 'step.retry']);
+  assert.equal(entry(closed, 'step.details').label, 'Show details');
+  assert.equal(entry(closed, 'step.retry').disabled, true);
+  const open = stepMenuItems({ retry: true, open: true });
+  assert.equal(entry(open, 'step.details').label, 'Hide details');
+  assert.notEqual(entry(open, 'step.retry').disabled, true);
+  assert.deepEqual(parseStepChoice('step.details'), { action: 'details' });
+  assert.deepEqual(parseStepChoice('step.retry'), { action: 'retry' });
+  assert.equal(parseStepChoice('step.nope'), null);
 });
