@@ -303,7 +303,14 @@ import {
   toOverlayRect,
 } from './marker';
 import type { MarkerView, Rect, StepTarget } from './marker';
-import { PILL_HEIGHT, PILL_MAX_WIDTH, popoutOf } from './agentVisuals';
+import {
+  noOverlayFlags,
+  overlayFlags,
+  PILL_HEIGHT,
+  PILL_MAX_WIDTH,
+  popoutOf,
+} from './agentVisuals';
+import type { OverlayFlags } from './agentVisuals';
 import { cardMayTakeFocus } from './approvalCard';
 import { resolveInput, searchUrl } from './url';
 import {
@@ -830,7 +837,9 @@ export async function createTabs(
   let overlayReady = false;
   let overlayShown = false;
   // Is an approval card popped out over the page? And which card has been given the keyboard.
-  let lastPopout = false;
+  let lastFlags: OverlayFlags = noOverlayFlags();
+  // Cards you minimized (by step), so a new question pops out fresh.
+  const minimizedCards = new Set<string>();
   let focusedCardKey: string | null = null;
   // The reply the overlay follows, and the replies whose pill you dismissed.
   let overlayReply: { chatId: number; message: chatsModel.ChatMessage } | null =
@@ -1893,6 +1902,19 @@ export async function createTabs(
     const webTab =
       pageArea && activeId !== null && views.has(activeId) ? activeId : null;
     const run = overlayReply ? runOf(overlayReply.message) : null;
+    const approval =
+      overlayReady && overlayReply
+        ? popoutOf(overlayReply.message, state.tabs)
+        : null;
+    const approvalKey = approval
+      ? stepKey(approval.messageId, approval.partId)
+      : null;
+    // The step's tab, if it is open and is not the one on screen: "Go to tab" takes you there.
+    const stepTab = run?.tabId ?? null;
+    const goToTab =
+      stepTab !== null &&
+      stepTab !== activeId &&
+      model.findTab(state, stepTab)?.closed === false;
     const next = overlayFor({
       run,
       activeTab: webTab,
@@ -1903,16 +1925,18 @@ export async function createTabs(
       settings: agentVisualSettings,
       marker: webTab !== null ? markerFor(run, webTab) : null,
       // Only once the overlay can show it: until then the chat holds the question.
-      approval:
-        overlayReady && overlayReply
-          ? popoutOf(overlayReply.message, state.tabs)
-          : null,
+      approval,
+      minimized: approvalKey !== null && minimizedCards.has(approvalKey),
+      goToTab,
     });
-    // Tell the chat whether the card is popped out (so it does not also show it).
-    const poppedOut = next?.card != null;
-    if (poppedOut !== lastPopout && !win.webContents.isDestroyed()) {
-      lastPopout = poppedOut;
-      win.webContents.send('overlay:popout', poppedOut);
+    // Tell the chat what the overlay already shows (so it does not show it again).
+    const flags = overlayFlags(next);
+    if (
+      (flags.pill !== lastFlags.pill || flags.card !== lastFlags.card) &&
+      !win.webContents.isDestroyed()
+    ) {
+      lastFlags = flags;
+      win.webContents.send('overlay:flags', flags);
     }
     if (!next) {
       if (overlayShown) {
@@ -7780,7 +7804,30 @@ ${artifact.content.slice(0, 1500)}`;
   const onOverlayDismiss = (event: Electron.IpcMainEvent) => {
     if (!fromOverlay(event) || !overlayReply) return;
     dismissedReplies.add(overlayReply.message.id);
+    // The chat's own copy of the status is gone with it.
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send('overlay:dismissed', overlayReply.message.id);
+    }
     updateOverlay();
+  };
+  // Minimize the popped-out card to its strip, or bring it back. Only the step that is
+  // waiting right now can be minimized.
+  const onOverlayMinimize = (event: Electron.IpcMainEvent, on: unknown) => {
+    if (!fromOverlay(event) || !overlayReply || typeof on !== 'boolean') return;
+    const waiting = popoutOf(overlayReply.message, state.tabs);
+    if (!waiting) return;
+    const key = stepKey(waiting.messageId, waiting.partId);
+    if (on) minimizedCards.add(key);
+    else minimizedCards.delete(key);
+    updateOverlay();
+  };
+  // Show the tab the waiting step is about.
+  const onOverlayGoToTab = (event: Electron.IpcMainEvent) => {
+    if (!fromOverlay(event) || !overlayReply) return;
+    const run = runOf(overlayReply.message);
+    if (!run || run.word !== 'waiting' || run.tabId === null) return;
+    if (model.findTab(state, run.tabId)?.closed !== false) return;
+    select({ kind: 'tab', id: run.tabId });
   };
   // The popped-out card was answered. Only the card the app is showing can be answered, and
   // only with one of the three answers.
@@ -7840,6 +7887,13 @@ ${artifact.content.slice(0, 1500)}`;
   ipcMain.on('overlay:ready', onOverlayReady);
   ipcMain.on('overlay:stop', onOverlayStop);
   ipcMain.on('overlay:dismiss', onOverlayDismiss);
+  // The chat asks for what the overlay shows when it opens (it may have missed the news).
+  ipcMain.handle('overlay:flags-get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return lastFlags;
+  });
+  ipcMain.on('overlay:minimize', onOverlayMinimize);
+  ipcMain.on('overlay:go-to-tab', onOverlayGoToTab);
   // How the assistant's work is shown on pages: read and changed from the Settings page.
   ipcMain.handle('agent-visuals:get', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
@@ -8018,6 +8072,8 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('overlay:wheel', onOverlayWheel);
     ipcMain.removeListener('overlay:stop', onOverlayStop);
     ipcMain.removeListener('overlay:dismiss', onOverlayDismiss);
+    ipcMain.removeListener('overlay:minimize', onOverlayMinimize);
+    ipcMain.removeListener('overlay:go-to-tab', onOverlayGoToTab);
     ipcMain.removeHandler('agent-visuals:get');
     ipcMain.removeHandler('agent-visuals:set');
     ipcMain.removeHandler('quick:query');

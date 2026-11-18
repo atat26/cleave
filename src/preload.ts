@@ -504,15 +504,27 @@ const browserApi: BrowserApi = {
   overlayDecide: (decision) => ipcRenderer.send('overlay:decide', decision),
   overlayWheel: (x, y, deltaX, deltaY) =>
     ipcRenderer.send('overlay:wheel', x, y, deltaX, deltaY),
-  onOverlayPopout: (callback) => {
-    const listener = (_event: unknown, on: boolean) => callback(on);
-    ipcRenderer.on('overlay:popout', listener);
+  onOverlayFlags: (callback) => {
+    const listener = (_event: unknown, flags: Parameters<typeof callback>[0]) =>
+      callback(flags);
+    ipcRenderer.on('overlay:flags', listener);
     return () => {
-      ipcRenderer.removeListener('overlay:popout', listener);
+      ipcRenderer.removeListener('overlay:flags', listener);
+    };
+  },
+  onOverlayDismissed: (callback) => {
+    const listener = (_event: unknown, messageId: number) =>
+      callback(messageId);
+    ipcRenderer.on('overlay:dismissed', listener);
+    return () => {
+      ipcRenderer.removeListener('overlay:dismissed', listener);
     };
   },
   overlayStop: () => ipcRenderer.send('overlay:stop'),
   overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),
+  overlayFlagsGet: () => ipcRenderer.invoke('overlay:flags-get'),
+  overlayMinimize: (on) => ipcRenderer.send('overlay:minimize', on),
+  overlayGoToTab: () => ipcRenderer.send('overlay:go-to-tab'),
   agentVisualsGet: () => ipcRenderer.invoke('agent-visuals:get'),
   agentVisualsSet: (changes) =>
     ipcRenderer.invoke('agent-visuals:set', changes),

@@ -7,6 +7,8 @@ import {
   overlayFor,
   parseAgentVisualSettings,
   PILL_HEIGHT,
+  noOverlayFlags,
+  overlayFlags,
   popoutOf,
 } from './agentVisuals.ts';
 import type { ChatMessage } from './chats.ts';
@@ -255,4 +257,79 @@ test('the card is built from the waiting step only, and only while the reply is 
     null,
   );
   assert.equal(popoutOf(undefined, tabs), null);
+});
+
+test('a minimized card is just the strip, with the question, Review, Go to tab and Stop', () => {
+  const waiting = run({ word: 'waiting' });
+  const state = overlayFor(
+    input({ run: waiting, approval, minimized: true, goToTab: true }),
+  );
+  assert.equal(state?.mode, 'pill');
+  assert.equal(state?.minimized, true);
+  assert.equal(state?.card, null);
+  assert.equal(state?.glow, false);
+  assert.equal(state?.marker, null);
+  assert.equal(state?.pill, true);
+  assert.equal(state?.ended, false);
+  assert.equal(state?.goToTab, true);
+  assert.equal(state?.askLine, approval.ask);
+  // Only the first line of a longer question.
+  const long = { ...approval, ask: 'Open 3 tabs\nshop.example\nnews.example' };
+  assert.equal(
+    overlayFor(input({ run: waiting, approval: long, minimized: true }))
+      ?.askLine,
+    'Open 3 tabs',
+  );
+  // It stays even if the display is off: a question is never hidden away.
+  const off = { ...defaultAgentVisualSettings(), showWork: 'off' as const };
+  const quiet = overlayFor(
+    input({ run: waiting, approval, minimized: true, settings: off }),
+  );
+  assert.equal(quiet?.minimized, true);
+  assert.equal(quiet?.pill, true);
+  // Minimized without anything waiting does nothing special.
+  assert.equal(overlayFor(input({ minimized: true }))?.minimized, false);
+  // Not minimized: the card, and Go to tab only if there is a tab to go to.
+  const open = overlayFor(input({ run: waiting, approval, goToTab: true }));
+  assert.equal(open?.card, approval);
+  assert.equal(open?.goToTab, true);
+  assert.equal(overlayFor(input({ run: waiting, approval }))?.goToTab, false);
+  // No card, no Go to tab.
+  assert.equal(overlayFor(input({ goToTab: true }))?.goToTab, false);
+});
+
+test('the chat is told where each fact is already shown, so it does not repeat it', () => {
+  assert.deepEqual(overlayFlags(null), noOverlayFlags());
+  // Working on the page: the pill is there, no card.
+  assert.deepEqual(overlayFlags(overlayFor(input())), {
+    pill: true,
+    card: false,
+  });
+  // A card over the page, with the pill.
+  const waiting = run({ word: 'waiting' });
+  assert.deepEqual(
+    overlayFlags(overlayFor(input({ run: waiting, approval }))),
+    {
+      pill: true,
+      card: true,
+    },
+  );
+  // Minimized: the strip still holds the question.
+  assert.deepEqual(
+    overlayFlags(
+      overlayFor(input({ run: waiting, approval, minimized: true })),
+    ),
+    { pill: true, card: true },
+  );
+  // Display off: the card alone, no pill.
+  const off = { ...defaultAgentVisualSettings(), showWork: 'off' as const };
+  assert.deepEqual(
+    overlayFlags(overlayFor(input({ run: waiting, approval, settings: off }))),
+    { pill: false, card: true },
+  );
+  // An ended run: the pill is its status.
+  assert.deepEqual(
+    overlayFlags(overlayFor(input({ run: run({ word: 'finished' }) }))),
+    { pill: true, card: false },
+  );
 });

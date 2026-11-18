@@ -25,7 +25,11 @@ import type {
   MessagePart,
 } from './chats';
 import type { ApprovalLevel, ToolGroup } from './toolPolicy';
-import type { AgentVisualSettings, OverlayState } from './agentVisuals';
+import type {
+  AgentVisualSettings,
+  OverlayFlags,
+  OverlayState,
+} from './agentVisuals';
 import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
 import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
@@ -776,11 +780,20 @@ export interface BrowserApi {
   // (the overlay covers the page, so it passes the wheel on).
   overlayDecide: (decision: 'allow' | 'allow-rest' | 'deny') => void;
   overlayWheel: (x: number, y: number, deltaX: number, deltaY: number) => void;
-  // The main window is told when an approval card is popped out over the page (so the chat
-  // does not also show it, or grow to make room for it).
-  onOverlayPopout: (callback: (on: boolean) => void) => () => void;
+  // The main window is told what the overlay shows on the page: the status pill, and an
+  // approval card popped out or minimized (so the chat does not show them a second time, or
+  // grow to make room for the card).
+  onOverlayFlags: (callback: (flags: OverlayFlags) => void) => () => void;
+  // The pill of this reply was dismissed on the page.
+  onOverlayDismissed: (callback: (messageId: number) => void) => () => void;
   overlayStop: () => void;
   overlayDismiss: () => void;
+  // Shrink the popped-out card to its strip (true) or bring it back (false), and show the
+  // tab its step is about.
+  overlayMinimize: (on: boolean) => void;
+  // What the overlay shows right now (asked when the chat opens).
+  overlayFlagsGet: () => Promise<OverlayFlags>;
+  overlayGoToTab: () => void;
   // How the assistant's work is shown on pages (kept for the Settings page to use).
   agentVisualsGet: () => Promise<AgentVisualSettings>;
   agentVisualsSet: (
