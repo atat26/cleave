@@ -37,6 +37,10 @@ export const RAIL_WIDTH = 48;
 // Right panel: opens left of the rail. Drag it narrower than this and, on
 // release, it closes.
 export const PANEL_SNAP_WIDTH = 220;
+// While you drag the panel's edge it never gets narrower than this, so the panel (and
+// its edge, which you are holding) stay on screen until you let go. The page treats a
+// panel of 1 pixel or less as not there, and would take the edge away mid-drag.
+export const PANEL_DRAG_MIN_WIDTH = 2;
 
 // Bottom chat: a compact bar (one or two lines), or expanded and resizable.
 // Drag it shorter than this and, on release, it shrinks back to the compact bar.

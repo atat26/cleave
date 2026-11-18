@@ -24,6 +24,7 @@ import {
   MIN_PAGE_HEIGHT,
   MIN_PAGE_WIDTH,
   PAGE_INSET,
+  PANEL_DRAG_MIN_WIDTH,
   PANEL_SNAP_WIDTH,
   RAIL_WIDTH,
   TOOLBAR_HEIGHT,
@@ -147,8 +148,28 @@ test('the right panel is limited so the page always keeps some width', () => {
     700 - 48 - RAIL_WIDTH - 2 * PAGE_INSET - MIN_PAGE_WIDTH,
   );
   assert.equal(maxPanelWidth(rest, { width: 100, height: 800 }), 0);
-  assert.equal(panelWidthWhileDragging(-20, rest, WINDOW), 0);
   assert.equal(panelWidthWhileDragging(99999, rest, WINDOW), 560);
+});
+
+test('dragging the panel edge past the rail leaves a sliver, never nothing, so the edge stays in your hand', () => {
+  // Far past the rail (a negative width) and right down to 0: the panel is still there.
+  assert.equal(
+    panelWidthWhileDragging(-500, rest, WINDOW),
+    PANEL_DRAG_MIN_WIDTH,
+  );
+  assert.equal(panelWidthWhileDragging(0, rest, WINDOW), PANEL_DRAG_MIN_WIDTH);
+  // The page takes a panel of 1 pixel or less away (and its edge with it): never that.
+  assert.ok(PANEL_DRAG_MIN_WIDTH > 1);
+  // Letting go of a sliver closes the panel, as dragging it all the way right is meant to.
+  assert.deepEqual(settlePanel(PANEL_DRAG_MIN_WIDTH, rest, WINDOW), {
+    open: false,
+  });
+  assert.deepEqual(settlePanel(-500, rest, WINDOW), { open: false });
+  // A window with no room for a panel has none, even while dragging.
+  assert.equal(
+    panelWidthWhileDragging(-20, rest, { width: 100, height: 800 }),
+    0,
+  );
 });
 
 test('letting go of the panel edge: narrow closes it, otherwise it stays', () => {
