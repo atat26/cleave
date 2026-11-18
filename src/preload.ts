@@ -492,6 +492,20 @@ const browserApi: BrowserApi = {
     };
   },
   showTabMenu: (id, x, y) => ipcRenderer.send('tab:menu', id, x, y),
+  onOverlayState: (callback) => {
+    const listener = (_event: unknown, state: Parameters<typeof callback>[0]) =>
+      callback(state);
+    ipcRenderer.on('overlay:state', listener);
+    return () => {
+      ipcRenderer.removeListener('overlay:state', listener);
+    };
+  },
+  overlayReady: () => ipcRenderer.send('overlay:ready'),
+  overlayStop: () => ipcRenderer.send('overlay:stop'),
+  overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),
+  agentVisualsGet: () => ipcRenderer.invoke('agent-visuals:get'),
+  agentVisualsSet: (changes) =>
+    ipcRenderer.invoke('agent-visuals:set', changes),
   showStepMenu: (chatId, messageId, partId, x, y, hints) =>
     ipcRenderer.send('step:menu', chatId, messageId, partId, x, y, hints),
   onStepToggle: (callback) => {

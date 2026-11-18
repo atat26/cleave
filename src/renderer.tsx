@@ -12,6 +12,7 @@ import { App } from './App';
 import { KitPage } from './KitPage';
 import { FindApp } from './FindApp';
 import { PopupApp } from './PopupApp';
+import { OverlayApp } from './OverlayApp';
 import { SuggestApp } from './SuggestApp';
 
 // Light or dark: the app asks the computer (which follows your Appearance choice,
@@ -36,6 +37,8 @@ createRoot(document.getElementById('root')!).render(
       <FindApp />
     ) : window.location.hash === '#suggest' ? (
       <SuggestApp />
+    ) : window.location.hash === '#overlay' ? (
+      <OverlayApp />
     ) : (
       <App />
     )}

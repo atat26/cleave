@@ -25,6 +25,7 @@ import type {
   MessagePart,
 } from './chats';
 import type { ApprovalLevel, ToolGroup } from './toolPolicy';
+import type { AgentVisualSettings, OverlayState } from './agentVisuals';
 import type { Bookmark } from './bookmarks';
 import type { DownloadItem, DownloadSummary } from './downloadList';
 import type { Answer, AskKind, SiteDetail, SiteRow } from './permissions';
@@ -764,6 +765,20 @@ export interface BrowserApi {
     content: string,
     revision: number,
   ) => Promise<ArtifactWriteResult>;
+  // The overlay on the page (the glow and the pill): the app tells it what to show (null:
+  // nothing), and it says when it is listening, when Stop is pressed, or when its pill
+  // is dismissed. Only the overlay's own page uses these.
+  onOverlayState: (
+    callback: (state: OverlayState | null) => void,
+  ) => () => void;
+  overlayReady: () => void;
+  overlayStop: () => void;
+  overlayDismiss: () => void;
+  // How the assistant's work is shown on pages (kept for the Settings page to use).
+  agentVisualsGet: () => Promise<AgentVisualSettings>;
+  agentVisualsSet: (
+    changes: Partial<AgentVisualSettings>,
+  ) => Promise<AgentVisualSettings>;
   // A step of the assistant's work in the chat: its right-click menu (what it can do
   // depends on the hints), "Show details" chosen from it, and "Try again".
   showStepMenu: (

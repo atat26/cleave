@@ -3190,3 +3190,89 @@ button {
   border-color: var(--c-warn-edge);
   color: var(--c-surface);
 }
+
+/* The overlay on the page (OverlayApp.tsx, agentVisuals.ts): a glow inside the page's
+   edge while the assistant works in it, and a pill hanging from the top. */
+.ao {
+  position: fixed;
+  inset: 0;
+  --ao: var(--c-accent);
+}
+.ao-waiting {
+  --ao: var(--c-warn-edge);
+}
+.ao-stuck {
+  --ao: var(--c-danger);
+}
+.ao-finished {
+  --ao: var(--c-ok);
+}
+.ao-stopped {
+  --ao: var(--c-text-3);
+}
+.ao-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-lg);
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 26px 4px color-mix(in srgb, var(--ao) 55%, transparent),
+    inset 0 0 8px 0 color-mix(in srgb, var(--ao) 70%, transparent);
+  animation: ao-in 220ms var(--ease-out);
+}
+.ao.is-soft .ao-glow {
+  box-shadow: inset 0 0 20px 0 color-mix(in srgb, var(--ao) 40%, transparent);
+}
+.ao-pill {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  box-sizing: border-box;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border: 1px solid color-mix(in srgb, var(--ao) 55%, transparent);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  box-shadow: var(--sh-popup);
+}
+.ao-word {
+  flex: none;
+  font-weight: 600;
+}
+.ao-what {
+  flex: 1;
+  min-width: 0;
+  color: var(--c-text-2);
+}
+.ao-what strong {
+  color: var(--c-text);
+}
+.ao-step {
+  flex: none;
+  color: var(--c-text-2);
+}
+.ao-pill .st {
+  color: var(--ao);
+}
+@keyframes ao-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ao-glow {
+    animation: none;
+  }
+}
+.ao-pill .st[data-state='running'] .i {
+  animation: spin 1s linear infinite;
+}

@@ -277,6 +277,26 @@ export interface RunView {
   ticks: StepState[];
   // Which step this is ("Step 4"); the total is not known unless there is a plan.
   stepNumber: number;
+  // The tab the current step is in (from its arguments), if it names one.
+  tabId: number | null;
+  // The current step reads or acts in that page (not tabs, history, artifacts...).
+  touchesPage: boolean;
+  // ...and only reads it.
+  reading: boolean;
+}
+
+// The tab a step names in its arguments, or null.
+export function stepTabId(
+  part: Pick<ToolPartView, 'arguments'>,
+): number | null {
+  try {
+    const args: unknown = JSON.parse(part.arguments);
+    if (typeof args !== 'object' || args === null) return null;
+    const tab = (args as { tab?: unknown }).tab;
+    return typeof tab === 'number' && Number.isInteger(tab) ? tab : null;
+  } catch {
+    return null;
+  }
 }
 
 export const MAX_TICKS = 40;
@@ -293,6 +313,7 @@ export function runOf(message: ChatMessage | undefined): RunView | null {
     [...steps].reverse().find((s) => s.state === 'running') ??
     steps[steps.length - 1];
   const last = steps[steps.length - 1];
+  const tabId = stepTabId(current.part);
   const bad = last.state === 'failed' || last.state === 'blocked';
   let word: RunWord;
   if (message.status === 'streaming') {
@@ -310,5 +331,9 @@ export function runOf(message: ChatMessage | undefined): RunView | null {
     target: current.target,
     ticks: steps.slice(-MAX_TICKS).map((s) => s.state),
     stepNumber: steps.indexOf(current) + 1,
+    tabId,
+    touchesPage:
+      tabId !== null && (current.kind === 'read' || current.kind === 'act'),
+    reading: current.kind === 'read',
   };
 }
