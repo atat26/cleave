@@ -11,6 +11,7 @@ import {
   splitLabel,
   stepKind,
   stepSite,
+  stepTabId,
   stepState,
   stepView,
 } from './runModel.ts';
@@ -260,4 +261,45 @@ test("the retry message uses only the tool's own title, never anything from a pa
     retryRequest('made_up'),
     'The last step did not work. Please try it again, or tell me what went wrong.',
   );
+});
+
+test('the run says which tab the current step is in, and whether it is on that page', () => {
+  const read = runOf(
+    message([tool({ name: 'read_page', arguments: '{"tab":4}' })], 'streaming'),
+  );
+  assert.equal(read?.tabId, 4);
+  assert.equal(read?.touchesPage, true);
+  assert.equal(read?.reading, true);
+  const click = runOf(
+    message(
+      [
+        tool({
+          name: 'click',
+          arguments: '{"tab":4,"element":2}',
+          status: 'running',
+        }),
+      ],
+      'streaming',
+    ),
+  );
+  assert.equal(click?.touchesPage, true);
+  assert.equal(click?.reading, false);
+  // A step about your tabs or history has no page, even though it may name a tab.
+  const move = runOf(
+    message(
+      [tool({ name: 'move_tabs', arguments: '{"tab":4}', status: 'running' })],
+      'streaming',
+    ),
+  );
+  assert.equal(move?.touchesPage, false);
+  const search = runOf(
+    message(
+      [tool({ name: 'web_search', arguments: '{"query":"x"}' })],
+      'streaming',
+    ),
+  );
+  assert.equal(search?.tabId, null);
+  assert.equal(search?.touchesPage, false);
+  assert.equal(stepTabId({ arguments: 'not json' }), null);
+  assert.equal(stepTabId({ arguments: '{"tab":"4"}' }), null);
 });

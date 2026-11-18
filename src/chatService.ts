@@ -182,6 +182,8 @@ export function createChatService(options: {
   setChats(next: ChatsState): void;
   // The chat list's information changed (a title, a model, who is generating).
   onMeta(): void;
+  // A reply changed (as the window is told about it): what the page overlay follows.
+  onReplyChanged?(chatId: number, message: chats.ChatMessage): void;
   openSettings(): void;
   // Show a menu in the popup layer at a place in the window; `choose` gets the
   // id of the item picked. The keyboard goes back to `opener` afterwards.
@@ -218,6 +220,7 @@ export function createChatService(options: {
       if (message && !win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send('chat:message', { chatId, message });
       }
+      if (message) options.onReplyChanged?.(chatId, message);
     }
     dirty.clear();
   };

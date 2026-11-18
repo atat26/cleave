@@ -46,6 +46,11 @@ order of likelihood.
 - An approval is now a card: "Needs your OK", the site chip, risk badges (why it is risky, what kind of thing it is, and "Asks again: it read web pages"), the question with its target in bold, then the specifics in their own block (the exact text to type or search for, where a link or address goes, the tabs in a batch, the full text of a skill), a line saying what happens next, and Allow / Allow the rest / Don't allow / Stop. A risky card has an amber edge and amber Allow and no "Allow the rest".
 - Keys: Enter allows, Shift+Enter allows the rest, Esc does not allow; a risky card needs Ctrl+Enter (a stray Enter can never do something that cannot be undone). The card takes the keyboard only when you are not typing in a text box. The details come from values the app has already checked and cleaned, never the model's raw words, and are dropped once the step is answered.
 
+**Browser-use visuals, part 3a (the glow and the pill on the page)**
+
+- While the assistant works in the page on screen, the page glows just inside its edge (blue; softer while it only reads; amber and stronger while it waits for you), with a pill hanging from the top: its state, what it is doing, "Step N" and Stop. When it has finished, stopped or got stuck the glow goes and the pill alone stays (a strip at the top, so the page below is usable) until you dismiss it with the x or send your next message. Nothing is drawn for steps that are not about the page on screen (tabs, history, artifacts), and nothing in chat-only view.
+- It is a page of the app's own in a view above the web page, so a web page cannot see, move or draw over it. While the glow is up it covers the page, which is fine because the assistant is working there. The app keeps two settings for it in agent-visuals.json (show the work on pages: glow and marker, glow only, or off; keep the Finished pill until dismissed), with no screen for them until the Settings work. The marker and the cursor come next (3b, 3c).
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.

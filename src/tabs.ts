@@ -287,6 +287,14 @@ import type {
   UiState,
 } from './types';
 import { loadUi } from './ui';
+import {
+  defaultAgentVisualSettings,
+  overlayBounds,
+  overlayFor,
+  parseAgentVisualSettings,
+} from './agentVisuals';
+import type { AgentVisualSettings } from './agentVisuals';
+import { runOf } from './runModel';
 import { resolveInput, searchUrl } from './url';
 import {
   activeEngine,
@@ -426,6 +434,20 @@ export async function createTabs(
     defaultToolSettings,
   );
   const toolsSaver = createSaver(toolsFile, () => toolSettings);
+  // How the assistant's work is shown on pages (see agentVisuals.ts).
+  const agentVisualsFile = path.join(
+    app.getPath('userData'),
+    'agent-visuals.json',
+  );
+  let agentVisualSettings: AgentVisualSettings = await loadJson(
+    agentVisualsFile,
+    parseAgentVisualSettings,
+    defaultAgentVisualSettings,
+  );
+  const agentVisualsSaver = createSaver(
+    agentVisualsFile,
+    () => agentVisualSettings,
+  );
   // Light, dark or follow the computer. Every window (and web pages) follow it.
   const themeFile = path.join(app.getPath('userData'), 'theme.json');
   let themeSettings = await loadJson(
@@ -777,6 +799,31 @@ export async function createTabs(
   popup.setWindowOpenHandler(() => ({ action: 'deny' }));
   popup.on('will-navigate', (event) => event.preventDefault());
 
+  // The overlay on the page: the glow round the page while the assistant works in it,
+  // and a small pill with its state and Stop. It is a page of our own in a view above the
+  // page, so a web page cannot see it, move it or draw over it. While the glow is up it
+  // covers the page (the assistant is working there, so you are not); the pill alone is
+  // only a strip at the top.
+  const overlayView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  overlayView.setBackgroundColor('#00000000');
+  overlayView.setVisible(false);
+  const overlayPage = overlayView.webContents;
+  overlayPage.setWindowOpenHandler(() => ({ action: 'deny' }));
+  overlayPage.on('will-navigate', (event) => event.preventDefault());
+  let overlayReady = false;
+  let overlayShown = false;
+  // The reply the overlay follows, and the replies whose pill you dismissed.
+  let overlayReply: { chatId: number; message: chatsModel.ChatMessage } | null =
+    null;
+  const dismissedReplies = new Set<number>();
+
   // The find bar: a small view of our own over the top right of the page. Unlike
   // a menu it is only as big as the bar, so the page stays usable while it is open.
   const findView = new WebContentsView({
@@ -820,6 +867,7 @@ export async function createTabs(
   let findWhenReady: (() => void) | null = null;
   // Keep the find bar above the pages and below the sidebar and the popup layer.
   const restack = () => {
+    if (overlayShown) win.contentView.addChildView(overlayView);
     if (findTabId !== null) win.contentView.addChildView(findView);
     if (suggestShown) win.contentView.addChildView(suggestView);
     win.contentView.addChildView(sidebarView);
@@ -1245,6 +1293,7 @@ export async function createTabs(
     }
     syncFind();
     hideSuggest();
+    updateOverlay();
     sendLayout();
   };
 
@@ -1678,6 +1727,44 @@ export async function createTabs(
       undefined,
       'quick',
     );
+  };
+
+  // Show, move or hide the overlay for what the assistant is doing now (see
+  // agentVisuals.ts for the rules). Called when the reply changes, and whenever the
+  // page moves or another tab comes to the front.
+  const updateOverlay = () => {
+    if (win.isDestroyed() || overlayPage.isDestroyed()) return;
+    const activeId = activeTabId();
+    const onScreen =
+      activeId !== null &&
+      views.has(activeId) &&
+      pageIsShown() &&
+      htmlFullscreen === null;
+    const next = overlayFor({
+      run: overlayReply ? runOf(overlayReply.message) : null,
+      activeTab: onScreen ? activeId : null,
+      pageShown: onScreen,
+      dismissed: overlayReply
+        ? dismissedReplies.has(overlayReply.message.id)
+        : false,
+      settings: agentVisualSettings,
+    });
+    if (!next) {
+      if (overlayShown) {
+        overlayShown = false;
+        overlayView.setVisible(false);
+        win.contentView.removeChildView(overlayView);
+        // Clear it too, so an old state is never flashed when it comes back.
+        if (overlayReady) overlayPage.send('overlay:state', null);
+      }
+      return;
+    }
+    overlayView.setBounds(overlayBounds(next.mode, pageBounds()));
+    const wasShown = overlayShown;
+    overlayShown = true;
+    overlayView.setVisible(true);
+    if (!wasShown) restack();
+    if (overlayReady) overlayPage.send('overlay:state', next);
   };
 
   // The window itself full screen (F11, and "Full screen" in the "…" menu).
@@ -2270,6 +2357,7 @@ export async function createTabs(
     }
     syncFind();
     hideSuggest();
+    updateOverlay();
     if (id !== null) {
       const shown = pageContents(id);
       if (shown) extensions?.selectTab(shown);
@@ -3449,6 +3537,12 @@ export async function createTabs(
       chatsSaver.schedule();
     },
     onMeta: sendState,
+    onReplyChanged: (chatId, message) => {
+      if (message.role !== 'assistant') return;
+      if (!message.parts.some((part) => part.type === 'tool')) return;
+      overlayReply = { chatId, message };
+      updateOverlay();
+    },
     openSettings,
     showMenu: (items, x, y, choose, opener, alignCenter) =>
       showMenu(items, x, y, choose, opener, alignCenter),
@@ -7478,6 +7572,41 @@ ${artifact.content.slice(0, 1500)}`;
     if (event.sender !== popup || typeof text !== 'string') return [];
     return quickSearchItems(text.slice(0, 500), quickSources());
   });
+  // The overlay's own page: it is listening, Stop was pressed, or its pill was dismissed.
+  const fromOverlay = (event: Electron.IpcMainEvent) =>
+    event.sender === overlayPage;
+  const onOverlayReady = (event: Electron.IpcMainEvent) => {
+    if (!fromOverlay(event)) return;
+    overlayReady = true;
+    updateOverlay();
+  };
+  const onOverlayStop = (event: Electron.IpcMainEvent) => {
+    if (fromOverlay(event) && overlayReply)
+      chatService?.stop(overlayReply.chatId);
+  };
+  const onOverlayDismiss = (event: Electron.IpcMainEvent) => {
+    if (!fromOverlay(event) || !overlayReply) return;
+    dismissedReplies.add(overlayReply.message.id);
+    updateOverlay();
+  };
+  ipcMain.on('overlay:ready', onOverlayReady);
+  ipcMain.on('overlay:stop', onOverlayStop);
+  ipcMain.on('overlay:dismiss', onOverlayDismiss);
+  // How the assistant's work is shown on pages: read and changed from the Settings page.
+  ipcMain.handle('agent-visuals:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return agentVisualSettings;
+  });
+  ipcMain.handle('agent-visuals:set', (event, changes: unknown) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    agentVisualSettings = parseAgentVisualSettings({
+      ...agentVisualSettings,
+      ...(typeof changes === 'object' && changes !== null ? changes : {}),
+    });
+    agentVisualsSaver.schedule();
+    updateOverlay();
+    return agentVisualSettings;
+  });
   ipcMain.handle('tools:reset', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     toolSettings = defaultToolSettings();
@@ -7524,6 +7653,7 @@ ${artifact.content.slice(0, 1500)}`;
   void loadUi(popup, 'popup');
   void loadUi(find, 'find');
   void loadUi(suggestPage, 'suggest');
+  void loadUi(overlayPage, 'overlay');
 
   // While developing, the dev server sometimes rebuilds its bundled libraries just
   // as the app starts, and a page that loads in that moment fails to start (it
@@ -7546,6 +7676,7 @@ ${artifact.content.slice(0, 1500)}`;
       ...(popupReady ? [] : [popup]),
       ...(findReady ? [] : [find]),
       ...(suggestReady ? [] : [suggestPage]),
+      ...(overlayReady ? [] : [overlayPage]),
     ];
     if (notStarted.length === 0) {
       clearInterval(watchdog);
@@ -7568,6 +7699,7 @@ ${artifact.content.slice(0, 1500)}`;
     saver.flushSync();
     chatsSaver.flushSync();
     toolsSaver.flushSync();
+    agentVisualsSaver.flushSync();
     artifactsSaver.flushSync();
     namingSaver.flushSync();
     librarySaver.flushSync();
@@ -7633,6 +7765,11 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
+    ipcMain.removeListener('overlay:ready', onOverlayReady);
+    ipcMain.removeListener('overlay:stop', onOverlayStop);
+    ipcMain.removeListener('overlay:dismiss', onOverlayDismiss);
+    ipcMain.removeHandler('agent-visuals:get');
+    ipcMain.removeHandler('agent-visuals:set');
     ipcMain.removeHandler('quick:query');
     ipcMain.removeHandler('tools:preset');
     ipcMain.removeHandler('tools:set-group');
