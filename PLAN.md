@@ -1,64 +1,66 @@
 # Build plan
 
-- [x] M1: Window, one tab, address bar, back/forward
-- [x] M2: Multiple tabs plus a vertical tab list
-- [x] M3: Spaces as Chrome-style tab groups (create, rename, recolour, collapse, ungroup, delete, move tabs), a Lead overview tab per Space, collapsible/draggable vertical sidebar, saved to disk
-- [x] M4a: Connected frame: left sidebar, top address strip, right rail with resizable panels, bottom chat (compact or expanded) around a rounded page card; everything slides together and is draggable; view modes (page only / both / chat only); context-aware rail (Skills with chat, Extensions with web, Settings always) and left panel (tabs with the page, chat list in chat-only); conversation list (new, switch, rename, delete) saved to its own file
-- [x] M4b: Settings panel, encrypted API key storage (Electron safeStorage, main process only), OpenRouter provider adapter with streaming parser, model picker, test connection
-- [x] M4c-1: Working chat: streaming replies with Stop and Retry, per-chat history, error messages, pinned models with a model chip, system prompt in Settings, cost line
-- [x] M4c-2: Link Spaces and tabs to a chat with `@` (pills in the message box) or "+ Add page"; link chips; links shown as tokens in sent messages (kept after a link is removed; closed tabs can be reopened, which updates every chat that used them); only titles and cleaned addresses reach the model (no query strings)
-- [x] M5: Read-only agent: linked pages can be read by the assistant (read_page / list_linked_tabs tools, linked tabs only, 8 reads and 6 rounds per reply, pages treated as untrusted data, no acting or file tools), each read shown in the chat; models record whether they support tools and images, with a note when a model cannot read pages; dev startup watchdog reloads a page that fails to start
-- [-] M5b: Web search by OpenRouter built-in search. Dropped: the app runs its own Brave search tool instead (Tools step 3), and no other provider is planned.
-- [x] M6 timeline: a reply keeps thinking, tool calls and answer text in the order they happened; tool calls expand to show exactly what was called
-- [x] M6a: look_at_page, a read-only tool that lists a linked page's buttons, links, fields and headings as numbered controls (names cleaned, typed text never shown, password/card fields marked sensitive, capped in size)
-- [x] M6b: Acting agent: click, type, press keys, scroll, choose, go to an address, open new tabs (linked automatically); every action but scrolling is approved on a card in the chat (risky ones always ask); never types in password/card/code fields or accepts terms; linked tabs only, 25 actions per reply; the tab it acts in is focused and marked; choice buttons the assistant can offer (click to send); Retry on the newest message and Branch on older ones
-- [x] Tools step 1: a list of the assistant's tools with four approval levels (always allow, allow if safe, ask first, never allow), saved in tools.json; safety refusals can never be overridden; defaults match the old behaviour. No screen yet.
-- [x] Tools step 2: the Tools panel on the chat rail (a dropdown per tool, a warning before Always allow on tools that change things, Return to default per tool, Reset to defaults, saved in tools.json)
-- [x] Tools step 3: web search run by the app (Brave Search key in Settings > Web search; a Search the web tool under Looking and reading; each search approved on a card; results and page controls kept with the call so you can read them; earlier searches remembered so a follow-up can open a result without searching again; links show where they go)
-- [x] Chat Markdown, spinner and click fix: assistant replies render Markdown safely (headings, bold, lists, tables, code, links that open as new tabs; no HTML, no images); a spinner shows next to whatever the assistant is doing; clicks work on links below the fold
-- [x] Read a link: read_link reads a page by address (or by link number) in a hidden, private, logged-out window without opening a tab; private-network addresses always refused (checked at every step); addresses that did not come from a tab, a search or a page always ask; page text never saved
-- [x] Artifacts: documents made inside the browser (Markdown, text, HTML, code), kept in artifacts.json, one Space each. Artifacts panel on the right rail (make, rename, move, delete); an artifact opens as a tab with an autosaving editor that takes over the page area; link artifacts to chats (+ menu or @); Space overviews list pages and artifacts with separate close and delete, and closing a page in a Space keeps it as a closed link; assistant tools read_artifact, create_artifact, create_artifact_in_space and edit_artifact (approval levels in Tools; writing always asks after web content is read in the same reply); saves carry a text revision so a stale editor never overwrites a newer text. Uploads (PDFs, images) and an uploads tab come later.
-- [x] Chat round 1, new chat screen: with only the chat showing, an empty chat is a centred screen (greeting, message box, Space pills to link, recent chats to pick up). Empty chats are never kept: "new chat" reuses the empty one and leaving it throws it away. Switching to chat-only from a new-tab page and "+" on the chat (any view) show it; Ctrl+T shows it in chat-only and opens a new tab otherwise.
-- [x] Chat round 2, attachments: attach images, PDFs and text files to a chat from the + menu (File), by dropping them on the chat, or by pasting a picture; each becomes an artifact (in the Space you are in) linked to the chat, and no tab opens. Reading them comes next.
-- [x] Chat round 3, reading files: the assistant can read an attached PDF (its text is read by the app window with PDF.js and handed over through read_artifact, in parts) and look at an attached image (sent as a picture, shrunk if big, only to a model that can see images; otherwise it says so). A scanned PDF with no text says so. File contents are treated as data, not instructions.
-- [x] Chat round 4, find and edit: search chats by name and by what was said (a search box above the chat list in chat-only view, and "Search chats…" in the chat name's menu); "Edit" on your messages (right-click menu too): the newest is changed in place and answered again, an older one is changed in a new "(edited)" chat that starts from before it, so the original stays as it was; "Export as Markdown…" on a chat (name menu and right-click) saves its text, links and the steps the assistant took (never page text or thinking).
-- [x] Chat round 5, new-tab leftovers: files (or an artifact from the Artifacts panel) dropped on the new-tab page become chips under its box (files are added as artifacts in the tab's Space; nothing is sent) and go with the question when you Ask, which opens the chat full screen; "Reply waiting" marks a chat whose latest reply finished while you were not looking at it (Pick up rows, the new chat screen, the chat list and strip); it clears when you open the chat, and lasts while the app is open.
-- [x] Agent eyes (A1): three read-only tools for linked tabs, each in the Tools panel: Take a screenshot (the visible part of the page as a picture, shrunk to 1568 px, only for models that can see; asks first on sign-in, account and payment pages because a screenshot shows everything typed into fields), Find text on a page (how many matches, a few pieces of text, and the page scrolls to the first match and highlights it for you), Read tables (rows and columns as Markdown tables). Page content is marked as untrusted data, limits apply per reply, and looking at a page makes artifact writing ask, like reading one does.
-- [x] Agent tabs and Spaces (A2): a new "Your tabs and Spaces" group in Tools. List all tabs (titles, addresses without query, Spaces and state of every tab, never contents; asks first), Move tabs between Spaces (several at once on one approval card listing each move), Close a tab (always asks as risky), Put a tab to sleep, Open a closed tab again, Read a Space's note (linked Spaces only) and Add to a Space's note (its memory; always asks after web content was read in the same reply). Every change asks by default; limits per reply; titles are marked as untrusted data. "Organise my tabs" is these used together.
-- [x] Agent recall (A3): a "Your history and chats" group in Tools. Search your history (last 90 days, "that page I was on"), search your bookmarks, search your earlier chats (by name and by what was said, not the current one), and read an earlier chat (in parts). All local; all ask by default because history and chats are personal and what is found goes to your chosen model. Addresses are cleaned (no query), results are marked as untrusted data, limits apply per reply, and recalling counts as having read web content (so artifact and note writes ask).
-- [x] Agent saves and checks (A4): Save a page as an artifact (a linked tab's whole text, or just the text you selected, saved straight from the page without passing through the model; it gets a heading and a source line; find_in_page leaves its first match selected, so "find it and save that" works), Bookmark a page, and Check an HTML artifact (opens it, lets its preview run again, and reports the errors it raised and the internet loads it tried, so the assistant can fix its own tools). All ask by default; limits per reply; what the page or artifact reports is marked as untrusted data.
-- [x] Skills, part 1 (S1): the Skills panel on the rail (it was a placeholder). Skills are global reusable instructions: a name, a line saying when to use it, and the steps; no per-Space skills. Four starter skills (Compare prices, Summarise a page, Research a topic, Tidy my tabs; added once, deleting them keeps them gone). New (a menu: New skill / Import from a file), a quiet row list (Edit and "more" show on hover or focus; right-click menu: Edit, Turn on/off, Duplicate, Export as a file, Delete; Delete key deletes), an editor with a character count, SKILL.md-style import and export (an imported skill starts off), and deleted skills wait 30 days in Recently deleted in the Library (restored ones come back off). The assistant does not use skills until S2.
-- [x] Skills, part 2 (S2): the assistant uses and makes skills. It is told the name and "when to use it" line of every skill that is on (only when the model can use tools); a use_skill tool loads the steps (marked as steps that cannot change its safety rules or approvals); create_skill and edit_skill save skills, always after you approve the FULL text on the approval card (shorter than ones you write, so it fits), and they always ask once web content was read in the same reply, even at "Always allow". There is no tool to delete a skill. New "Skills" group in the Tools panel. In the message box, "/" lists your skills (a "/Name" chip), and the hint says so. Also fixed: Space-note writes now really always ask after web content is read (the "Always allow" level used to let them through).
-- [x] Skills, part 3 (S3): "Make a skill from this chat…" in a chat's name menu and its right-click menu (disabled in an empty chat). It sends the assistant a request to look back over the conversation and call create_skill once, in general terms and with no private details, so the whole text is on the approval card and nothing is saved unless you approve it. Skills are done: panel, starters, import/export, trash, the assistant using and making them, "/" in the message box, and making one from a chat.
-- [x] Tools panel rework (T1): one choice at the top for everything (Cautious, Balanced = the defaults, Hands-off; it says "Custom" when you have set tools yourself), a search box, tool groups you can open and close (the first starts open), and a small pill on each group and each tool that opens the four levels (Always, If safe, Ask first, Never; the full words are in the menu; right-click a tool for the same menu). A dot marks a tool that differs from its default, with a "back to default" button on hover or focus; the description is the row's tooltip. A summary line ("39 tools · 28 ask first · …"), "What do these mean?" and "Never allowed, whatever you choose" are folded away. "Always allow" for a tool (or a whole group) that changes things still asks first. The preset and group choices are made in the app, which checks the names and levels.
-- [x] Quick search (U1): Ctrl+K (also "Search everything" in the "…" menu) opens one box over the page. What you typed comes first as Go to (only if it looks like an address), Search the web, and Ask about it (a new chat with the text sent). Then matches in groups: open tabs, closed pages (kept in a Space, and recently closed), Spaces, artifacts (by name, then by what they say), earlier chats (by name and by what was said), bookmarks and history (only once you type; a page shown above is not repeated). With nothing typed it shows the latest 3 of each group; once you type, up to 8 per group. Up/Down, Enter, Esc; a click works too. Everything is searched in the app; nothing goes to the assistant's model unless you pick Ask. Ctrl+Shift+A still searches only tabs. On a new-tab page, Go and Search turn that page into the result.
-- [x] Page to artifact (U2): right-click an empty part of a page for "Save page as artifact", or right-click selected text for "Save selection as artifact". It saves the text as a Markdown artifact (a heading, a source line and the date) in the page's Space, then opens it. The text is read straight from the page, never through a model, with the same cleaning and limit as the assistant's save_page_as_artifact tool (they now share one function). If nothing can be saved (no text, too long, too many artifacts) it says so. "Save to Space" (keeps a link to the page) is unchanged.
-- [ ] M7: Module system plus builder agent. Not designed yet. Two ideas for it, for later:
-  - Mini-apps: artifacts that can save their own data and be pinned to the rail, so the assistant can build you a small tool (a price tracker, say) that stays.
-  - AI-generated extensions: the assistant writes a browser extension for you, shown for review and installed only after you approve it (it must never get file-editing tools while it reads web pages).
-- [ ] Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet; to be shaped together with a designer hand-off, like the new-tab page. Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
-- [ ] M8: Daily-driver polish
+Last cleaned: 2026-11-17. Decisions about scope live here; the detail of how each
+feature works is in the code and the git history. Order inside each section is the
+order of likelihood.
 
-After the agent (M5/M6), in this order of likelihood:
+## Done
 
-- History: closed tabs, deleted Spaces and chats in one searchable list with Restore. Restoring a chat restores only the chat; linked tabs reopen on demand from their greyed chips. Closed tabs and Spaces expire after 90 days, chats stay until deleted, with a Clear history button
-- Full page history (every page visited) and a "find that page I was on" tool for the agent
-- Space files: attachments live in Spaces (files and images, shown on the overview page); linking a Space to a chat shares them
-- Rich message blocks (buttons, diagrams) rendered in a sandboxed frame with allow-listed actions
+**The browser**
+
+- Window, tabs and address bar; a vertical sidebar (pinnable, draggable, collapsible to an icon strip); a custom window frame with no title or menu bar; a connected frame of sidebar, top strip, right rail and bottom chat around a rounded page card.
+- A full UI design system (tokens, icons, shared controls), light/dark/system theme, custom menus everywhere, keyboard access (F6 between areas, Alt+arrows, Ctrl+1-9, a shortcuts list), and the "quiet UI" rule (secondary buttons show on hover or focus).
+- Find in page, zoom (per site), print, developer tools, full screen (F11 and page videos), middle-click and Ctrl+click, tab sound and mute, popup blocking, error pages.
+- History and Recently closed (Ctrl+Shift+T), a Library panel, Recently deleted (chats, artifacts, Spaces and skills can be restored), bookmarks with a star and Save to Space, address-bar suggestions, tab search (Ctrl+Shift+A), the new-tab page (greeting, one smart box, Pick up, @ in the box, file drops, "Reply waiting").
+- Downloads (list, indicator, Save as for pages, images and links), site permissions and info card, certificate warning page, privacy and security settings (clear site data), a search engine setting.
+- Extensions (Chrome Web Store installs, toolbar buttons and popups, page right-click items, options pages, updates). Password managers are meant to be used as extensions.
+- Favicons are cached.
+
+**Spaces**
+
+- Spaces as tab groups with a Lead overview page (pages, artifacts, chats, a note "About this Space", search), drag and drop of tabs, artifacts and Spaces in the sidebar, fast switching (Alt+1-9, Ctrl+Shift+S), duplicate, restore a deleted Space, export as Markdown, sleep a Space (and an optional auto-sleep).
+
+**Artifacts**
+
+- Documents made inside the browser (Markdown, text, HTML, code), opened as tabs with an autosaving editor, syntax highlighting, HTML previews that can run scripts with a per-page "Allow internet" switch; an Artifacts panel; uploads (images, PDFs, text) with an in-app PDF viewer; link artifacts to chats and Spaces; drag from the panel into tabs and chats.
+- Right-click a page: Save page as artifact, Save selection as artifact.
+
+**Chat**
+
+- OpenRouter with an encrypted key; streaming, Stop, Retry, Branch, Edit a sent message; model picker and cost line; Markdown replies; a timeline of thinking, tool calls and text; a new-chat screen; search chats, export as Markdown; AI names and emoji for chats, Spaces and artifacts; attachments (images, PDFs, files) the assistant can read.
+- Link Spaces, tabs and artifacts to a chat with "@", "+ Add page", or by dragging them from the sidebar (or artifacts from the panel) onto the chat bar. Only titles and cleaned addresses reach the model.
+
+**The assistant (agent)**
+
+- Reads linked pages, sees a page's controls, takes screenshots, finds text, reads tables, acts (click, type, keys, scroll, choose, go to, open tabs) with approvals; reads a link in a hidden private window; searches the web (Brave key); manages tabs and Spaces (list, move, close, sleep, reopen, Space notes); recalls history, bookmarks and earlier chats; saves pages as artifacts, bookmarks, checks HTML artifacts; makes and edits artifacts; offers choice buttons.
+- Tools panel: four approval levels per tool, presets (Cautious, Balanced, Hands-off), search, groups. Safety refusals can never be overridden.
+- Skills: global reusable instructions with a panel, starters, import/export, "/" in the message box, the assistant using and making them (you approve the full text), and "Make a skill from this chat".
+
+**Search and between features**
+
+- Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.
+
+## Next
+
+- Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet; to be shaped with a designer hand-off, like the new-tab page. Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
+- Multiple windows, then incognito (a private window that keeps no history, cookies or chats, plus a private chat mode). Incognito needs multiple windows first.
+- Packaging: installer, auto-update, and shipping the extension library's preload file (`node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js`) so extension popups work when packaged. Parked until the features are done, since it matters only once there are other users.
 
 ## Backlog (ideas, not scheduled)
 
-- Lead tab whiteboard: replace each Space's overview with a whiteboard you can draft on (choose the drawing approach first; `leadData` is already reserved in the saved model). Skipped for now.
-- More model providers (only OpenRouter today; the provider interface leaves room): OpenCode, and direct providers with your own key
-- More web search providers (only Brave Search today): for example other search APIs or a SearXNG address you run yourself
-- Drag-and-drop tabs between and within Spaces (right-click "Move to Space" covers it for now)
-- Multiple windows (a second browser window; the first step toward incognito)
-- Incognito: a private window that keeps no history, cookies or chats, plus a private chat mode. Needs multiple windows first.
-- Remember window size and position
-- Separate logins per Space (profiles); currently all Spaces share one cookie jar
-- Home page as a centred AI chat prompt / address bar (the new-tab page is one constant, `NEW_TAB_URL`)
-- Favicons are loaded straight from each site; consider caching them
-- A proper icon set for the rail and chat buttons (they use emoji and text symbols for now)
-- Hide or replace the default Windows menu bar (File, Edit, View...)
-- Prevent a second copy of the app from starting at the same time (single-instance lock)
-- Add `test:e2e` (end-to-end test of the running app)
+- Mini-apps: artifacts that can save their own data and be pinned to the rail, so the assistant can build you a small tool (a price tracker, say) that stays.
+- AI-generated extensions: the assistant writes a browser extension for you, shown for review and installed only after you approve it. It must never get file-editing tools while it reads web pages.
+- More model providers (only OpenRouter today; the provider interface leaves room): OpenCode, and direct providers with your own key.
+- More web search providers (only Brave Search today): other search APIs, or a SearXNG address you run yourself.
+- Rich message blocks: diagrams and richer buttons in a sandboxed frame with allow-listed actions. (Choice buttons from the assistant already exist.)
+- Remember the window's size and position.
+- Prevent a second copy of the app from starting at the same time (single-instance lock).
+- An end-to-end test of the running app (`npm run test:e2e`).
+
+## Decided against (do not re-propose)
+
+- A whiteboard or notes canvas on Space overviews.
+- Separate logins per Space (all Spaces share one profile).
+- A built-in password manager or autofill (use extensions).
+- Pinned tabs (tried, dropped).
+- OpenRouter's built-in web search (the app's own Brave search tool replaces it).

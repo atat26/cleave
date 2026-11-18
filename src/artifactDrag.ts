@@ -28,3 +28,34 @@ export function readArtifactDrag(raw: unknown): number | null {
   const id = Number(raw);
   return id >= 1 ? id : null;
 }
+
+// ---- Rows dragged out of the sidebar --------------------------------------------------
+// A tab, a Space or an open artifact dragged from the sidebar onto the chat adds it
+// to the chat as a link. The sidebar is a different page from the chat, so, as for
+// artifacts from the panel, what is dragged is a small piece of data with its own
+// type: what it is, and its number. The number is checked against the real tabs,
+// Spaces and artifacts before anything is linked.
+
+export const ITEM_DRAG = 'application/x-aib-item';
+
+export type DraggedKind = 'tab' | 'space' | 'artifact';
+
+// What to put in the drag when a sidebar row starts being dragged.
+export const itemDragData = (kind: DraggedKind, id: number): string =>
+  `${kind}:${id}`;
+
+// Is this drag one of a sidebar row? (While dragging, a page sees only the types.)
+export const hasItemDrag = (
+  types: readonly string[] | null | undefined,
+): boolean => (types ? Array.from(types).includes(ITEM_DRAG) : false);
+
+// What was dragged, from dropped data, or null if it is not exactly "kind:number".
+export function readItemDrag(
+  raw: unknown,
+): { kind: DraggedKind; id: number } | null {
+  if (typeof raw !== 'string') return null;
+  const match = /^(tab|space|artifact):([0-9]{1,9})$/.exec(raw);
+  if (!match) return null;
+  const id = Number(match[2]);
+  return id >= 1 ? { kind: match[1] as DraggedKind, id } : null;
+}
