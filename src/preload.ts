@@ -501,6 +501,16 @@ const browserApi: BrowserApi = {
     };
   },
   overlayReady: () => ipcRenderer.send('overlay:ready'),
+  overlayDecide: (decision) => ipcRenderer.send('overlay:decide', decision),
+  overlayWheel: (x, y, deltaX, deltaY) =>
+    ipcRenderer.send('overlay:wheel', x, y, deltaX, deltaY),
+  onOverlayPopout: (callback) => {
+    const listener = (_event: unknown, on: boolean) => callback(on);
+    ipcRenderer.on('overlay:popout', listener);
+    return () => {
+      ipcRenderer.removeListener('overlay:popout', listener);
+    };
+  },
   overlayStop: () => ipcRenderer.send('overlay:stop'),
   overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),
   agentVisualsGet: () => ipcRenderer.invoke('agent-visuals:get'),

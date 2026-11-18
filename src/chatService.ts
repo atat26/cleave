@@ -73,6 +73,13 @@ export interface ChatService {
   runningChats(): number[];
   // Stop a chat's reply (used when the chat is deleted).
   stop(chatId: number): void;
+  // Answer a step that is waiting for your approval (the card popped out over the page).
+  decide(
+    chatId: number,
+    messageId: number,
+    partId: number,
+    decision: 'allow' | 'allow-rest' | 'deny',
+  ): void;
   // Send a message in a chat from inside the app (the new-tab page's Ask).
   sendMessage(chatId: number, text: string, mentions?: unknown): ChatSendResult;
   // Send the UI the messages that have @ mentions or attached pages again (their
@@ -884,6 +891,9 @@ export function createChatService(options: {
     ): ChatSendResult => sendMessage(chatId, text, mentions),
     nameChat: (chatId) => nameChat(chatId, true),
     stop: (chatId) => runner.stop(chatId),
+    decide: (chatId, messageId, partId, decision) => {
+      pending.get(key(chatId, messageId, partId))?.(decision);
+    },
     refreshMentions() {
       for (const chat of options.getChats().conversations) {
         for (const message of chat.messages) {

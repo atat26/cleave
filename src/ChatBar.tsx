@@ -121,7 +121,12 @@ export function ChatBar({
     : null;
 
   // The slim chat needs room for the notice too, or it would be out of sight.
-  const baseNeed = chatNeedOf(messages, generating);
+  // An approval card popped out over the page: the chat does not have to open up to
+  // show it, so the page keeps its room.
+  const [poppedOut, setPoppedOut] = useState(false);
+  useEffect(() => window.browserApi.onOverlayPopout(setPoppedOut), []);
+  const rawNeed = chatNeedOf(messages, generating);
+  const baseNeed = poppedOut && rawNeed === 'approval' ? 'activity' : rawNeed;
   const need =
     baseNeed === 'none' && (notice || (barVisible && !full && !chatOnly))
       ? 'activity'
@@ -310,6 +315,7 @@ export function ChatBar({
             tabs={tabs}
             spaces={spaces}
             artifacts={artifacts}
+            poppedOut={poppedOut}
           />
         )}
         {(full || chatOnly) && !showNew && barVisible && run && chat && (

@@ -772,6 +772,13 @@ export interface BrowserApi {
     callback: (state: OverlayState | null) => void,
   ) => () => void;
   overlayReady: () => void;
+  // Answer the approval card that popped out over the page, and scroll the page under it
+  // (the overlay covers the page, so it passes the wheel on).
+  overlayDecide: (decision: 'allow' | 'allow-rest' | 'deny') => void;
+  overlayWheel: (x: number, y: number, deltaX: number, deltaY: number) => void;
+  // The main window is told when an approval card is popped out over the page (so the chat
+  // does not also show it, or grow to make room for it).
+  onOverlayPopout: (callback: (on: boolean) => void) => () => void;
   overlayStop: () => void;
   overlayDismiss: () => void;
   // How the assistant's work is shown on pages (kept for the Settings page to use).
