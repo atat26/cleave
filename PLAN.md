@@ -40,22 +40,33 @@ order of likelihood.
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.
 
+## About this project
+
+This is a personal browser, built for one person (its owner). It is not going to be sold or marketed, so things that only matter for other users (installers, auto-update, first-run tours, importing from other browsers) are low priority. Order of work: build every feature that needs a setting first, collecting each setting it needs in the list below, then do the Settings brainstorm and revamp last, once everything that lives in Settings exists.
+
 ## Next
 
-- Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Not designed yet; to be shaped with a designer hand-off, like the new-tab page. Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
-- Multiple windows, then incognito (a private window that keeps no history, cookies or chats, plus a private chat mode). Incognito needs multiple windows first.
-- Packaging: installer, auto-update, and shipping the extension library's preload file (`node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js`) so extension popups work when packaged. Parked until the features are done, since it matters only once there are other users.
+1. Browser-use visuals: polish how the assistant's work looks, both in the chat and on the page (tool calls, approval cards, what it is looking at or clicking). Designed: the brief, the mock-ups (`browser-use-visuals.html`) and the hand-off are in `docs/design/browser-use/`. Build order, each its own branch: (1) the step list and a run bar in the chat; (2) approval cards; (3) the page overlay (frame and run pill with Stop, then the element marker, then the assistant cursor); (4) sidebar markers and the run chip; (5) page-only and chat-only views; (6) screenshot thumbnails, the "your own data" block, and the run moments (limit, stop, finished). Ideas to start from: a clearer live view of what the assistant is doing in a tab, a better look for approval cards and step lists, and a calmer way to show screenshots and page reads in the chat.
+2. AI prompt pipeline inspection: a full review of the life of every feature that calls the model (chat, the assistant's tool use, skills, naming chats and Spaces, quick-search Ask, and so on). For each one, trace what is sent at every stage: the system prompt, the context built from links and pages, the tools offered, the history kept, and what comes back. Then work out what to cut, shrink, reorder or add, to get better behaviour with smaller context windows. Output: a map of each pipeline with token counts, a list of changes, and a way to see exactly what was sent (for example a "what the model saw" view per message). Also decide when the assistant should state a plan up front (so the run bar can show "Step 5 of 6" and tick steps off); the browser-use visuals show a step count only when the assistant has a plan. Also look at what happens when a tool fails: the model is told and decides on its own whether to retry, and the same failing call can repeat until the limits (25 actions, 30 rounds).
+3. Multiple windows, then incognito (a private window that keeps no history, cookies or chats, plus a private chat mode). Incognito needs multiple windows first.
+4. The small ones, whenever there is a gap: remember the window's size and position, a single-instance lock, and an end-to-end test (`npm run test:e2e`).
+5. Settings page brainstorm, then the Settings menu revamp (the Settings page's own menu of sections and the sub-sections inside each one: order, names, grouping, what each shows, how you move between them; Settings only, not the toolbar "…" menu). Done last, after the features above, using the settings list below. Keep the design language and the quiet-UI rule.
+
+## Settings these features will need (a running list)
+
+Add a line here whenever a feature needs a setting, so the Settings work at the end starts from a complete list.
+
+- From browser-use visuals (names are suggestions, defaults in brackets): show the assistant's work on pages: border glow and marker / border glow only / off [glow and marker]; show the assistant's cursor [on]; keep the "Finished" pill until dismissed [on]; screenshot thumbnails in the chat [on]; step detail: summary / steps / steps and results [steps and results]; expand groups while running [off]; sidebar markers: dots and tags / dots only [dots and tags]; notification when it needs you: off / only when waiting / always [off].
 
 ## Backlog (ideas, not scheduled)
 
 - Mini-apps: artifacts that can save their own data and be pinned to the rail, so the assistant can build you a small tool (a price tracker, say) that stays.
 - AI-generated extensions: the assistant writes a browser extension for you, shown for review and installed only after you approve it. It must never get file-editing tools while it reads web pages.
-- More model providers (only OpenRouter today; the provider interface leaves room): OpenCode, and direct providers with your own key.
+- More model providers (only OpenRouter today; the provider interface leaves room): OpenCode, local models such as Ollama, and direct providers with your own key.
 - More web search providers (only Brave Search today): other search APIs, or a SearXNG address you run yourself.
 - Rich message blocks: diagrams and richer buttons in a sandboxed frame with allow-listed actions. (Choice buttons from the assistant already exist.)
-- Remember the window's size and position.
-- Prevent a second copy of the app from starting at the same time (single-instance lock).
-- An end-to-end test of the running app (`npm run test:e2e`).
+- Suggested, not yet decided: agent safety tests (a fixed set of attack and normal scenarios, run whenever prompts or tools change); long-chat context management (summarize or trim old messages, with a "context used" meter); cost controls (a spend warning or limit, per-chat and monthly totals); backup and restore of all your data; session restore after a crash; assistant memory across chats (facts about you).
+- Packaging: installer, auto-update, and shipping the extension library's preload file (`node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js`) so extension popups work when packaged. Only if it is ever wanted.
 
 ## Decided against (do not re-propose)
 
@@ -64,3 +75,5 @@ order of likelihood.
 - A built-in password manager or autofill (use extensions).
 - Pinned tabs (tried, dropped).
 - OpenRouter's built-in web search (the app's own Brave search tool replaces it).
+- Syncing between devices (it would need a peer-to-peer or server solution, which is not planned).
+- Marketing the browser or building it for other users.
