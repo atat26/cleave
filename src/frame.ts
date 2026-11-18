@@ -11,6 +11,7 @@ import {
   MIN_PAGE_HEIGHT,
   MIN_PAGE_WIDTH,
   PAGE_INSET,
+  PANEL_DRAG_MIN_WIDTH,
   PANEL_SNAP_WIDTH,
   RAIL_WIDTH,
   SIDEBAR_COLLAPSED_WIDTH,
@@ -156,14 +157,15 @@ export function maxPanelWidth(sizes: { left: number }, window: Size): number {
   return Math.max(0, Math.min(PANEL_MAX_WIDTH, room));
 }
 
-// The panel's width while you are dragging its edge: from closed up to the
-// widest allowed.
+// The panel's width while you are dragging its edge: from a sliver (it closes when you
+// let go) up to the widest allowed. Never 0, or the edge would disappear under the mouse.
 export function panelWidthWhileDragging(
   width: number,
   sizes: { left: number },
   window: Size,
 ): number {
-  return clamp(0, maxPanelWidth(sizes, window), width);
+  const max = maxPanelWidth(sizes, window);
+  return Math.min(max, Math.max(PANEL_DRAG_MIN_WIDTH, width));
 }
 
 // What the panel becomes when you let go: narrower than the snap point closes

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import type { ResizeKind } from './types';
 
@@ -39,6 +39,19 @@ export function ResizeHandle({
   const sizeAt = (event: ReactPointerEvent) =>
     (drag.current?.startSize ?? 0) +
     grows * (mouse(event) - (drag.current?.startMouse ?? 0));
+
+  // If the handle goes away while it is being dragged (the panel unmounted, say), the
+  // pointer is never released to it: end the drag here, or the app would wait for it.
+  useEffect(
+    () => () => {
+      if (drag.current !== null) {
+        window.cancelAnimationFrame(frame.current ?? 0);
+        drag.current = null;
+        window.browserApi.endResize(kind, lastSize.current);
+      }
+    },
+    [kind],
+  );
 
   const finish = (event: ReactPointerEvent) => {
     if (drag.current === null) return;

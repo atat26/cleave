@@ -5243,6 +5243,8 @@ export async function createTabs(
     },
     'panel:toggle': (panel) => {
       if (!model.RIGHT_PANELS.includes(panel as model.RightPanel)) return;
+      // A drag that was never ended must not keep holding the layout.
+      drag = null;
       const open = state.settings.rightPanel === panel;
       state = model.setRightPanel(
         state,
@@ -5257,7 +5259,10 @@ export async function createTabs(
     // make room. On release it either snaps (to the icon strip, the compact
     // chat bar, or closed) or stays at the size you chose, which is remembered.
     'resize:start': (kind) => {
-      if (!isResizeKind(kind) || drag !== null) return;
+      // A new drag replaces one that was never ended (its mouse release was lost), so
+      // an edge can always be grabbed again.
+      if (!isResizeKind(kind)) return;
+      drag = null;
       // The chat can only be dragged while it shares the window with the page.
       if (kind === 'chat' && state.settings.viewMode !== 'both') return;
       stopAnimation();
