@@ -95,20 +95,6 @@ function StatusDot({
   );
 }
 
-// A tab the assistant opened has a small sparkle after its name.
-function OpenedByAssistant() {
-  return (
-    <span
-      role="img"
-      aria-label="Opened by the assistant"
-      title="Opened by the assistant"
-      style={{ display: 'inline-flex', color: 'var(--c-text-3)' }}
-    >
-      <Icon name="sparkle" />
-    </span>
-  );
-}
-
 // One line at the top of the sidebar while the assistant is at work; clicking it goes to
 // what it is on (the tab, or the chat).
 function AssistantChip({ chip }: { chip: RunChip }) {
@@ -156,6 +142,7 @@ function Row({
   onOpen,
   onContextMenu,
   onMiddleClick,
+  onSeen,
   icon,
   children,
   trailing,
@@ -170,6 +157,8 @@ function Row({
   onContextMenu?: (event: ReactMouseEvent) => void;
   // Middle-click on the row (a tab or an artifact: close it).
   onMiddleClick?: () => void;
+  // The pointer left the row, or the keyboard moved off it (or it was clicked).
+  onSeen?: () => void;
   icon: ReactNode;
   children: ReactNode;
   trailing?: ReactNode;
@@ -187,7 +176,16 @@ function Row({
       tabIndex={0}
       aria-current={active || undefined}
       title={title}
-      onClick={onOpen}
+      onClick={() => {
+        onOpen();
+        onSeen?.();
+      }}
+      onMouseLeave={onSeen}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          onSeen?.();
+        }
+      }}
       onKeyDown={(event) => {
         dnd?.onKeyDown?.(event);
         if (!event.defaultPrevented) rowKeys(onOpen)(event);
@@ -209,6 +207,14 @@ function Row({
     </div>
   );
 }
+
+// A green or red dot stays until you have been at the tab's row (the pointer went over it and
+// away again, a click, or the keyboard passed through), not merely until you are in the tab.
+const seenTab = (tab: TabInfo) => {
+  if (tab.status === 'finished' || tab.status === 'stuck') {
+    window.browserApi.markTabSeen(tab.id);
+  }
+};
 
 function TabRow({
   tab,
@@ -233,10 +239,10 @@ function TabRow({
       onOpen={() => window.browserApi.selectTab(tab.id)}
       onContextMenu={showTabMenu(tab)}
       onMiddleClick={() => window.browserApi.closeTab(tab.id)}
+      onSeen={() => seenTab(tab)}
       icon={<Favicon tab={tab} />}
       trailing={
         <>
-          {tab.byAssistant && <OpenedByAssistant />}
           {tab.status && <StatusDot status={tab.status} />}
           {(tab.audible || tab.muted) && (
             <IconButton
@@ -630,7 +636,16 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
       tabIndex={0}
       aria-current={active || undefined}
       aria-label={labelFor(tab)}
-      onClick={() => window.browserApi.selectTab(tab.id)}
+      onClick={() => {
+        window.browserApi.selectTab(tab.id);
+        seenTab(tab);
+      }}
+      onMouseLeave={() => seenTab(tab)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          seenTab(tab);
+        }
+      }}
       onKeyDown={(event) => {
         dnd.onKeyDown?.(event);
         if (!event.defaultPrevented) {

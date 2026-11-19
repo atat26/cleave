@@ -252,6 +252,7 @@ const browserApi: BrowserApi = {
   reopenTab: (id) => ipcRenderer.send('tab:reopen', id),
   selectTab: (id) => ipcRenderer.send('tab:select', id),
   assistantChipGo: () => ipcRenderer.send('chip:go'),
+  markTabSeen: (id) => ipcRenderer.send('tab:seen', id),
   selectLead: (spaceId) => ipcRenderer.send('lead:select', spaceId),
   newSpace: () => ipcRenderer.send('space:new'),
   setSpaceCollapsed: (id, collapsed) =>

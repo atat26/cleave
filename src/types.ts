@@ -131,8 +131,6 @@ export interface TabInfo {
   // The dot the sidebar shows on it: working, waiting for you, stuck, or finished (until you
   // open it); null for none.
   status: TabStatus | null;
-  // The assistant opened this tab.
-  byAssistant: boolean;
   // Closed but kept as a link in its Space (no tab, shown on the overview).
   closed: boolean;
   // Playing sound right now, and muted (the speaker shows only while one is true).
@@ -645,6 +643,8 @@ export interface BrowserApi {
   selectTab: (id: number) => void;
   // The chip at the top of the sidebar was clicked: go to what the assistant is on.
   assistantChipGo: () => void;
+  // You have seen this tab's green or red dot (moved off its row, or clicked it): clear it.
+  markTabSeen: (id: number) => void;
   selectLead: (spaceId: number) => void;
   newSpace: () => void;
   setSpaceCollapsed: (id: number, collapsed: boolean) => void;

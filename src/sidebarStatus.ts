@@ -7,7 +7,9 @@ import type { RunView } from './runModel.ts';
 
 export type TabStatus = 'working' | 'waiting' | 'stuck' | 'finished';
 
-// A tab's mark that stays until you open the tab.
+// A tab's mark that stays until you have been at that tab's row: moved the pointer over it
+// and away again, clicked it, or tabbed through it. Merely being in the tab does not clear it
+// (the assistant itself brings its tab to the front while it works).
 export type Unseen = 'finished' | 'stuck';
 
 // Most urgent first: what a collapsed Space shows when several of its tabs have a dot.
@@ -22,21 +24,17 @@ export interface StatusInput {
   run: RunView | null;
   // The tabs the assistant is working in right now.
   working: ReadonlySet<number>;
-  // Tabs where its work finished or got stuck while you were elsewhere.
+  // Tabs where its work finished or got stuck, until you have seen them.
   unseen: ReadonlyMap<number, Unseen>;
-  // The tab on screen, if a web tab is.
-  activeTab: number | null;
 }
 
 // The dot of each tab that has one. Work in progress shows blue (amber for the tab of the step
-// waiting for you); what is left over from a finished run shows green or red, except on the tab
-// you are looking at (there is nothing to tell you about a tab you are in).
+// waiting for you); what is left over from a finished run shows green or red, until you have
+// seen it.
 export function tabStatuses(input: StatusInput): Map<number, TabStatus> {
-  const { run, working, unseen, activeTab } = input;
+  const { run, working, unseen } = input;
   const result = new Map<number, TabStatus>();
-  for (const [tab, mark] of unseen) {
-    if (tab !== activeTab) result.set(tab, mark);
-  }
+  for (const [tab, mark] of unseen) result.set(tab, mark);
   if (run !== null && (run.word === 'working' || run.word === 'waiting')) {
     for (const tab of working) result.set(tab, 'working');
     if (run.word === 'waiting' && run.tabId !== null) {
@@ -46,23 +44,18 @@ export function tabStatuses(input: StatusInput): Map<number, TabStatus> {
   return result;
 }
 
-// What is left to see when a run has ended: green on each tab it worked in (other than the one
-// you are in) if it finished, red on the tab it got stuck in. Nothing if you stopped it.
+// What is left to see when a run has ended: green on each tab it worked in if it finished, red
+// on the tab it got stuck in. Nothing if you stopped it.
 export function unseenAfterRun(
   run: RunView | null,
   ranIn: ReadonlySet<number>,
-  activeTab: number | null,
 ): Map<number, Unseen> {
   const result = new Map<number, Unseen>();
   if (run === null) return result;
   if (run.word === 'finished') {
-    for (const tab of ranIn) {
-      if (tab !== activeTab) result.set(tab, 'finished');
-    }
-  } else if (run.word === 'stuck') {
-    if (run.tabId !== null && run.tabId !== activeTab) {
-      result.set(run.tabId, 'stuck');
-    }
+    for (const tab of ranIn) result.set(tab, 'finished');
+  } else if (run.word === 'stuck' && run.tabId !== null) {
+    result.set(run.tabId, 'stuck');
   }
   return result;
 }

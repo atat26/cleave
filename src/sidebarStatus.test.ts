@@ -26,7 +26,6 @@ const input = (over: Partial<StatusInput> = {}): StatusInput => ({
   run: run(),
   working: new Set([7]),
   unseen: new Map(),
-  activeTab: null,
   ...over,
 });
 
@@ -46,18 +45,17 @@ test('nothing is marked as working once the run has ended', () => {
   assert.equal(tabStatuses(input({ run: null })).size, 0);
 });
 
-test('what a finished run left stays on the tab until you open it', () => {
+test('what a finished run left stays on the tab until you have seen it', () => {
   const unseen = new Map([
     [3, 'finished' as const],
     [4, 'stuck' as const],
   ]);
-  const statuses = tabStatuses(input({ run: null, unseen, activeTab: null }));
+  const statuses = tabStatuses(input({ run: null, unseen }));
   assert.equal(statuses.get(3), 'finished');
   assert.equal(statuses.get(4), 'stuck');
-  // The tab you are in shows nothing.
-  const inThree = tabStatuses(input({ run: null, unseen, activeTab: 3 }));
-  assert.equal(inThree.has(3), false);
-  assert.equal(inThree.get(4), 'stuck');
+  // Once it is no longer unseen (you moved off its row, or clicked it), the dot is gone.
+  const seen = new Map([[4, 'stuck' as const]]);
+  assert.equal(tabStatuses(input({ run: null, unseen: seen })).has(3), false);
 });
 
 test('a new run overrides the old marks on the tabs it works in', () => {
@@ -65,13 +63,14 @@ test('a new run overrides the old marks on the tabs it works in', () => {
   assert.equal(tabStatuses(input({ unseen })).get(7), 'working');
 });
 
-test('when a run ends, green goes on the tabs it worked in that you are not in', () => {
+test('when a run ends, green goes on every tab it worked in, even the one you are in', () => {
   const ranIn = new Set([3, 4, 5]);
-  const marks = unseenAfterRun(run({ word: 'finished' }), ranIn, 4);
+  const marks = unseenAfterRun(run({ word: 'finished' }), ranIn);
   assert.deepEqual(
-    [...marks].sort((a, b) => a[0] - b[0]),
+    [...marks].sort((x, y) => x[0] - y[0]),
     [
       [3, 'finished'],
+      [4, 'finished'],
       [5, 'finished'],
     ],
   );
@@ -80,15 +79,13 @@ test('when a run ends, green goes on the tabs it worked in that you are not in',
 test('a run that got stuck marks its tab red; one you stopped marks nothing', () => {
   const ranIn = new Set([3, 7]);
   assert.deepEqual(
-    [...unseenAfterRun(run({ word: 'stuck' }), ranIn, null)],
+    [...unseenAfterRun(run({ word: 'stuck' }), ranIn)],
     [[7, 'stuck']],
   );
-  // Stuck in the tab you are in: nothing to tell you.
-  assert.equal(unseenAfterRun(run({ word: 'stuck' }), ranIn, 7).size, 0);
-  assert.equal(unseenAfterRun(run({ word: 'stopped' }), ranIn, null).size, 0);
-  assert.equal(unseenAfterRun(null, ranIn, null).size, 0);
+  assert.equal(unseenAfterRun(run({ word: 'stopped' }), ranIn).size, 0);
+  assert.equal(unseenAfterRun(null, ranIn).size, 0);
   assert.equal(
-    unseenAfterRun(run({ word: 'stuck', tabId: null }), ranIn, null).size,
+    unseenAfterRun(run({ word: 'stuck', tabId: null }), ranIn).size,
     0,
   );
 });

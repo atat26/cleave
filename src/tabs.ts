@@ -1211,7 +1211,6 @@ export async function createTabs(
         status:
           sidebar.statuses.get(tab.id) ??
           (working.has(tab.id) ? 'working' : null),
-        byAssistant: tab.byAssistant === true,
         closed: tab.closed,
         audible: pageContents(tab.id)?.isCurrentlyAudible() ?? false,
         muted: pageContents(tab.id)?.isAudioMuted() ?? false,
@@ -3177,19 +3176,13 @@ export async function createTabs(
   };
   // What the sidebar shows of the assistant's work now: a dot per tab and the chip on top.
   const assistantSidebar = () => {
-    const active = activeTabId();
-    // Opening a tab clears what was left on it.
-    if (active !== null) unseen.delete(active);
+    // A tab that is gone has nothing to show. (What a finished run left on a tab stays until
+    // you have seen it at its row, even if you are in that tab: see 'tab:seen'.)
     for (const tab of [...unseen.keys()]) {
       if (model.findTab(state, tab)?.closed !== false) unseen.delete(tab);
     }
     const run = overlayReply ? runOf(overlayReply.message) : null;
-    const statuses = tabStatuses({
-      run,
-      working,
-      unseen,
-      activeTab: active,
-    });
+    const statuses = tabStatuses({ run, working, unseen });
     const batch = overlayReply
       ? popoutOf(overlayReply.message, state.tabs)?.card
       : null;
@@ -3211,11 +3204,7 @@ export async function createTabs(
     }
     if (message.status !== 'streaming' && !sidebarRunEnded) {
       sidebarRunEnded = true;
-      for (const [tab, mark] of unseenAfterRun(
-        runOf(message),
-        ranIn,
-        activeTabId(),
-      )) {
+      for (const [tab, mark] of unseenAfterRun(runOf(message), ranIn)) {
         unseen.set(tab, mark);
       }
     }
@@ -3455,7 +3444,6 @@ export async function createTabs(
         const created = model.addTab(state, {
           url,
           spaceId: currentSpaceId(),
-          byAssistant: true,
         });
         commitAndShow(revealPage(created.state));
         tabId = created.id;
@@ -5531,6 +5519,10 @@ export async function createTabs(
         commitAndShow(model.setViewMode(state, 'both'));
         applyLayout(true);
       }
+    },
+    // You have seen a tab's green or red dot (moved off its row, or clicked it).
+    'tab:seen': (id) => {
+      if (isId(id) && unseen.delete(id)) sendState();
     },
     'tab:select': (id) => {
       if (!isId(id)) return;
