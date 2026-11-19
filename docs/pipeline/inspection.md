@@ -3,8 +3,9 @@
 Goal: understand, stage by stage, everything the app sends to a model and what comes back, so context
 windows, tools and prompts can be improved with evidence. The yardstick is in `scenarios.md`.
 
-Status: part 1 (inventory, stage maps, static measurements, first hypotheses). Nothing has been run against
-a model yet, and no behaviour has been changed.
+Status: part 2. The recorder, fixtures and driver are built (tests/pipeline and src/requestTrace.ts), and the first
+baseline has been run: see baseline-1.md for the results, what they say about the hypotheses below, and the ranked
+list of proposed changes. No behaviour has been changed yet.
 
 ## 1. Inventory: where the app talks to a model
 
@@ -117,8 +118,8 @@ These come from reading the code. Each has a scenario that will show whether it 
 
 ## 6. Next steps
 
-- Owner edits `scenarios.md` (desired behaviour).
-- Build the fixtures and the test driver (it drives the real app through its debug port, using the owner's
-  own key without ever reading it).
-- Add the off-by-default recorder (sizes and tool names only; never page text, messages or keys).
-- Run the baseline, write the table here, and rank the changes by how many scenarios each one fixes.
+Done since part 1: the recorder, the fixtures, the driver and the first baseline (see `baseline-1.md`).
+
+Next: the owner picks which proposed changes to make and in what order (`baseline-1.md`, section "Proposed changes"), and
+edits the scenarios if the desired behaviour should change. Each change is then its own branch, with the scenarios re-run
+for before and after.

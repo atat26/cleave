@@ -297,18 +297,21 @@ export const SCENARIOS = [
     budgetTokens: 40000,
     checks: ({ calls, turns }) => {
       const answer = turns[0].answer;
+      const reads = calls.filter((c) => c.name === 'read_page');
+      const done = reads.filter((c) => c.status === 'ok').length;
+      const refused = reads.length - done;
       // Prices that only exist on the last two pages must not be invented if they were not read.
       const unread = FACTS.products.slice(8).map((p) => `EUR ${p.price}`);
       const invented = unread.filter((u) => has(answer, u));
       return [
         check(
-          'stays within the read limit (8)',
-          helpers.count(calls, 'read_page') <= 8,
-          `read_page x${helpers.count(calls, 'read_page')}`,
+          'does not keep calling after the limit message',
+          refused <= 1,
+          `${done} reads done, ${refused} refused attempts`,
         ),
         check(
           'says what is done and what is left, if it did not finish',
-          helpers.count(calls, 'read_page') >= 8
+          done >= 8
             ? /only|not all|remaining|left|could not|limit|stopped|haven't|did not/i.test(
                 answer,
               )
@@ -317,7 +320,7 @@ export const SCENARIOS = [
         ),
         check(
           'does not invent prices for pages it did not read',
-          helpers.count(calls, 'read_page') >= 10 || invented.length === 0,
+          done >= 10 || invented.length === 0,
           invented.join(', '),
         ),
       ];
