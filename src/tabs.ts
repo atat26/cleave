@@ -313,6 +313,7 @@ import {
 import type { OverlayFlags } from './agentVisuals';
 import { cardMayTakeFocus } from './approvalCard';
 import { pendingChanges } from './pendingChanges';
+import { setTraceSink } from './requestTrace';
 import { runChip, tabStatuses, unseenAfterRun } from './sidebarStatus';
 import type { Unseen } from './sidebarStatus';
 import { CURSOR_DONE_MS, cursorFor, scrollDirection } from './cursor';
@@ -438,6 +439,17 @@ export async function createTabs(
   llm: Promise<LlmContext>,
   search: Promise<SearchContext>,
 ): Promise<void> {
+  // For the AI prompt pipeline inspection only: with AIB_TRACE=1 one line of sizes (never what
+  // was said, read or typed) is written per model call (see requestTrace.ts).
+  if (process.env.AIB_TRACE === '1') {
+    const traceFile = path.join(
+      app.getPath('userData'),
+      'pipeline-trace.jsonl',
+    );
+    setTraceSink((entry) => {
+      fs.appendFile(traceFile, JSON.stringify(entry) + '\n', () => undefined);
+    });
+  }
   const file = path.join(app.getPath('userData'), 'spaces.json');
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
