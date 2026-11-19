@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cardSide } from './agentVisuals';
 import type { OverlayState } from './agentVisuals';
+import type { CursorView } from './cursor';
 import type { MarkerView } from './marker';
 import { RUN_WORDS } from './runModel';
 import type { StepState } from './runModel';
@@ -37,6 +38,71 @@ function Marker({ marker }: { marker: MarkerView }) {
       <span className={`ao-marker-label is-${marker.placement}`}>
         {marker.label}
       </span>
+    </div>
+  );
+}
+
+// Where the cursor was last drawn, and when: the next one glides from there if it comes
+// soon after (a new step right after the last), instead of appearing out of nowhere.
+let lastCursor: { x: number; y: number; at: number } | null = null;
+const GLIDE_WITHIN_MS = 2000;
+
+// The assistant's cursor: an arrow (or a text cursor while typing) with a short tag, gliding
+// to where it acts. It is only a picture: it takes no mouse and moves nothing.
+function CursorMark({
+  cursor,
+  tagged,
+}: {
+  cursor: CursorView;
+  // Draw the tag (not when the ring's own label already says the same).
+  tagged: boolean;
+}) {
+  const [at, setAt] = useState(() =>
+    lastCursor !== null && Date.now() - lastCursor.at < GLIDE_WITHIN_MS
+      ? { x: lastCursor.x, y: lastCursor.y }
+      : { x: cursor.x, y: cursor.y },
+  );
+  useEffect(() => {
+    lastCursor = { x: cursor.x, y: cursor.y, at: Date.now() };
+    // One frame at the old place first, so the move is seen.
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setAt({ x: cursor.x, y: cursor.y }));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [cursor.x, cursor.y]);
+  return (
+    <div
+      className={`ao-cursor ao-cursor-${cursor.tone}`}
+      style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
+      aria-hidden="true"
+    >
+      {cursor.burst && <span className="ao-cursor-burst" />}
+      {cursor.kind === 'beam' ? (
+        <svg
+          className="ao-cursor-shape"
+          width="14"
+          height="22"
+          viewBox="0 0 14 22"
+          style={{ left: -7, top: -11 }}
+        >
+          <path d="M3 1.5h8M3 20.5h8M7 1.5v19" />
+        </svg>
+      ) : (
+        <svg
+          className="ao-cursor-shape"
+          width="22"
+          height="26"
+          viewBox="0 0 22 26"
+          style={{ left: -1, top: -1 }}
+        >
+          <path d="M1.5 1.5v19.5l5-4.7 3.4 8 3.6-1.5-3.3-7.8h7z" />
+        </svg>
+      )}
+      {tagged && <span className="ao-cursor-tag">{cursor.tag}</span>}
     </div>
   );
 }
@@ -125,6 +191,9 @@ export function OverlayApp() {
     >
       {state.glow && <div className="ao-glow" aria-hidden="true" />}
       {state.glow && state.marker && <Marker marker={state.marker} />}
+      {state.glow && state.cursor && (
+        <CursorMark cursor={state.cursor} tagged={state.marker === null} />
+      )}
       {state.pill && (
         <div className="ao-pill" role="status">
           <StatusIcon state={TONE_ICON[state.tone]} />

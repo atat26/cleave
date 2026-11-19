@@ -49,7 +49,7 @@ order of likelihood.
 **Browser-use visuals, part 3a (the glow and the pill on the page)**
 
 - While the assistant works in the page on screen, the page glows just inside its edge (blue; softer while it only reads; amber and stronger while it waits for you), with a pill hanging from the top: its state, what it is doing, "Step N" and Stop. When it has finished, stopped or got stuck the glow goes and the pill alone stays (a strip at the top, so the page below is usable) until you dismiss it with the x or send your next message. Nothing is drawn for steps that are not about the page on screen (tabs, history, artifacts), and nothing in chat-only view.
-- It is a page of the app's own in a view above the web page, so a web page cannot see, move or draw over it. While the glow is up it covers the page, which is fine because the assistant is working there. The app keeps two settings for it in agent-visuals.json (show the work on pages: glow and marker, glow only, or off; keep the Finished pill until dismissed), with no screen for them until the Settings work. The marker and the cursor come next (3b, 3c).
+- It is a page of the app's own in a view above the web page, so a web page cannot see, move or draw over it. While the glow is up it covers the page, which is fine because the assistant is working there. The app keeps three settings for it in agent-visuals.json (show the work on pages: glow and marker, glow only, or off; keep the Finished pill until dismissed; show the assistant's cursor), with no screen for them until the Settings work.
 
 **Browser-use visuals, part 3b (the marker on the element)**
 
@@ -65,6 +65,14 @@ order of likelihood.
 
 - Each thing is shown once. The state ("Working", "Waiting for you", "Finished") is in the pill on the page while the page shows it; when the pill is not up (page not on screen, the step is not about a page, the display is off) it is the one-line run bar in the chat. The chat's run bar no longer has a Stop: Stop is on the page's pill and on the message box. The approval question is only in the popped-out card (the chat holds a one-line note); in chat-only view it stays in the chat. The list of steps stays in the open chat. Dismissing the "Finished" pill on the page also clears the chat's copy.
 - The popped-out card can be minimized (the "−" in its header): it shrinks to the strip at the top, "Waiting for you · <the question>" with Review (brings the card back), Go to tab (when its step is in another tab than the one on screen) and Stop, and the page is yours to scroll and click meanwhile. A new question always pops out again. The card also has a Go to tab button when its step is in another tab. The card shows its own Stop only when the pill (which has one) is not shown.
+
+**Browser-use visuals, part 3c (the assistant's cursor)**
+
+- While a step clicks, types in, chooses from or scrolls the page on screen, a pointer for the assistant glides to where it acts (about a quarter of a second) with a short tag: an arrow in the middle of the element with "Clicking" or "Choosing", a text cursor at the start of the field with "Typing", an arrow in the middle of the page with "Scrolling ↓" or "↑". A click that lands shows a soft glow under the tip for a moment. While you are being asked it is amber, rests just above the element, says "Waiting for you" and does not click.
+- It disappears when its step ends (it never sits parked on the page), and is not drawn for a blocked, declined, stopped or failed step, after Stop or finish, in another tab, or while the card is minimized. Reading, looking, finding, pressing a key and going to an address show no cursor (there is no element to point at; the pill says what they do). If the next step starts within two seconds it glides from where the last one ended. With reduced motion it jumps instead of gliding.
+- How: it is worked out in the app from the same measured box as the marker (so it points at the element the label and the card name), and drawn in the overlay above the marker and below the pill. When the ring's own label is showing it already says the same words, so the cursor's tag is left off then (it shows with "glow only", and for scrolling, which has no ring). It takes no mouse and moves nothing on the page, and your own pointer is never touched. Turned off by the "show the assistant's cursor" setting (agent-visuals.json); the glow, marker and pill stay.
+
+**Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.
 
