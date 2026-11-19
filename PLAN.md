@@ -84,6 +84,12 @@ order of likelihood.
 - While a request to move tabs (several at once on one card) or to close a tab is waiting for you, the rows it would change are tinted in the sidebar: light blue with a "→ Space name" tag for a move ("→ No Space" for taking a tab out of its Space), light red with a "Close" tag for a close. The tint and tag go as soon as you allow, don't allow or press Stop. Each has its words too (the row's hover text says "will move to Space 2" or "will be closed"); in the narrow strip the icon is tinted and the words are in its hover and screen-reader text. A collapsed Space that holds some of those tabs shows an "N changes" badge, so nothing is hidden. No new buttons, bars or checkboxes on rows. Putting tabs to sleep and reopening closed links are not tinted (they take nothing away).
 - How: worked out in the app from the waiting step's arguments (pendingChanges.ts). Every number is checked against your real tabs and Spaces (a move that changes nothing, a missing tab or Space, or a closed link is ignored), and the only words shown are ours and the name of one of your own Spaces, never text the assistant wrote.
 
+**Browser-use visuals, part 5 (the views)**
+
+- Hover or focus the pill on the page and a small list opens under it with the last three steps (state icon and the app's own short wording, newest at the bottom, never page text). It stays while the pointer moves between the pill and its list and closes soon after it leaves. The overlay's strip grows to hold it while it is open (the page-wide frame needs nothing).
+- With only the chat on screen (no page, so no pill), a "Working on" card under the run bar says which page the assistant is on: its title, site and Space. It shows while the assistant is working or waiting on a tab; clicking it shows the page and brings that tab forward. (The small screenshot in the sheet comes with the thumbnails in step 6.)
+- Deliberately different from the designer's sheet: with page and chat together only one of the pill and the chat's run bar is shown (see "one place for each fact"), and Esc does not dismiss the page's pill (it cannot take the keyboard from the page); its Dismiss button does, and the chat's run bar still takes Esc.
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.
