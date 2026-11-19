@@ -1217,6 +1217,8 @@ export async function createTabs(
           sidebar.statuses.get(tab.id) ??
           (working.has(tab.id) ? 'working' : null),
         pending: sidebar.pending.get(tab.id) ?? null,
+        loading: pageContents(tab.id)?.isLoading() ?? false,
+        wokeForAssistant: wokeForAssistant.has(tab.id),
         closed: tab.closed,
         audible: pageContents(tab.id)?.isCurrentlyAudible() ?? false,
         muted: pageContents(tab.id)?.isAudioMuted() ?? false,
@@ -2959,6 +2961,7 @@ export async function createTabs(
       return { ok: false, reason: 'closed' };
     }
     const wasAsleep = !views.has(tabId);
+    if (wasAsleep) wokeForAssistant.add(tabId);
     const contents = ensureView(tab).webContents;
     if (wasAsleep) sendState();
     if (contents.isDestroyed()) return { ok: false, reason: 'closed' };
@@ -3214,6 +3217,8 @@ export async function createTabs(
   // The tabs it worked in during the newest run, and what a finished run left on them (green:
   // finished while you were elsewhere, red: got stuck) until you open them (sidebarStatus.ts).
   const ranIn = new Set<number>();
+  // Tabs that were asleep when the assistant needed them (shown on its step while it runs).
+  const wokeForAssistant = new Set<number>();
   const unseen = new Map<number, Unseen>();
   let sidebarRunId: number | null = null;
   let sidebarRunEnded = true;
@@ -3222,7 +3227,10 @@ export async function createTabs(
     if (on) {
       working.add(tabId);
       ranIn.add(tabId);
-    } else working.delete(tabId);
+    } else {
+      working.delete(tabId);
+      wokeForAssistant.delete(tabId);
+    }
     sendState();
   };
   // What the sidebar shows of the assistant's work now: a dot per tab and the chip on top.

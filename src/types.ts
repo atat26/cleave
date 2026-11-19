@@ -132,6 +132,10 @@ export interface TabInfo {
   // The dot the sidebar shows on it: working, waiting for you, stuck, or finished (until you
   // open it); null for none.
   status: TabStatus | null;
+  // The page is loading right now.
+  loading: boolean;
+  // It was asleep and the assistant woke it for the step it is running (until that is over).
+  wokeForAssistant: boolean;
   // What a request waiting for your answer would do to this tab (move or close), or null.
   pending: PendingChange | null;
   // Closed but kept as a link in its Space (no tab, shown on the overview).

@@ -25,7 +25,7 @@ export const STATE_WORDS: Record<StepState, string> = {
   declined: 'Declined by you',
   blocked: 'Blocked',
   failed: 'Failed',
-  stopped: 'Stopped',
+  stopped: 'Not done',
 };
 
 export function stepState(
@@ -37,6 +37,8 @@ export function stepState(
   if (part.status === 'running') return live ? 'running' : 'stopped';
   if (part.status === 'ok') return 'done';
   if (part.status === 'declined') return 'declined';
+  // You closed its tab while it ran: it was cut short, not a failure.
+  if (part.skipped === true) return 'stopped';
   return part.blocked === true ? 'blocked' : 'failed';
 }
 
@@ -156,6 +158,42 @@ export function stepView(
   };
 }
 
+// What a step that is still running is waiting on, told from its tab: "Waiting for Shop D to
+// load" while the page loads, and whether the tab was asleep and is being woken for it.
+export interface RunningNote {
+  line: string;
+  asleep: boolean;
+}
+
+export function runningNote(
+  step: Pick<StepView, 'state' | 'part'>,
+  tabs: readonly {
+    id: number;
+    title: string;
+    url: string;
+    loading: boolean;
+    wokeForAssistant: boolean;
+  }[],
+): RunningNote | null {
+  if (step.state !== 'running') return null;
+  const id = stepTabId(step.part);
+  const tab = id === null ? undefined : tabs.find((t) => t.id === id);
+  if (!tab) return null;
+  const asleep = tab.wokeForAssistant;
+  if (!tab.loading) return asleep ? { line: '', asleep } : null;
+  const name = (tab.title || hostOf(tab.url))
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
+  return {
+    line:
+      name === ''
+        ? 'Waiting for the page to load'
+        : `Waiting for ${name} to load`,
+    asleep,
+  };
+}
+
 // "Try again" is offered for a step that failed or was cut off, in the newest reply,
 // when nothing else is being written. (Not for a refusal, a decline, or a step that
 // worked.)
@@ -265,7 +303,7 @@ export const RUN_WORDS: Record<RunWord, string> = {
   waiting: 'Waiting for you',
   stuck: 'Stuck',
   finished: 'Finished',
-  stopped: 'Stopped',
+  stopped: 'Stopped by you',
 };
 
 export interface RunView {

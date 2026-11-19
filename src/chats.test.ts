@@ -1239,3 +1239,44 @@ test('the details of an approval card live with the waiting step and are dropped
   const part = findMessage(quiet.state, chatId, reply.id)!.parts[1];
   assert.equal(part.type === 'tool' && part.card, undefined);
 });
+
+test('Stop leaves its unfinished steps as "not done", not as failures; an error still fails them', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'go', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = reply.state;
+  const done = addToolPart(state, chatId, reply.id, {
+    callId: 'a',
+    name: 'click',
+    arguments: '{}',
+    label: 'one',
+  })!;
+  state = finishToolPart(done.state, chatId, reply.id, done.partId, {
+    ok: true,
+  });
+  const waiting = addToolPart(state, chatId, reply.id, {
+    callId: 'b',
+    name: 'type_text',
+    arguments: '{}',
+    label: 'two',
+  })!;
+  const toolParts = (s: typeof state) =>
+    findMessage(s, chatId, reply.id)!.parts.flatMap((p) =>
+      p.type === 'tool' ? [p] : [],
+    );
+
+  const stopped = toolParts(
+    finishMessage(waiting.state, chatId, reply.id, { status: 'stopped' }),
+  );
+  assert.equal(stopped[0].status, 'ok');
+  assert.equal(stopped[1].status, 'error');
+  assert.equal(stopped[1].skipped, true);
+  assert.match(stopped[1].outcome, /stopped this reply/);
+
+  const failed = toolParts(
+    finishMessage(waiting.state, chatId, reply.id, { status: 'error' }),
+  );
+  assert.equal(failed[1].status, 'error');
+  assert.notEqual(failed[1].skipped, true);
+});

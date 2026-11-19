@@ -79,6 +79,8 @@ export type MessagePart =
       risky: boolean;
       // Stopped by a safety rule or a limit, not by a failure (shown differently).
       blocked?: boolean;
+      // Not done because you closed its tab while it ran (not a failure either).
+      skipped?: boolean;
       // The details of the approval card while the step waits for you (not saved).
       card?: CardDetails;
     };
@@ -295,6 +297,7 @@ function parseParts(raw: unknown): MessagePart[] {
         ask: str(r.ask, 400),
         risky: r.risky === true,
         blocked: r.blocked === true,
+        skipped: r.skipped === true,
       });
     }
   }
@@ -1103,7 +1106,16 @@ export function finishMessage(
       parts: m.parts.map((part) =>
         part.type === 'tool' &&
         (part.status === 'running' || part.status === 'waiting')
-          ? { ...part, status: 'error' }
+          ? result.status === 'stopped'
+            ? // Stop: it was cut short, not a failure ("Not done").
+              {
+                ...part,
+                status: 'error',
+                skipped: true,
+                outcome:
+                  part.outcome || 'You stopped this reply before it ran.',
+              }
+            : { ...part, status: 'error' }
           : part,
       ),
     }),
@@ -1216,6 +1228,7 @@ export function finishToolPart(
     ok: boolean;
     declined?: boolean;
     blocked?: boolean;
+    skipped?: boolean;
     label?: string;
     outcome?: string;
     details?: string;
@@ -1229,6 +1242,7 @@ export function finishToolPart(
             ...p,
             status: result.declined ? 'declined' : result.ok ? 'ok' : 'error',
             blocked: result.blocked === true,
+            skipped: result.skipped === true,
             card: undefined,
             label:
               result.label === undefined
