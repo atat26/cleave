@@ -3371,6 +3371,37 @@ button {
   }
 }
 
+/* With only the chat on screen: which page the assistant is on (StepList.tsx). */
+.working-on {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  box-sizing: border-box;
+  width: calc(100% - 24px);
+  min-height: 30px;
+  margin: 0 12px 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.working-on:hover {
+  background: var(--c-hover);
+}
+.wo-label {
+  flex: none;
+  color: var(--c-text-2);
+}
+.wo-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
 /* A request waiting for you would move or close this tab: tint and tag (Sidebar.tsx). */
 .lrow.is-move {
   background: color-mix(in srgb, var(--c-accent) 12%, transparent);

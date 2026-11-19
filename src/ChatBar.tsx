@@ -12,7 +12,7 @@ import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
 import { noOverlayFlags } from './agentVisuals';
 import type { OverlayFlags } from './agentVisuals';
 import { runOf } from './runModel';
-import { RunBar } from './StepList';
+import { RunBar, WorkingOnCard } from './StepList';
 import { ChatComposer } from './ChatComposer';
 import { MessageList, useChatMessages } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
@@ -111,6 +111,13 @@ export function ChatBar({
       ),
     [],
   );
+  // With only the chat showing: the page the assistant is working on, if it is on one.
+  const workingOn =
+    run !== null &&
+    (run.word === 'working' || run.word === 'waiting') &&
+    run.tabId !== null
+      ? tabs.find((tab) => tab.id === run.tabId && !tab.closed)
+      : undefined;
   const barVisible =
     run !== null &&
     !onPage.pill &&
@@ -340,6 +347,15 @@ export function ChatBar({
         )}
         {(full || chatOnly) && !showNew && barVisible && run && chat && (
           <RunBar run={run} onDismiss={() => setEndedFor(null)} />
+        )}
+        {chatOnly && !showNew && barVisible && run && workingOn && (
+          <WorkingOnCard
+            tab={workingOn}
+            spaceName={
+              spaces.find((space) => space.id === workingOn.spaceId)?.name ??
+              null
+            }
+          />
         )}
         {!full && !chatOnly && barVisible && run && chat && (
           <div className="chat-live">

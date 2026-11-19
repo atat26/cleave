@@ -398,6 +398,40 @@ export function RunBar({
   );
 }
 
+// With only the chat on screen the page is out of sight, so under the run bar a small card says
+// which page the assistant is on: its site, its title and its Space. Clicking it shows the page.
+export function WorkingOnCard({
+  tab,
+  spaceName,
+}: {
+  tab: { title: string; url: string; favicon: string | null };
+  spaceName: string | null;
+}) {
+  let host = '';
+  try {
+    host = new URL(tab.url).host.replace(/^www\./i, '');
+  } catch {
+    host = '';
+  }
+  return (
+    <button
+      type="button"
+      className="working-on"
+      title="Show the page"
+      onClick={() => window.browserApi.assistantChipGo()}
+    >
+      <span className="wo-label">Working on</span>
+      <span className="wo-title truncate">{tab.title || host || 'a page'}</span>
+      {host !== '' && <SiteChip host={host} favicon={tab.favicon} />}
+      {spaceName !== null && (
+        <span className="badge" title={`In the Space ${spaceName}`}>
+          {spaceName}
+        </span>
+      )}
+    </button>
+  );
+}
+
 // ---- The approval card ----------------------------------------------------------------
 
 // The bold parts of a question are the things in quotes (a button, a tab, some text).
