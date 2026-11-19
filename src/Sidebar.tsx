@@ -14,6 +14,8 @@ import { SPACE_COLOR_HEX } from './colors';
 import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
 import { iconButtonStyle, stripButton } from './sidebarStyles';
+import { countPending } from './pendingChanges';
+import type { PendingChange } from './pendingChanges';
 import { spaceSummary, STATUS_WORDS } from './sidebarStatus';
 import type { RunChip, TabStatus } from './sidebarStatus';
 import type { ArtifactTabInfo, SpaceInfo, TabInfo, UiState } from './types';
@@ -95,6 +97,18 @@ function StatusDot({
   );
 }
 
+// A request waiting for your answer that would move or close a tab: the row is tinted (blue
+// for a move, red for a close) and says so in words, until you answer. In the narrow strip the
+// tint is on the icon and the words are in its hover text.
+const PENDING_TINT: Record<PendingChange['kind'], string> = {
+  move: 'color-mix(in srgb, var(--c-accent) 12%, transparent)',
+  close: 'color-mix(in srgb, var(--c-danger) 10%, transparent)',
+};
+
+function PendingTag({ change }: { change: PendingChange }) {
+  return <span className={`pend-tag is-${change.kind}`}>{change.tag}</span>;
+}
+
 // One line at the top of the sidebar while the assistant is at work; clicking it goes to
 // what it is on (the tab, or the chat).
 function AssistantChip({ chip }: { chip: RunChip }) {
@@ -143,6 +157,7 @@ function Row({
   onContextMenu,
   onMiddleClick,
   onSeen,
+  tint,
   icon,
   children,
   trailing,
@@ -159,6 +174,8 @@ function Row({
   onMiddleClick?: () => void;
   // The pointer left the row, or the keyboard moved off it (or it was clicked).
   onSeen?: () => void;
+  // A request waiting for you would move or close this tab.
+  tint?: PendingChange['kind'];
   icon: ReactNode;
   children: ReactNode;
   trailing?: ReactNode;
@@ -168,6 +185,7 @@ function Row({
       {...dnd}
       className={[
         active ? 'lrow collapse-actions is-active' : 'lrow collapse-actions',
+        tint ? `is-${tint}` : '',
         dnd?.className ?? '',
       ]
         .filter(Boolean)
@@ -235,7 +253,12 @@ function TabRow({
       dnd={dnd}
       active={active}
       dim={!tab.loaded}
-      title={labelFor(tab)}
+      title={
+        tab.pending
+          ? `${labelFor(tab)}: ${tab.pending.words.toLowerCase()}`
+          : labelFor(tab)
+      }
+      tint={tab.pending?.kind}
       onOpen={() => window.browserApi.selectTab(tab.id)}
       onContextMenu={showTabMenu(tab)}
       onMiddleClick={() => window.browserApi.closeTab(tab.id)}
@@ -243,6 +266,7 @@ function TabRow({
       icon={<Favicon tab={tab} />}
       trailing={
         <>
+          {tab.pending && <PendingTag change={tab.pending} />}
           {tab.status && <StatusDot status={tab.status} />}
           {(tab.audible || tab.muted) && (
             <IconButton
@@ -393,6 +417,8 @@ function SpaceGroup({
   const colourDot = <SpaceIcon emoji={space.emoji} tint={color} />;
   // How many of its tabs the assistant is working in, and the most urgent dot among them.
   const summary = spaceSummary(tabs.map((tab) => tab.status));
+  // Tabs in here that a waiting request would change (so a collapsed Space does not hide them).
+  const changes = countPending(tabs);
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -449,6 +475,14 @@ function SpaceGroup({
           }
           trailing={
             <>
+              {space.collapsed && changes > 0 && (
+                <span
+                  className="badge warn"
+                  title={`A request waiting for you would change ${changes} tab${changes === 1 ? '' : 's'} here`}
+                >
+                  {changes} change{changes === 1 ? '' : 's'}
+                </span>
+              )}
               {summary.working > 0 && (
                 <span
                   className="badge ai"
@@ -635,7 +669,11 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
       role="button"
       tabIndex={0}
       aria-current={active || undefined}
-      aria-label={labelFor(tab)}
+      aria-label={
+        tab.pending
+          ? `${labelFor(tab)}: ${tab.pending.words.toLowerCase()}`
+          : labelFor(tab)
+      }
       onClick={() => {
         window.browserApi.selectTab(tab.id);
         seenTab(tab);
@@ -661,9 +699,14 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
         event.preventDefault();
         window.browserApi.closeTab(tab.id);
       }}
-      title={labelFor(tab)}
+      title={
+        tab.pending
+          ? `${labelFor(tab)}: ${tab.pending.words.toLowerCase()}`
+          : labelFor(tab)
+      }
       style={{
         ...stripButton(active),
+        ...(tab.pending ? { background: PENDING_TINT[tab.pending.kind] } : {}),
         opacity: tab.loaded ? 1 : 0.6,
         position: 'relative',
       }}
@@ -753,6 +796,7 @@ function StripSpace({
     nextSpaceId,
   );
   const summary = spaceSummary(tabs.map((tab) => tab.status));
+  const changes = countPending(tabs);
 
   return (
     <div
@@ -824,15 +868,16 @@ function StripSpace({
         <div
           role="button"
           tabIndex={0}
-          aria-label={`Show ${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
+          aria-label={`Show ${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}${changes > 0 ? `; a waiting request would change ${changes}` : ''}`}
           onClick={() => window.browserApi.setSpaceCollapsed(space.id, false)}
           onKeyDown={rowKeys(() =>
             window.browserApi.setSpaceCollapsed(space.id, false),
           )}
           onContextMenu={openMenu}
-          title={`${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}`}
+          title={`${tabs.length} hidden tab${tabs.length === 1 ? '' : 's'}${changes > 0 ? `; a waiting request would change ${changes}` : ''}`}
           style={{
             ...stripButton(false),
+            ...(changes > 0 ? { background: 'var(--c-warn-tint)' } : {}),
             fontSize: 11,
             color: 'var(--c-text-2)',
             position: 'relative',
