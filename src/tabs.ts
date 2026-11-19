@@ -312,6 +312,8 @@ import {
 } from './agentVisuals';
 import type { OverlayFlags } from './agentVisuals';
 import { cardMayTakeFocus } from './approvalCard';
+import { runChip, tabStatuses, unseenAfterRun } from './sidebarStatus';
+import type { Unseen } from './sidebarStatus';
 import { resolveInput, searchUrl } from './url';
 import {
   activeEngine,
@@ -1157,6 +1159,7 @@ export async function createTabs(
   const sendState = () => {
     if (win.isDestroyed()) return;
     const id = activeTabId();
+    const sidebar = assistantSidebar();
     const history =
       id === null ? undefined : pageContents(id)?.navigationHistory;
     const generating = chatService?.runningChats() ?? [];
@@ -1205,10 +1208,15 @@ export async function createTabs(
         spaceId: tab.spaceId,
         loaded: views.has(tab.id),
         working: working.has(tab.id),
+        status:
+          sidebar.statuses.get(tab.id) ??
+          (working.has(tab.id) ? 'working' : null),
+        byAssistant: tab.byAssistant === true,
         closed: tab.closed,
         audible: pageContents(tab.id)?.isCurrentlyAudible() ?? false,
         muted: pageContents(tab.id)?.isAudioMuted() ?? false,
       })),
+      assistantChip: sidebar.chip,
       active: state.active,
       zoom:
         Math.round(
@@ -3153,10 +3161,70 @@ export async function createTabs(
   // Tabs the assistant is working in right now (shown with a marker, and no
   // downloads are allowed from them).
   const working = new Set<number>();
+  // The tabs it worked in during the newest run, and what a finished run left on them (green:
+  // finished while you were elsewhere, red: got stuck) until you open them (sidebarStatus.ts).
+  const ranIn = new Set<number>();
+  const unseen = new Map<number, Unseen>();
+  let sidebarRunId: number | null = null;
+  let sidebarRunEnded = true;
+  let sidebarKey = '';
   const setWorking = (tabId: number, on: boolean) => {
-    if (on) working.add(tabId);
-    else working.delete(tabId);
+    if (on) {
+      working.add(tabId);
+      ranIn.add(tabId);
+    } else working.delete(tabId);
     sendState();
+  };
+  // What the sidebar shows of the assistant's work now: a dot per tab and the chip on top.
+  const assistantSidebar = () => {
+    const active = activeTabId();
+    // Opening a tab clears what was left on it.
+    if (active !== null) unseen.delete(active);
+    for (const tab of [...unseen.keys()]) {
+      if (model.findTab(state, tab)?.closed !== false) unseen.delete(tab);
+    }
+    const run = overlayReply ? runOf(overlayReply.message) : null;
+    const statuses = tabStatuses({
+      run,
+      working,
+      unseen,
+      activeTab: active,
+    });
+    const batch = overlayReply
+      ? popoutOf(overlayReply.message, state.tabs)?.card
+      : null;
+    const chip = runChip({
+      run,
+      workingTabs: working.size,
+      changes: batch?.list ? batch.list.length + (batch.more ?? 0) : 0,
+      stuck: [...statuses.values()].includes('stuck'),
+    });
+    return { statuses, chip };
+  };
+  // The run changed: note when it ends (for the green and red dots), and tell the sidebar if
+  // what it shows is different now.
+  const sidebarRunChanged = (message: chatsModel.ChatMessage) => {
+    if (message.id !== sidebarRunId) {
+      sidebarRunId = message.id;
+      sidebarRunEnded = false;
+      ranIn.clear();
+    }
+    if (message.status !== 'streaming' && !sidebarRunEnded) {
+      sidebarRunEnded = true;
+      for (const [tab, mark] of unseenAfterRun(
+        runOf(message),
+        ranIn,
+        activeTabId(),
+      )) {
+        unseen.set(tab, mark);
+      }
+    }
+    const view = assistantSidebar();
+    const key = JSON.stringify([[...view.statuses], view.chip]);
+    if (key !== sidebarKey) {
+      sidebarKey = key;
+      sendState();
+    }
   };
   // ---- What sites may do: camera, microphone, location, notifications ------
   // A site that asks gets a small question under the address bar (one at a time).
@@ -3387,6 +3455,7 @@ export async function createTabs(
         const created = model.addTab(state, {
           url,
           spaceId: currentSpaceId(),
+          byAssistant: true,
         });
         commitAndShow(revealPage(created.state));
         tabId = created.id;
@@ -3758,6 +3827,7 @@ export async function createTabs(
       if (message.role !== 'assistant') return;
       if (!message.parts.some((part) => part.type === 'tool')) return;
       overlayReply = { chatId, message };
+      sidebarRunChanged(message);
       updateOverlay();
     },
     openSettings,
@@ -5450,6 +5520,17 @@ export async function createTabs(
     },
     'tab:reopen': (id) => {
       if (isId(id)) reopenTab(id);
+    },
+    // The chip at the top of the sidebar: go to the tab the assistant is on, or open the chat.
+    'chip:go': () => {
+      const run = overlayReply ? runOf(overlayReply.message) : null;
+      const tab = run?.tabId ?? null;
+      if (tab !== null && model.findTab(state, tab)?.closed === false) {
+        select({ kind: 'tab', id: tab });
+      } else if (state.settings.viewMode === 'page') {
+        commitAndShow(model.setViewMode(state, 'both'));
+        applyLayout(true);
+      }
     },
     'tab:select': (id) => {
       if (!isId(id)) return;

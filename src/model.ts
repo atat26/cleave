@@ -27,6 +27,8 @@ export interface SavedTab {
   // Closed but kept: the page is saved as a link in its Space (shown on the
   // Space's overview) with no tab open. Only a tab in a Space can be like this.
   closed: boolean;
+  // The assistant opened this tab (shown with a sparkle in the sidebar).
+  byAssistant?: boolean;
 }
 
 // An artifact that is open as a tab. The artifact itself (its text) lives in
@@ -281,6 +283,7 @@ export function parseState(raw: unknown): SavedState {
           item.closed === true &&
           isId(item.spaceId) &&
           spaceIds.has(item.spaceId),
+        ...(item.byAssistant === true ? { byAssistant: true } : {}),
       });
     }
   }
@@ -432,6 +435,8 @@ export function addTab(
     activate?: boolean;
     // Put the new tab right after this one (in the list), instead of at the end.
     after?: number;
+    // The assistant opened it.
+    byAssistant?: boolean;
   },
 ): { state: SavedState; id: number } {
   const id = state.nextId;
@@ -448,6 +453,7 @@ export function addTab(
     favicon: null,
     spaceId,
     closed: false,
+    ...(options.byAssistant === true ? { byAssistant: true } : {}),
   };
   const position =
     options.after === undefined

@@ -66,6 +66,13 @@ order of likelihood.
 - Each thing is shown once. The state ("Working", "Waiting for you", "Finished") is in the pill on the page while the page shows it; when the pill is not up (page not on screen, the step is not about a page, the display is off) it is the one-line run bar in the chat. The chat's run bar no longer has a Stop: Stop is on the page's pill and on the message box. The approval question is only in the popped-out card (the chat holds a one-line note); in chat-only view it stays in the chat. The list of steps stays in the open chat. Dismissing the "Finished" pill on the page also clears the chat's copy.
 - The popped-out card can be minimized (the "−" in its header): it shrinks to the strip at the top, "Waiting for you · <the question>" with Review (brings the card back), Go to tab (when its step is in another tab than the one on screen) and Stop, and the page is yours to scroll and click meanwhile. A new question always pops out again. The card also has a Go to tab button when its step is in another tab. The card shows its own Stop only when the pill (which has one) is not shown.
 
+**Browser-use visuals, part 4a (the sidebar shows the assistant's work)**
+
+- Each tab's dot says what the assistant is doing there, and always has its words on hover and for screen readers: blue = working, amber = waiting for you, red = got stuck, green = finished while you were in another tab, until you open that tab. A tab the assistant opened has a small sparkle after its name ("Opened by the assistant"), kept for the tab's life (it is saved with the tab).
+- A Space shows "N working" while the assistant works in N of its tabs, and when it is collapsed the dot of its most urgent tab (red, then amber, then blue, then green). The narrow strip has the same dots on the favicons, a count on the Space icon, and the dot on a collapsed Space's tab count.
+- A one-line chip at the top of the sidebar while a run is active: "Assistant is working in 3 tabs", "is waiting for you" (with "· 2 changes" for a batch), or "is stuck · needs you" (until you open the stuck tab). Clicking it goes to the tab the assistant is on, or opens the chat if there is none.
+- How: the dots and the chip come from the same run the pill and the run bar use, worked out in the app (sidebarStatus.ts). When a run ends, the tabs it worked in that you are not in get the green dot, and the tab it got stuck in gets the red one; Stop leaves none. Not yet done (4b): tinting the rows of a tab batch that is waiting for approval.
+
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.
 
 ## About this project

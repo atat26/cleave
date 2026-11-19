@@ -14,6 +14,8 @@ import { SPACE_COLOR_HEX } from './colors';
 import { SIDEBAR_FULL_MIN_WIDTH } from './layout';
 import { ResizeHandle } from './ResizeHandle';
 import { iconButtonStyle, stripButton } from './sidebarStyles';
+import { spaceSummary, STATUS_WORDS } from './sidebarStatus';
+import type { RunChip, TabStatus } from './sidebarStatus';
 import type { ArtifactTabInfo, SpaceInfo, TabInfo, UiState } from './types';
 
 // What to write on a tab: its title, else its site name, else "New Tab".
@@ -57,22 +59,78 @@ const showTabMenu = (tab: TabInfo) => (event: ReactMouseEvent) => {
 // Full-width sidebar
 // ---------------------------------------------------------------------------
 
-// A small blue dot: the assistant is working in this tab right now.
-function WorkingDot() {
+// What the assistant's work looks like on a tab (and on a Space): a dot whose colour says
+// working (blue), waiting for you (amber), stuck (red) or finished while you were elsewhere
+// (green, until you open the tab). It always has its words too, for the pointer and for
+// screen readers; the colour is never the only sign.
+const STATUS_DOT: Record<TabStatus, { dot: string; ring: string }> = {
+  working: { dot: 'var(--c-accent)', ring: 'var(--c-accent-tint)' },
+  waiting: { dot: 'var(--c-warn-edge)', ring: 'var(--c-warn-tint)' },
+  stuck: { dot: 'var(--c-danger)', ring: 'var(--c-danger-tint)' },
+  finished: { dot: 'var(--c-ok)', ring: 'var(--c-ok-tint)' },
+};
+
+function StatusDot({
+  status,
+  label = STATUS_WORDS[status],
+}: {
+  status: TabStatus;
+  label?: string;
+}) {
+  const colour = STATUS_DOT[status];
   return (
     <span
       role="img"
-      aria-label="The assistant is working in this tab"
-      title="The assistant is working in this tab"
+      aria-label={label}
+      title={label}
       style={{
         width: 8,
         height: 8,
         borderRadius: 4,
-        background: 'var(--c-accent)',
-        boxShadow: '0 0 0 3px var(--c-accent-tint)',
+        background: colour.dot,
+        boxShadow: `0 0 0 3px ${colour.ring}`,
         flexShrink: 0,
       }}
     />
+  );
+}
+
+// A tab the assistant opened has a small sparkle after its name.
+function OpenedByAssistant() {
+  return (
+    <span
+      role="img"
+      aria-label="Opened by the assistant"
+      title="Opened by the assistant"
+      style={{ display: 'inline-flex', color: 'var(--c-text-3)' }}
+    >
+      <Icon name="sparkle" />
+    </span>
+  );
+}
+
+// One line at the top of the sidebar while the assistant is at work; clicking it goes to
+// what it is on (the tab, or the chat).
+function AssistantChip({ chip }: { chip: RunChip }) {
+  const icon =
+    chip.tone === 'working'
+      ? 'spinner'
+      : chip.tone === 'waiting'
+        ? 'clock'
+        : 'warn';
+  return (
+    <div role="status" className="sb-chip-wrap">
+      <button
+        type="button"
+        className="sb-chip"
+        data-tone={chip.tone}
+        title="Go to what the assistant is on"
+        onClick={() => window.browserApi.assistantChipGo()}
+      >
+        <Icon name={icon} />
+        <span>{chip.text}</span>
+      </button>
+    </div>
   );
 }
 
@@ -178,7 +236,8 @@ function TabRow({
       icon={<Favicon tab={tab} />}
       trailing={
         <>
-          {tab.working && <WorkingDot />}
+          {tab.byAssistant && <OpenedByAssistant />}
+          {tab.status && <StatusDot status={tab.status} />}
           {(tab.audible || tab.muted) && (
             <IconButton
               icon={tab.muted ? 'volume-off' : 'volume'}
@@ -326,6 +385,8 @@ function SpaceGroup({
   };
 
   const colourDot = <SpaceIcon emoji={space.emoji} tint={color} />;
+  // How many of its tabs the assistant is working in, and the most urgent dot among them.
+  const summary = spaceSummary(tabs.map((tab) => tab.status));
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -382,6 +443,17 @@ function SpaceGroup({
           }
           trailing={
             <>
+              {summary.working > 0 && (
+                <span
+                  className="badge ai"
+                  title={`The assistant is working in ${summary.working} tab${summary.working === 1 ? '' : 's'} here`}
+                >
+                  {summary.working} working
+                </span>
+              )}
+              {space.collapsed && summary.urgent !== null && (
+                <StatusDot status={summary.urgent} />
+              )}
               {space.collapsed && (
                 <span className="badge" title={`${tabs.length} tabs`}>
                   {tabs.length}
@@ -495,6 +567,7 @@ function FullSidebar({
         <PinButton pinned={state.sidebarPinned} />
       </div>
 
+      {state.assistantChip && <AssistantChip chip={state.assistantChip} />}
       <div
         {...dnd.backgroundProps()}
         style={{ overflowY: 'auto', padding: '0 6px 12px', flex: 1 }}
@@ -581,9 +654,9 @@ function StripTab({ tab, active }: { tab: TabInfo; active: boolean }) {
       }}
     >
       <Favicon tab={tab} />
-      {tab.working && (
+      {tab.status && (
         <span style={{ position: 'absolute', top: 2, right: 2 }}>
-          <WorkingDot />
+          <StatusDot status={tab.status} />
         </span>
       )}
       {(tab.audible || tab.muted) && (
@@ -664,6 +737,7 @@ function StripSpace({
     space.id,
     nextSpaceId,
   );
+  const summary = spaceSummary(tabs.map((tab) => tab.status));
 
   return (
     <div
@@ -688,10 +762,32 @@ function StripSpace({
           }
         }}
         onContextMenu={openMenu}
-        title={`${space.name} overview`}
-        style={stripButton(leadActive)}
+        title={
+          summary.working > 0
+            ? `${space.name} overview: the assistant is working in ${summary.working} tab${summary.working === 1 ? '' : 's'}`
+            : `${space.name} overview`
+        }
+        style={{ ...stripButton(leadActive), position: 'relative' }}
       >
         <SpaceIcon emoji={space.emoji} tint={color} />
+        {summary.working > 0 && (
+          <span
+            className="badge ai"
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: -2,
+              right: -2,
+              height: 14,
+              minWidth: 14,
+              padding: '0 3px',
+              fontSize: 10,
+              justifyContent: 'center',
+            }}
+          >
+            {summary.working}
+          </span>
+        )}
       </div>
       {!space.collapsed &&
         tabs.map((tab) => (
@@ -724,9 +820,15 @@ function StripSpace({
             ...stripButton(false),
             fontSize: 11,
             color: 'var(--c-text-2)',
+            position: 'relative',
           }}
         >
           {tabs.length}
+          {summary.urgent !== null && (
+            <span style={{ position: 'absolute', top: 2, right: 2 }}>
+              <StatusDot status={summary.urgent} />
+            </span>
+          )}
         </div>
       )}
     </div>

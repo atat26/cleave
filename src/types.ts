@@ -25,6 +25,7 @@ import type {
   MessagePart,
 } from './chats';
 import type { ApprovalLevel, ToolGroup } from './toolPolicy';
+import type { RunChip, TabStatus } from './sidebarStatus';
 import type {
   AgentVisualSettings,
   OverlayFlags,
@@ -127,6 +128,11 @@ export interface TabInfo {
   loaded: boolean;
   // True while the assistant is working in this tab.
   working: boolean;
+  // The dot the sidebar shows on it: working, waiting for you, stuck, or finished (until you
+  // open it); null for none.
+  status: TabStatus | null;
+  // The assistant opened this tab.
+  byAssistant: boolean;
   // Closed but kept as a link in its Space (no tab, shown on the overview).
   closed: boolean;
   // Playing sound right now, and muted (the speaker shows only while one is true).
@@ -365,6 +371,8 @@ export interface UiState {
   // The artifacts that are open as tabs, in the order they were opened.
   artifactTabs: ArtifactTabInfo[];
   tabs: TabInfo[];
+  // The line at the top of the sidebar while the assistant is at work (null: none).
+  assistantChip: RunChip | null;
   // What is selected: a web tab or a Space's Lead (overview) tab.
   active: ActiveRef | null;
   // How far the selected page is zoomed (1 = 100%).
@@ -635,6 +643,8 @@ export interface BrowserApi {
   // Open a closed link again.
   reopenTab: (id: number) => void;
   selectTab: (id: number) => void;
+  // The chip at the top of the sidebar was clicked: go to what the assistant is on.
+  assistantChipGo: () => void;
   selectLead: (spaceId: number) => void;
   newSpace: () => void;
   setSpaceCollapsed: (id: number, collapsed: boolean) => void;
