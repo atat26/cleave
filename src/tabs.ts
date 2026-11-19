@@ -312,6 +312,7 @@ import {
 } from './agentVisuals';
 import type { OverlayFlags } from './agentVisuals';
 import { cardMayTakeFocus } from './approvalCard';
+import { pendingChanges } from './pendingChanges';
 import { runChip, tabStatuses, unseenAfterRun } from './sidebarStatus';
 import type { Unseen } from './sidebarStatus';
 import { CURSOR_DONE_MS, cursorFor, scrollDirection } from './cursor';
@@ -1213,6 +1214,7 @@ export async function createTabs(
         status:
           sidebar.statuses.get(tab.id) ??
           (working.has(tab.id) ? 'working' : null),
+        pending: sidebar.pending.get(tab.id) ?? null,
         closed: tab.closed,
         audible: pageContents(tab.id)?.isCurrentlyAudible() ?? false,
         muted: pageContents(tab.id)?.isAudioMuted() ?? false,
@@ -3232,7 +3234,19 @@ export async function createTabs(
       changes: batch?.list ? batch.list.length + (batch.more ?? 0) : 0,
       stuck: [...statuses.values()].includes('stuck'),
     });
-    return { statuses, chip };
+    // Which tabs a move or close request waiting for you would change.
+    const waiting = overlayReply
+      ? overlayReply.message.parts.find(
+          (p): p is Extract<typeof p, { type: 'tool' }> =>
+            p.type === 'tool' && p.status === 'waiting',
+        )
+      : undefined;
+    const pending = pendingChanges(
+      overlayReply?.message.status === 'streaming' && waiting ? waiting : null,
+      state.tabs,
+      state.spaces,
+    );
+    return { statuses, chip, pending };
   };
   // The run changed: note when it ends (for the green and red dots), and tell the sidebar if
   // what it shows is different now.
@@ -3249,7 +3263,11 @@ export async function createTabs(
       }
     }
     const view = assistantSidebar();
-    const key = JSON.stringify([[...view.statuses], view.chip]);
+    const key = JSON.stringify([
+      [...view.statuses],
+      view.chip,
+      [...view.pending],
+    ]);
     if (key !== sidebarKey) {
       sidebarKey = key;
       sendState();

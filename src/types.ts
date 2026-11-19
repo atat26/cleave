@@ -25,6 +25,7 @@ import type {
   MessagePart,
 } from './chats';
 import type { ApprovalLevel, ToolGroup } from './toolPolicy';
+import type { PendingChange } from './pendingChanges';
 import type { RunChip, TabStatus } from './sidebarStatus';
 import type {
   AgentVisualSettings,
@@ -131,6 +132,8 @@ export interface TabInfo {
   // The dot the sidebar shows on it: working, waiting for you, stuck, or finished (until you
   // open it); null for none.
   status: TabStatus | null;
+  // What a request waiting for your answer would do to this tab (move or close), or null.
+  pending: PendingChange | null;
   // Closed but kept as a link in its Space (no tab, shown on the overview).
   closed: boolean;
   // Playing sound right now, and muted (the speaker shows only while one is true).

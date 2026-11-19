@@ -3341,6 +3341,34 @@ button {
   }
 }
 
+/* A request waiting for you would move or close this tab: tint and tag (Sidebar.tsx). */
+.lrow.is-move {
+  background: color-mix(in srgb, var(--c-accent) 12%, transparent);
+}
+.lrow.is-close {
+  background: color-mix(in srgb, var(--c-danger) 10%, transparent);
+}
+.pend-tag {
+  flex: none;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.pend-tag.is-move {
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+}
+.pend-tag.is-close {
+  background: var(--c-danger-tint);
+  color: var(--c-danger);
+}
+
 /* The line at the top of the sidebar while the assistant is at work (Sidebar.tsx). */
 .sb-chip-wrap {
   flex-shrink: 0;
