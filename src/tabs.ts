@@ -295,7 +295,7 @@ import {
   parseAgentVisualSettings,
 } from './agentVisuals';
 import type { AgentVisualSettings } from './agentVisuals';
-import { runOf } from './runModel';
+import { recentSteps, runOf } from './runModel';
 import {
   labelPlacement,
   markerLabel,
@@ -843,6 +843,8 @@ export async function createTabs(
   let overlayShown = false;
   // Is an approval card popped out over the page? And which card has been given the keyboard.
   let lastFlags: OverlayFlags = noOverlayFlags();
+  // The pill's hover list is open (the overlay's strip is taller while it is).
+  let overlayPeek = false;
   // Cards you minimized (by step), so a new question pops out fresh.
   const minimizedCards = new Set<string>();
   let focusedCardKey: string | null = null;
@@ -1973,6 +1975,7 @@ export async function createTabs(
       settings: agentVisualSettings,
       marker,
       cursor: cursorFrom(run, webTab, marker),
+      recent: overlayReply ? recentSteps(overlayReply.message) : [],
       // Only once the overlay can show it: until then the chat holds the question.
       approval,
       minimized: approvalKey !== null && minimizedCards.has(approvalKey),
@@ -1997,7 +2000,13 @@ export async function createTabs(
       }
       return;
     }
-    overlayView.setBounds(overlayBounds(next.mode, pageBounds()));
+    overlayView.setBounds(
+      overlayBounds(
+        next.mode,
+        pageBounds(),
+        overlayPeek && next.recent.length > 0,
+      ),
+    );
     const wasShown = overlayShown;
     overlayShown = true;
     overlayView.setVisible(true);
@@ -7928,6 +7937,13 @@ ${artifact.content.slice(0, 1500)}`;
     overlayReady = true;
     updateOverlay();
   };
+  // The pointer is on the pill (or the keyboard is): show or hide its list of recent steps.
+  const onOverlayPeek = (event: Electron.IpcMainEvent, on: unknown) => {
+    if (!fromOverlay(event) || typeof on !== 'boolean') return;
+    if (overlayPeek === on) return;
+    overlayPeek = on;
+    updateOverlay();
+  };
   const onOverlayStop = (event: Electron.IpcMainEvent) => {
     if (fromOverlay(event) && overlayReply)
       chatService?.stop(overlayReply.chatId);
@@ -8016,6 +8032,7 @@ ${artifact.content.slice(0, 1500)}`;
   ipcMain.on('overlay:decide', onOverlayDecide);
   ipcMain.on('overlay:wheel', onOverlayWheel);
   ipcMain.on('overlay:ready', onOverlayReady);
+  ipcMain.on('overlay:peek', onOverlayPeek);
   ipcMain.on('overlay:stop', onOverlayStop);
   ipcMain.on('overlay:dismiss', onOverlayDismiss);
   // The chat asks for what the overlay shows when it opens (it may have missed the news).
@@ -8201,6 +8218,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('overlay:ready', onOverlayReady);
     ipcMain.removeListener('overlay:decide', onOverlayDecide);
     ipcMain.removeListener('overlay:wheel', onOverlayWheel);
+    ipcMain.removeListener('overlay:peek', onOverlayPeek);
     ipcMain.removeListener('overlay:stop', onOverlayStop);
     ipcMain.removeListener('overlay:dismiss', onOverlayDismiss);
     ipcMain.removeListener('overlay:minimize', onOverlayMinimize);

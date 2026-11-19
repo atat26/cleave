@@ -6,6 +6,7 @@ import {
   canRetry,
   groupState,
   groupTitle,
+  recentSteps,
   retryRequest,
   runOf,
   splitLabel,
@@ -302,4 +303,27 @@ test('the run says which tab the current step is in, and whether it is on that p
   assert.equal(search?.touchesPage, false);
   assert.equal(stepTabId({ arguments: 'not json' }), null);
   assert.equal(stepTabId({ arguments: '{"tab":"4"}' }), null);
+});
+
+test("the last three steps are listed oldest first, in the app's own words", () => {
+  const parts = [
+    tool({ id: 1, label: 'Read: Shop A' }),
+    tool({ id: 2, label: 'Read: Shop B' }),
+    tool({ id: 3, label: 'Clicking: Add to cart', status: 'running' }),
+    tool({ id: 4, label: 'Type: Search', status: 'waiting' }),
+  ];
+  const recent = recentSteps(message(parts, 'streaming'));
+  assert.deepEqual(
+    recent.map((r) => [r.partId, r.state, r.verb, r.target]),
+    [
+      [2, 'done', 'Read', 'Shop B'],
+      [3, 'running', 'Clicking', 'Add to cart'],
+      [4, 'waiting', 'Type', 'Search'],
+    ],
+  );
+  // Fewer steps, or none, or text only.
+  assert.equal(recentSteps(message([tool()])).length, 1);
+  assert.deepEqual(recentSteps(message([])), []);
+  assert.deepEqual(recentSteps(undefined), []);
+  assert.equal(recentSteps(message(parts), 2).length, 2);
 });

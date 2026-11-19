@@ -304,6 +304,37 @@ export function stepTabId(
 
 export const MAX_TICKS = 40;
 
+// A step as the pill's hover list shows it: its state, and its line ("Read" and "Shop A").
+export interface RecentStep {
+  partId: number;
+  state: StepState;
+  verb: string;
+  target: string | null;
+}
+
+export const RECENT_STEPS = 3;
+
+// The last few steps of a reply, oldest first (so the newest is at the bottom), in the app's own
+// wording. Empty when the reply used no tools.
+export function recentSteps(
+  message: ChatMessage | undefined,
+  count = RECENT_STEPS,
+): RecentStep[] {
+  if (!message || message.role !== 'assistant') return [];
+  return message.parts
+    .filter((p): p is ToolPartView => p.type === 'tool')
+    .slice(-count)
+    .map((p) => {
+      const view = stepView(p, message.status);
+      return {
+        partId: p.id,
+        state: view.state,
+        verb: view.verb,
+        target: view.target,
+      };
+    });
+}
+
 // A summary of a reply's tool use, or null when it used no tools.
 export function runOf(message: ChatMessage | undefined): RunView | null {
   if (!message || message.role !== 'assistant') return null;

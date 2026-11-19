@@ -156,8 +156,53 @@ function PoppedOutCard({ state }: { state: OverlayState }) {
   );
 }
 
+// The last few steps, under the pill while it is hovered or focused.
+function PeekList({ steps }: { steps: OverlayState['recent'] }) {
+  return (
+    <ul className="ao-peek" aria-label="The last steps">
+      {steps.map((step) => (
+        <li key={step.partId} className="ao-peek-row">
+          <StatusIcon state={step.state} />
+          <span className="ao-peek-text truncate">
+            {step.verb}
+            {step.target !== null && (
+              <>
+                : <strong>{step.target}</strong>
+              </>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// How long after the pointer leaves the pill (or its list) the list stays: long enough to
+// cross the small gap between them.
+const PEEK_CLOSE_MS = 220;
+
 export function OverlayApp() {
   const [state, setState] = useState<OverlayState | null>(null);
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openPeek = () => {
+    if (peekTimer.current !== null) clearTimeout(peekTimer.current);
+    peekTimer.current = null;
+    setPeek(true);
+  };
+  const closePeek = () => {
+    if (peekTimer.current !== null) clearTimeout(peekTimer.current);
+    peekTimer.current = setTimeout(() => setPeek(false), PEEK_CLOSE_MS);
+  };
+  // The list is only open while there is something to list; the app grows the strip for it.
+  const peeking = peek && state !== null && state.recent.length > 0;
+  useEffect(() => {
+    window.browserApi.overlayPeek(peeking);
+  }, [peeking]);
+  // Nothing showing any more: the pointer cannot still be on the pill.
+  useEffect(() => {
+    if (state === null) setPeek(false);
+  }, [state]);
 
   useEffect(() => {
     // This page must show nothing but the glow and the pill.
@@ -195,7 +240,14 @@ export function OverlayApp() {
         <CursorMark cursor={state.cursor} tagged={state.marker === null} />
       )}
       {state.pill && (
-        <div className="ao-pill" role="status">
+        <div
+          className="ao-pill"
+          role="status"
+          onMouseEnter={openPeek}
+          onMouseLeave={closePeek}
+          onFocus={openPeek}
+          onBlur={closePeek}
+        >
           <StatusIcon state={TONE_ICON[state.tone]} />
           <span className="ao-word">{RUN_WORDS[state.word]}</span>
           {state.minimized ? (
@@ -252,6 +304,11 @@ export function OverlayApp() {
               Stop
             </Button>
           )}
+        </div>
+      )}
+      {state.pill && peeking && (
+        <div onMouseEnter={openPeek} onMouseLeave={closePeek}>
+          <PeekList steps={state.recent} />
         </div>
       )}
       {state.card && <PoppedOutCard state={state} />}

@@ -799,6 +799,8 @@ export interface BrowserApi {
   onOverlayFlags: (callback: (flags: OverlayFlags) => void) => () => void;
   // The pill of this reply was dismissed on the page.
   onOverlayDismissed: (callback: (messageId: number) => void) => () => void;
+  // The pill's hover list is open (true) or closed: the strip grows to hold it.
+  overlayPeek: (on: boolean) => void;
   overlayStop: () => void;
   overlayDismiss: () => void;
   // Shrink the popped-out card to its strip (true) or bring it back (false), and show the

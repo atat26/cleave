@@ -8,7 +8,13 @@ import type { CardDetails } from './approvalCard.ts';
 import type { CursorView } from './cursor.ts';
 import type { MarkerView, Rect } from './marker.ts';
 import { stepSite } from './runModel.ts';
-import type { RunView, RunWord, StepSite, ToolPartView } from './runModel.ts';
+import type {
+  RecentStep,
+  RunView,
+  RunWord,
+  StepSite,
+  ToolPartView,
+} from './runModel.ts';
 import type { ChatMessage } from './chats.ts';
 
 export type ShowWork = 'glow-marker' | 'glow' | 'off';
@@ -138,6 +144,8 @@ export interface OverlayState {
   cursor: CursorView | null;
   // The approval card popped out over the page.
   card: PopoutCard | null;
+  // The last few steps, shown when the pill is hovered or focused (empty: nothing to show).
+  recent: RecentStep[];
   // The card was minimized: only its strip is shown (what it asks, Review, Go to tab, Stop),
   // and the page is yours to use meanwhile.
   minimized: boolean;
@@ -181,6 +189,8 @@ export interface OverlayInput {
   marker?: MarkerView | null;
   // The cursor worked out by the app (only shown with the glow, and when the setting says).
   cursor?: CursorView | null;
+  // The last few steps of the run, for the pill's hover list.
+  recent?: readonly RecentStep[];
   // The step waiting for your approval, if any.
   approval?: PopoutCard | null;
   // You minimized that card.
@@ -226,6 +236,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
         marker: null,
         cursor: null,
         card: null,
+        recent: [],
         minimized: true,
         goToTab: input.goToTab === true,
         askLine: card.ask.split('\n')[0],
@@ -243,6 +254,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
         glow && settings.showWork === 'glow-marker' ? (marker ?? null) : null,
       cursor: glow && settings.showCursor ? (input.cursor ?? null) : null,
       card,
+      recent: showWork ? [...(input.recent ?? [])] : [],
       minimized: false,
       goToTab: card !== null && input.goToTab === true,
       askLine: null,
@@ -260,6 +272,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     marker: null,
     cursor: null,
     card: null,
+    recent: [...(input.recent ?? [])],
     minimized: false,
     goToTab: false,
     askLine: null,
@@ -270,10 +283,14 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
 // strip at the top for the pill alone (so the page below it stays usable).
 export const PILL_HEIGHT = 34;
 export const PILL_MAX_WIDTH = 560;
+// The room under the strip for the pill's hover list (three lines and its padding).
+export const PEEK_EXTRA = 112;
 
+// `peek`: the hover list is open, so the strip is taller for as long as it is.
 export function overlayBounds(
   mode: 'frame' | 'pill',
   page: { x: number; y: number; width: number; height: number },
+  peek = false,
 ): { x: number; y: number; width: number; height: number } {
   if (mode === 'frame') return page;
   const width = Math.max(0, Math.min(PILL_MAX_WIDTH, page.width - 24));
@@ -281,6 +298,6 @@ export function overlayBounds(
     x: Math.round(page.x + (page.width - width) / 2),
     y: page.y,
     width: Math.round(width),
-    height: Math.min(PILL_HEIGHT, page.height),
+    height: Math.min(PILL_HEIGHT + (peek ? PEEK_EXTRA : 0), page.height),
   };
 }

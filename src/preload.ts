@@ -522,6 +522,7 @@ const browserApi: BrowserApi = {
       ipcRenderer.removeListener('overlay:dismissed', listener);
     };
   },
+  overlayPeek: (on) => ipcRenderer.send('overlay:peek', on),
   overlayStop: () => ipcRenderer.send('overlay:stop'),
   overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),
   overlayFlagsGet: () => ipcRenderer.invoke('overlay:flags-get'),

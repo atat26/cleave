@@ -6,6 +6,7 @@ import {
   overlayBounds,
   overlayFor,
   parseAgentVisualSettings,
+  PEEK_EXTRA,
   PILL_HEIGHT,
   noOverlayFlags,
   overlayFlags,
@@ -373,5 +374,44 @@ test('the cursor comes with the glow only, and only when its setting is on', () 
     overlayFor(input({ run: waiting, approval, minimized: true, cursor }))
       ?.cursor,
     null,
+  );
+});
+
+test('the last steps come along with the pill, for its hover list', () => {
+  const recent = [
+    { partId: 1, state: 'done' as const, verb: 'Read', target: 'Shop A' },
+    { partId: 2, state: 'running' as const, verb: 'Clicking', target: null },
+  ];
+  assert.deepEqual(overlayFor(input({ recent }))?.recent, recent);
+  assert.deepEqual(overlayFor(input())?.recent, []);
+  // An ended run keeps its list; a minimized card and a turned-off display have none.
+  const ended = run({ word: 'finished', touchesPage: false, tabId: null });
+  assert.deepEqual(overlayFor(input({ run: ended, recent }))?.recent, recent);
+  const waiting = run({ word: 'waiting' });
+  assert.deepEqual(
+    overlayFor(input({ run: waiting, approval, minimized: true, recent }))
+      ?.recent,
+    [],
+  );
+  const off = { ...defaultAgentVisualSettings(), showWork: 'off' as const };
+  assert.deepEqual(
+    overlayFor(input({ run: waiting, approval, settings: off, recent }))
+      ?.recent,
+    [],
+  );
+});
+
+test('the strip is taller while the hover list is open, and the page-wide frame is not', () => {
+  const page = { x: 100, y: 60, width: 800, height: 600 };
+  assert.equal(
+    overlayBounds('pill', page, true).height,
+    PILL_HEIGHT + PEEK_EXTRA,
+  );
+  assert.equal(overlayBounds('pill', page, false).height, PILL_HEIGHT);
+  assert.deepEqual(overlayBounds('frame', page, true), page);
+  // Never taller than the page.
+  assert.equal(
+    overlayBounds('pill', { x: 0, y: 0, width: 300, height: 80 }, true).height,
+    80,
   );
 });
