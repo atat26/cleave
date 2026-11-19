@@ -192,6 +192,8 @@ export interface ToolOutcome {
   ok: boolean;
   // Not run because of a safety rule, a limit or a setting (not a failure).
   blocked?: boolean;
+  // Not done because you closed the tab it was about while it ran (not a failure either).
+  skipped?: boolean;
   // Set when the assistant offered choices: shown as buttons in the chat.
   choices?: Choices;
   // What the tool found, kept with the call so you can read it later (search
@@ -368,6 +370,9 @@ function tabArgument(call: ToolCall): number | null {
   }
   return null;
 }
+
+// What a step says when its tab was closed while it ran.
+export const CLOSED_BY_YOU = 'You closed this tab, so this step was skipped.';
 
 const failureWords: Record<
   Extract<ActionResult, { ok: false }>['reason'],
@@ -795,10 +800,18 @@ export function createAgentTools(
     // Checked again now: things may have changed while the user decided.
     const decided = planAction(call, actionContext);
     if (decided.kind === 'refuse') {
+      // The tab it was working in is gone (you closed it while this waited or ran): the step
+      // is skipped, not failed.
+      const named = tabArgument(call);
+      const closed =
+        named !== null &&
+        (touched.has(named) || outlines.has(named)) &&
+        !env.linkedTabs().some((t) => t.id === named);
       return {
-        label: decided.label,
+        label: closed ? 'Skipped: the tab was closed' : decided.label,
         ok: false,
-        note: decided.note,
+        ...(closed ? { skipped: true } : {}),
+        note: closed ? CLOSED_BY_YOU : decided.note,
         result: decided.result,
       };
     }
@@ -892,6 +905,15 @@ export function createAgentTools(
       // The page may be in an unknown state now.
       outlines.delete(tabId);
       const why = failureWords[result.reason];
+      if (result.reason === 'closed') {
+        return {
+          label: `Couldn't do it: ${text}`,
+          ok: false,
+          skipped: true,
+          note: CLOSED_BY_YOU,
+          result: `That did not work (${why}). Look at the page again before trying anything else.`,
+        };
+      }
       return {
         label: `Couldn't do it: ${text}`,
         ok: false,
@@ -1071,7 +1093,11 @@ export function createAgentTools(
         return {
           label: `Couldn't look at: ${tabName(tab)}`,
           ok: false,
-          note: `Could not be read (${why}).`,
+          ...(seen.reason === 'closed' ? { skipped: true } : {}),
+          note:
+            seen.reason === 'closed'
+              ? CLOSED_BY_YOU
+              : `Could not be read (${why}).`,
           result: `Tab ${id} could not be looked at (${why}).`,
         };
       }
@@ -1116,7 +1142,11 @@ export function createAgentTools(
       return {
         label: `Couldn't read: ${tabName(tab)}`,
         ok: false,
-        note: `Could not be read (${why}).`,
+        ...(page.reason === 'closed' ? { skipped: true } : {}),
+        note:
+          page.reason === 'closed'
+            ? CLOSED_BY_YOU
+            : `Could not be read (${why}).`,
         result: `Tab ${id} could not be read (${why}).`,
       };
     }

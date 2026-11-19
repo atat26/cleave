@@ -90,6 +90,13 @@ order of likelihood.
 - With only the chat on screen (no page, so no pill), a "Working on" card under the run bar says which page the assistant is on: its title, site and Space. It shows while the assistant is working or waiting on a tab; clicking it shows the page and brings that tab forward. (The small screenshot in the sheet comes with the thumbnails in step 6.)
 - Deliberately different from the designer's sheet: with page and chat together only one of the pill and the chat's run bar is shown (see "one place for each fact"), and Esc does not dismiss the page's pill (it cannot take the keyboard from the page); its Dismiss button does, and the chat's run bar still takes Esc.
 
+**Browser-use visuals, part 6a (run moments that are only about what you see)**
+
+- Stop: the run bar and the page's pill say "Stopped by you", and the steps that had not finished are marked "Not done" ("You stopped this reply before it ran."), not as failures.
+- You close a tab while a step is working on it (or while its question waits): the step shows as cut short, not failed, with "You closed this tab, so this step was skipped." (The model is still told plainly that the tab was closed.)
+- A step that is running shows "Waiting for <the page's name> to load" while its page loads, and a "Was asleep" badge if the tab was asleep and the assistant woke it for that step.
+- Not built, on purpose: a "Working · Thinking…" run bar before the first step (the reply already says "Thinking…", and a bar would flash on every plain reply), and the green "Open" button for what was made (needs the saved item's id; goes with 6b). The rest of step 6 (screenshot thumbnails, the "Your own data · sent to the model" block, the 25-action limit banner with Continue, and Continue after Stop) waits for the AI prompt pipeline inspection.
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.

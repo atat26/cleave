@@ -16,6 +16,7 @@ import {
   groupState,
   groupTitle,
   RUN_WORDS,
+  runningNote,
   STATE_WORDS,
   stepSite,
   stepView,
@@ -168,6 +169,8 @@ export function StepRow({
   const [open, setOpen] = useState(false);
   const site = stepSite(step.part, tabs);
   const retry = canRetry(step, isNewestReply, busy);
+  // Still running: what it is waiting on (the page loading), and whether the tab was asleep.
+  const note = runningNote(step, tabs);
 
   // "Show details" from the right-click menu.
   useEffect(
@@ -211,7 +214,11 @@ export function StepRow({
           {step.result !== '' && (
             <span className="step-result truncate">{step.result}</span>
           )}
+          {step.result === '' && note !== null && note.line !== '' && (
+            <span className="step-result truncate">{note.line}</span>
+          )}
         </span>
+        {note?.asleep && <span className="step-tag">Was asleep</span>}
         {step.allowed && <span className="step-tag">Allowed</span>}
         {step.state === 'declined' && (
           <span className="step-tag">Declined by you</span>

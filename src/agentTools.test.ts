@@ -1653,3 +1653,38 @@ test('the skill tools are offered and in the Tools panel; using one just goes ah
   assert.equal(plan.risky, true);
   assert.ok(env.listSkills().length === 0);
 });
+
+test('a step whose tab you closed while it ran is skipped, not failed', async () => {
+  const { tools } = setup({ ok: false, reason: 'closed' });
+  const closed = await tools.run(call('read_page', { tab: 1 }), ABORT);
+  assert.equal(closed.ok, false);
+  assert.equal(closed.skipped, true);
+  assert.equal(closed.note, 'You closed this tab, so this step was skipped.');
+  // A page that merely took too long is still a failure, not a skip.
+  const slow = setup({ ok: false, reason: 'timeout' });
+  const late = await slow.tools.run(call('read_page', { tab: 1 }), ABORT);
+  assert.equal(late.ok, false);
+  assert.equal(late.skipped, undefined);
+  assert.match(late.note, /too long/);
+});
+
+test('an action approved after you closed its tab is skipped, but a refusal for another reason is not', async () => {
+  const { tools, done, tabs } = setup();
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  const type = call('type_text', { tab: 1, element: 2, text: 'hello' });
+  assert.equal(tools.plan(type).kind, 'ask');
+  // You close the tab while the question is waiting.
+  tabs.splice(0, 1);
+  const outcome = await tools.run(type, ABORT);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.skipped, true);
+  assert.equal(outcome.note, 'You closed this tab, so this step was skipped.');
+  assert.deepEqual(done, []);
+  // A tab it never looked at, which is simply not linked: a refusal, not a skip.
+  const stranger = await tools.run(
+    call('type_text', { tab: 99, element: 1, text: 'x' }),
+    ABORT,
+  );
+  assert.equal(stranger.ok, false);
+  assert.equal(stranger.skipped, undefined);
+});

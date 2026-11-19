@@ -8,6 +8,7 @@ import {
   groupTitle,
   recentSteps,
   retryRequest,
+  runningNote,
   runOf,
   splitLabel,
   stepKind,
@@ -16,6 +17,7 @@ import {
   stepState,
   stepView,
 } from './runModel.ts';
+import { RUN_WORDS, STATE_WORDS } from './runModel.ts';
 import type { ToolPartView } from './runModel.ts';
 
 let nextId = 1;
@@ -326,4 +328,77 @@ test("the last three steps are listed oldest first, in the app's own words", () 
   assert.deepEqual(recentSteps(message([])), []);
   assert.deepEqual(recentSteps(undefined), []);
   assert.equal(recentSteps(message(parts), 2).length, 2);
+});
+
+test('a stopped run says it was stopped by you, and its unfinished steps are not done', () => {
+  assert.equal(RUN_WORDS.stopped, 'Stopped by you');
+  assert.equal(STATE_WORDS.stopped, 'Not done');
+  const stopped = runOf(
+    message([tool({ status: 'ok' }), tool({ status: 'running' })], 'stopped'),
+  );
+  assert.equal(stopped?.word, 'stopped');
+  assert.equal(stopped?.state, 'stopped');
+});
+
+test('a step skipped because you closed its tab is cut short, not failed', () => {
+  const skipped = tool({ status: 'error', skipped: true });
+  assert.equal(stepState(skipped, 'done'), 'stopped');
+  assert.equal(stepState(skipped, 'streaming'), 'stopped');
+  // A real failure stays a failure.
+  assert.equal(stepState(tool({ status: 'error' }), 'done'), 'failed');
+});
+
+test('a running step says when it waits for its page to load, and when the tab was asleep', () => {
+  const tabs = [
+    {
+      id: 4,
+      title: 'Shop D',
+      url: 'https://shop.example/d',
+      loading: true,
+      wokeForAssistant: false,
+    },
+    {
+      id: 5,
+      title: '',
+      url: 'https://www.news.example/x',
+      loading: true,
+      wokeForAssistant: true,
+    },
+    {
+      id: 6,
+      title: 'Idle',
+      url: 'https://idle.example/',
+      loading: false,
+      wokeForAssistant: true,
+    },
+    {
+      id: 7,
+      title: 'Calm',
+      url: 'https://calm.example/',
+      loading: false,
+      wokeForAssistant: false,
+    },
+  ];
+  const running = (id: number) =>
+    stepView(
+      tool({ status: 'running', arguments: JSON.stringify({ tab: id }) }),
+      'streaming',
+    );
+  assert.deepEqual(runningNote(running(4), tabs), {
+    line: 'Waiting for Shop D to load',
+    asleep: false,
+  });
+  // No title yet: the site's name.
+  assert.deepEqual(runningNote(running(5), tabs), {
+    line: 'Waiting for news.example to load',
+    asleep: true,
+  });
+  // Awake again but still marked: the badge, no line.
+  assert.deepEqual(runningNote(running(6), tabs), { line: '', asleep: true });
+  // Nothing to say.
+  assert.equal(runningNote(running(7), tabs), null);
+  assert.equal(runningNote(running(99), tabs), null);
+  // Only while it runs.
+  const done = stepView(tool({ status: 'ok', arguments: '{"tab":4}' }), 'done');
+  assert.equal(runningNote(done, tabs), null);
 });

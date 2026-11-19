@@ -299,6 +299,7 @@ export function createChatRunner(deps: RunnerDeps) {
                 {
                   ok: outcome.ok,
                   blocked: outcome.blocked,
+                  skipped: outcome.skipped,
                   label: outcome.label,
                   outcome: outcome.note,
                   details: outcome.details,
