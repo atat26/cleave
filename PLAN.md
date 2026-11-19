@@ -72,6 +72,13 @@ order of likelihood.
 - It disappears when its step ends (it never sits parked on the page), and is not drawn for a blocked, declined, stopped or failed step, after Stop or finish, in another tab, or while the card is minimized. Reading, looking, finding, pressing a key and going to an address show no cursor (there is no element to point at; the pill says what they do). If the next step starts within two seconds it glides from where the last one ended. With reduced motion it jumps instead of gliding.
 - How: it is worked out in the app from the same measured box as the marker (so it points at the element the label and the card name), and drawn in the overlay above the marker and below the pill. When the ring's own label is showing it already says the same words, so the cursor's tag is left off then (it shows with "glow only", and for scrolling, which has no ring). It takes no mouse and moves nothing on the page, and your own pointer is never touched. Turned off by the "show the assistant's cursor" setting (agent-visuals.json); the glow, marker and pill stay.
 
+**Browser-use visuals, part 4a (the sidebar shows the assistant's work)**
+
+- Each tab's dot says what the assistant is doing there, and always has its words on hover and for screen readers: blue = working, amber = waiting for you, red = got stuck, green = finished. A green or red dot stays until you have been at that tab's row (the pointer went over it and away again, you clicked it, or the keyboard passed through), not merely until you are in the tab, because the assistant itself brings its tab to the front while it works. (A sparkle on tabs the assistant opened was tried and dropped.)
+- A Space shows "N working" while the assistant works in N of its tabs, and when it is collapsed the dot of its most urgent tab (red, then amber, then blue, then green). The narrow strip has the same dots on the favicons, a count on the Space icon, and the dot on a collapsed Space's tab count.
+- A one-line chip at the top of the sidebar while a run is active: "Assistant is working in 3 tabs", "is waiting for you" (with "· 2 changes" for a batch), or "is stuck · needs you" (until you open the stuck tab). Clicking it goes to the tab the assistant is on, or opens the chat if there is none.
+- How: the dots and the chip come from the same run the pill and the run bar use, worked out in the app (sidebarStatus.ts). When a run ends, the tabs it worked in get the green dot, and the tab it got stuck in gets the red one; Stop leaves none. Not yet done (4b): tinting the rows of a tab batch that is waiting for approval.
+
 **Search and between features**
 
 - Ctrl+K quick search across tabs, closed pages, Spaces, artifacts, chats, bookmarks and history, with Go to, Search and Ask.

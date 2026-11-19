@@ -3341,6 +3341,46 @@ button {
   }
 }
 
+/* The line at the top of the sidebar while the assistant is at work (Sidebar.tsx). */
+.sb-chip-wrap {
+  flex-shrink: 0;
+  padding: 0 8px 6px;
+}
+.sb-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  line-height: 1.25;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.sb-chip[data-tone='waiting'] {
+  background: var(--c-warn-tint);
+  color: var(--c-warn);
+}
+.sb-chip[data-tone='stuck'] {
+  background: var(--c-danger-tint);
+  color: var(--c-danger);
+}
+.sb-chip[data-tone='working'] svg {
+  animation: spin 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-chip[data-tone='working'] svg {
+    animation: none;
+  }
+}
+
 /* The assistant's cursor (OverlayApp.tsx, cursor.ts): above the marker, below the pill. */
 .ao-cursor {
   position: absolute;
