@@ -5,6 +5,7 @@
 // no React, so it is easy to test. The drawing is in OverlayApp.tsx; the view that holds it,
 // above the page, is managed in tabs.ts.
 import type { CardDetails } from './approvalCard.ts';
+import type { CursorView } from './cursor.ts';
 import type { MarkerView, Rect } from './marker.ts';
 import { stepSite } from './runModel.ts';
 import type { RunView, RunWord, StepSite, ToolPartView } from './runModel.ts';
@@ -24,12 +25,15 @@ export interface AgentVisualSettings {
   showWork: ShowWork;
   // The "Finished" or "Stopped" pill stays on the page until you dismiss it.
   keepFinished: boolean;
+  // The assistant's cursor is drawn on the page while it clicks, types, chooses or scrolls.
+  showCursor: boolean;
 }
 
 export const defaultAgentVisualSettings = (): AgentVisualSettings => ({
   version: 1,
   showWork: 'glow-marker',
   keepFinished: true,
+  showCursor: true,
 });
 
 // Turn whatever is on disk into valid settings; anything odd gets its default. Never throws.
@@ -41,6 +45,7 @@ export function parseAgentVisualSettings(raw: unknown): AgentVisualSettings {
   if (show) settings.showWork = show;
   if (typeof r.keepFinished === 'boolean')
     settings.keepFinished = r.keepFinished;
+  if (typeof r.showCursor === 'boolean') settings.showCursor = r.showCursor;
   return settings;
 }
 
@@ -129,6 +134,8 @@ export interface OverlayState {
   ended: boolean;
   // The ring on the element it is acting on, if there is one to show.
   marker: MarkerView | null;
+  // Its cursor, if there is one to show.
+  cursor: CursorView | null;
   // The approval card popped out over the page.
   card: PopoutCard | null;
   // The card was minimized: only its strip is shown (what it asks, Review, Go to tab, Stop),
@@ -172,6 +179,8 @@ export interface OverlayInput {
   settings: AgentVisualSettings;
   // The marker worked out by the app (only shown with the glow, and when the setting says).
   marker?: MarkerView | null;
+  // The cursor worked out by the app (only shown with the glow, and when the setting says).
+  cursor?: CursorView | null;
   // The step waiting for your approval, if any.
   approval?: PopoutCard | null;
   // You minimized that card.
@@ -215,6 +224,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
         tone: 'waiting',
         ended: false,
         marker: null,
+        cursor: null,
         card: null,
         minimized: true,
         goToTab: input.goToTab === true,
@@ -231,6 +241,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
       ended: false,
       marker:
         glow && settings.showWork === 'glow-marker' ? (marker ?? null) : null,
+      cursor: glow && settings.showCursor ? (input.cursor ?? null) : null,
       card,
       minimized: false,
       goToTab: card !== null && input.goToTab === true,
@@ -247,6 +258,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     tone: run.word,
     ended: true,
     marker: null,
+    cursor: null,
     card: null,
     minimized: false,
     goToTab: false,

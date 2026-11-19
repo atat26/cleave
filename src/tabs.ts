@@ -312,6 +312,8 @@ import {
 } from './agentVisuals';
 import type { OverlayFlags } from './agentVisuals';
 import { cardMayTakeFocus } from './approvalCard';
+import { CURSOR_DONE_MS, cursorFor, scrollDirection } from './cursor';
+import type { CursorView } from './cursor';
 import { resolveInput, searchUrl } from './url';
 import {
   activeEngine,
@@ -1881,6 +1883,42 @@ export async function createTabs(
       }),
     };
   };
+  // The assistant's cursor to draw now, or null: the current step clicks, types in, chooses
+  // from or scrolls the page on screen (see cursor.ts). It points at the box measured for
+  // the marker, and a finished step keeps it for a moment so a click is seen to land.
+  const cursorDoneAt = new Map<string, number>();
+  const cursorFrom = (
+    run: ReturnType<typeof runOf>,
+    activeId: number | null,
+    marker: MarkerView | null,
+  ): CursorView | null => {
+    if (!run || !overlayReply || activeId === null) return null;
+    if (run.tabId !== activeId) return null;
+    const part = overlayReply.message.parts.find(
+      (p) => p.type === 'tool' && p.id === run.partId,
+    );
+    if (part?.type !== 'tool') return null;
+    const key = stepKey(overlayReply.message.id, run.partId);
+    let sinceDoneMs: number | null = null;
+    if (run.state === 'done') {
+      const first = cursorDoneAt.get(key) ?? Date.now();
+      cursorDoneAt.set(key, first);
+      sinceDoneMs = Date.now() - first;
+      if (sinceDoneMs <= CURSOR_DONE_MS) {
+        setTimeout(updateOverlay, CURSOR_DONE_MS - sinceDoneMs + 50);
+      }
+    }
+    const page = pageBounds();
+    return cursorFor({
+      toolName: part.name,
+      state: run.state,
+      rect: marker?.rect ?? null,
+      page: { width: page.width, height: page.height },
+      direction:
+        part.name === 'scroll' ? scrollDirection(part.arguments) : null,
+      sinceDoneMs,
+    });
+  };
   // The page was scrolled (the wheel was passed on to it): the ring has moved with its
   // element, so measure it again.
   const markerPageScrolled = () => {
@@ -1915,6 +1953,7 @@ export async function createTabs(
       stepTab !== null &&
       stepTab !== activeId &&
       model.findTab(state, stepTab)?.closed === false;
+    const marker = webTab !== null ? markerFor(run, webTab) : null;
     const next = overlayFor({
       run,
       activeTab: webTab,
@@ -1923,7 +1962,8 @@ export async function createTabs(
         ? dismissedReplies.has(overlayReply.message.id)
         : false,
       settings: agentVisualSettings,
-      marker: webTab !== null ? markerFor(run, webTab) : null,
+      marker,
+      cursor: cursorFrom(run, webTab, marker),
       // Only once the overlay can show it: until then the chat holds the question.
       approval,
       minimized: approvalKey !== null && minimizedCards.has(approvalKey),

@@ -45,8 +45,13 @@ test('settings fall back to the defaults, and odd values are ignored', () => {
   assert.deepEqual(parseAgentVisualSettings('x'), defaultAgentVisualSettings());
   assert.deepEqual(
     parseAgentVisualSettings({ showWork: 'glow', keepFinished: false }),
-    { version: 1, showWork: 'glow', keepFinished: false },
+    { version: 1, showWork: 'glow', keepFinished: false, showCursor: true },
   );
+  assert.equal(
+    parseAgentVisualSettings({ showCursor: false }).showCursor,
+    false,
+  );
+  assert.equal(parseAgentVisualSettings({ showCursor: 'no' }).showCursor, true);
   assert.equal(
     parseAgentVisualSettings({ showWork: 'loud' }).showWork,
     'glow-marker',
@@ -331,5 +336,42 @@ test('the chat is told where each fact is already shown, so it does not repeat i
   assert.deepEqual(
     overlayFlags(overlayFor(input({ run: run({ word: 'finished' }) }))),
     { pill: true, card: false },
+  );
+});
+
+test('the cursor comes with the glow only, and only when its setting is on', () => {
+  const cursor = {
+    x: 50,
+    y: 60,
+    kind: 'arrow' as const,
+    tone: 'acting' as const,
+    tag: 'Clicking',
+    burst: false,
+  };
+  assert.deepEqual(overlayFor(input({ cursor }))?.cursor, cursor);
+  // None given: none.
+  assert.equal(overlayFor(input())?.cursor, null);
+  // Turned off: not drawn, the rest is.
+  const off = { ...defaultAgentVisualSettings(), showCursor: false };
+  assert.equal(overlayFor(input({ cursor, settings: off }))?.cursor, null);
+  assert.equal(overlayFor(input({ cursor, settings: off }))?.glow, true);
+  // "Glow only" still has the cursor (it is not the marker).
+  const glowOnly = {
+    ...defaultAgentVisualSettings(),
+    showWork: 'glow' as const,
+  };
+  assert.deepEqual(
+    overlayFor(input({ cursor, settings: glowOnly }))?.cursor,
+    cursor,
+  );
+  // A step on another page, an ended run, or a minimized card: no cursor.
+  assert.equal(overlayFor(input({ cursor, activeTab: 9 })), null);
+  const ended = run({ word: 'finished', touchesPage: false, tabId: null });
+  assert.equal(overlayFor(input({ run: ended, cursor }))?.cursor, null);
+  const waiting = run({ word: 'waiting' });
+  assert.equal(
+    overlayFor(input({ run: waiting, approval, minimized: true, cursor }))
+      ?.cursor,
+    null,
   );
 });
