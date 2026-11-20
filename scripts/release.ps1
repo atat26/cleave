@@ -30,8 +30,11 @@ if ((git rev-parse HEAD) -ne (git rev-parse origin/main)) { throw 'main is not t
 
 # 2. A version is released once.
 if (-not $DryRun) {
-  gh release view $tag *> $null
-  if ($LASTEXITCODE -eq 0) { throw "A release for $tag already exists. Raise the version in package.json." }
+  # (List the releases rather than asking for this one: asking for a release that does not exist
+  # prints an error, which this script would treat as a failure.)
+  $existing = @(gh release list --limit 200 --json tagName --jq '.[].tagName')
+  if ($LASTEXITCODE -ne 0) { throw 'Could not read the list of releases (is gh signed in?).' }
+  if ($existing -contains $tag) { throw "A release for $tag already exists. Raise the version in package.json." }
 }
 
 # 3. The same checks as every pull request, then the installer.
