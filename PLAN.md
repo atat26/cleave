@@ -103,15 +103,15 @@ order of likelihood.
 
 ## About this project
 
-This is a personal browser, built for one person (its owner). It is not going to be sold or marketed, so things that only matter for other users (installers, auto-update, first-run tours, importing from other browsers) are low priority. Order of work: build every feature that needs a setting first, collecting each setting it needs in the list below, then do the Settings brainstorm and revamp last, once everything that lives in Settings exists.
+This is a personal browser, built for one person (its owner). It is not going to be sold or marketed, so things that only matter for other users (first-run tours, importing from other browsers) are low priority. (It does have an installer and an update button now, because the owner uses it every day; see the goal below.) Order of work: build every feature that needs a setting first, collecting each setting it needs in the list below, then do the Settings brainstorm and revamp last, once everything that lives in Settings exists.
 
 ## Next
 
 **Goal (set 2026-11-20): make it a daily driver.** Until now the app is only run for testing, by asking the assistant to start it. To use it every day it needs, in this order of thinking:
 
-- **A name and a logo** (decided before the first real install, because the name sets the app's data folder, the installer, the window title and the icon; changing it later strands the data).
-- **A real install, separate from the test instance:** a packaged app (Electron Forge is set up with Squirrel for Windows and security fuses) that keeps its own data folder, so running the dev or test instance never touches the data of the installed one. It needs the extension library's preload file shipped (see Packaging in the backlog) and a decision about starting empty or importing the current profile.
-- **An update path:** once changes are pushed, one command (later maybe a button in the app) rebuilds and installs over the old version, keeping data. The repository is private, so the first version is a local script; a release-based in-app update comes after, if wanted.
+- **A name and a logo: done.** The app is **Cleave** (brand package from the owner; the wordmark appears only in Settings → About, never in the tab strip or sidebar header). Not checked for trademark, domain or store conflicts; the owner will rename it if that ever matters.
+- **A real install, separate from the test instance: done.** `Cleave-Setup.exe` (Squirrel for Windows, security fuses on, extension helper scripts shipped). The installed app starts empty and keeps its data in `%APPDATA%\Cleave`; a copy started with `npm start` keeps using `%APPDATA%\ai-browser`, so they never mix and can run side by side. The installer is not code-signed, so Windows SmartScreen warns on first run.
+- **An update path: in progress.** The repository is public (`atat26/cleave`); version 0.1.0 is published. A release is made with `npm.cmd run release:github`. Next: a **Check for updates** button in Settings → About that reads the latest release and offers "Update and restart" (no automatic check or prompt yet; that can come later).
 - **Multiple windows** (below), then incognito.
 - **Before real daily use:** a full security check, a bug hunt, and a UI consistency and polish pass (below).
 
@@ -137,7 +137,7 @@ Add a line here whenever a feature needs a setting, so the Settings work at the 
 - Rich message blocks: diagrams and richer buttons in a sandboxed frame with allow-listed actions. (Choice buttons from the assistant already exist.)
 - Suggested, not yet decided: agent safety tests (a fixed set of attack and normal scenarios, run whenever prompts or tools change); long-chat context management (summarize or trim old messages, with a "context used" meter); cost controls (a spend warning or limit, per-chat and monthly totals); backup and restore of all your data; session restore after a crash; assistant memory across chats (facts about you).
 - A "what the model saw" view (right-click a reply, see the exact request behind it). Parked: the test driver already shows what is sent. Cheap version if wanted: "Copy what was sent" from an in-memory recording of the last few requests.
-- Packaging (now part of the daily-driver goal above): installer, auto-update, and shipping the extension library's preload file (`node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js`) so extension popups work when packaged. Only if it is ever wanted.
+- Packaging, what is left: code signing (removes the SmartScreen warning; costs money and the owner does not plan to share the app), automatic update checks with a prompt (the button comes first), and making the build run in CI instead of on the owner's machine. The installer, the shipped extension helper scripts and the release script are done (see the daily-driver goal above).
 
 ## Decided against (do not re-propose)
 
