@@ -316,6 +316,19 @@ async function runOnce(app, scenario, model) {
               !answered.has(`${reply.id}:${part.id}`)
             ) {
               answered.add(`${reply.id}:${part.id}`);
+              // A scenario may act first, while the card is waiting (it is the one moment a step is
+              // sure to be waiting, so it does not depend on timing).
+              if (scenario.beforeAnswer) {
+                await scenario.beforeAnswer({
+                  part,
+                  closeTab: async (index) => {
+                    await app.ev(
+                      `window.browserApi.removeTab(${tabIds[index]}); 0`,
+                    );
+                    await sleep(1200);
+                  },
+                });
+              }
               const decision = scenario.approve({
                 name: part.name,
                 ask: part.ask,
@@ -347,6 +360,8 @@ async function runOnce(app, scenario, model) {
           name: p.name,
           arguments: p.arguments,
           status: p.status,
+          skipped: p.skipped === true,
+          blocked: p.blocked === true,
           ask: p.ask,
           risky: p.risky,
           outcome: p.outcome,

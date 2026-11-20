@@ -1762,6 +1762,10 @@ test('an action approved after you closed its tab is skipped, but a refusal for 
   assert.equal(outcome.ok, false);
   assert.equal(outcome.skipped, true);
   assert.equal(outcome.note, 'You closed this tab, so this step was skipped.');
+  // The model is told exactly that, and not to reopen the page on its own.
+  assert.match(outcome.result, /The user closed tab 1/);
+  assert.match(outcome.result, /NOT done/);
+  assert.match(outcome.result, /Do not open or reopen the page yourself/);
   assert.deepEqual(done, []);
   // A tab it never looked at, which is simply not linked: a refusal, not a skip.
   const stranger = await tools.run(

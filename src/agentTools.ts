@@ -431,6 +431,11 @@ function tabNumbers(call: ToolCall): number[] {
 // What a step says when its tab was closed while it ran.
 export const CLOSED_BY_YOU = 'You closed this tab, so this step was skipped.';
 
+// What the model is told when the user closed the tab a step was about: it was not done, say so
+// plainly, and do not open the page again unless the user asks.
+const closedResult = (tabId: number | null): string =>
+  `The user closed ${tabId === null ? 'the tab' : `tab ${tabId}`}, so this step was NOT done. Tell the user it was not done because they closed the tab. Do not open or reopen the page yourself: ask the user whether they want that.`;
+
 const failureWords: Record<
   Extract<ActionResult, { ok: false }>['reason'],
   string
@@ -874,7 +879,7 @@ export function createAgentTools(
         ok: false,
         ...(closed ? { skipped: true } : {}),
         note: closed ? CLOSED_BY_YOU : decided.note,
-        result: decided.result,
+        result: closed ? closedResult(named) : decided.result,
       };
     }
     const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
@@ -991,7 +996,7 @@ export function createAgentTools(
           ok: false,
           skipped: true,
           note: CLOSED_BY_YOU,
-          result: `That did not work (${why}). Look at the page again before trying anything else.`,
+          result: closedResult(tabId),
         };
       }
       if (name === 'fill_fields') {

@@ -134,6 +134,14 @@ ${paragraphs(70, 2)}
 <tr><td>Team</td><td>EUR ${FACTS.pricing.team}</td><td>10</td></tr>
 </tbody></table>${paragraphs(30, 4)}`,
     ),
+  // A short page with one harmless button that shows more text.
+  '/faq': () =>
+    page(
+      'Questions about Quillbase',
+      `<h1>Questions about Quillbase</h1><p>Quillbase keeps your notes in one place.</p>
+<button onclick="document.getElementById('more').hidden = false">Show more details</button>
+<p id="more" hidden>Notes are stored on your own computer.</p>`,
+    ),
   // A contact form with a password field and a Submit button.
   '/form': () =>
     page(
