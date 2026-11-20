@@ -314,6 +314,7 @@ import type { OverlayFlags } from './agentVisuals';
 import { cardMayTakeFocus } from './approvalCard';
 import { pendingChanges } from './pendingChanges';
 import { setTraceSink } from './requestTrace';
+import { testScope } from './testScope';
 import { runChip, tabStatuses, unseenAfterRun } from './sidebarStatus';
 import type { Unseen } from './sidebarStatus';
 import { CURSOR_DONE_MS, cursorFor, scrollDirection } from './cursor';
@@ -2912,6 +2913,15 @@ export async function createTabs(
     }
     const result = model.deleteSpace(state, id);
     // Its artifacts are kept, just no longer in a Space.
+    commitArtifacts(artifactsModel.releaseSpace(artifacts, id));
+    for (const tabId of result.removedTabIds) destroyView(tabId);
+    commitAndShow(withSomethingActive(result.state));
+  };
+
+  // Delete a Space with no question and no "Recently deleted" copy. Only for test runs
+  // (AIB_TEST_SCOPE=1), which clean up the Spaces they made.
+  const deleteSpaceQuietly = (id: number) => {
+    const result = model.deleteSpace(state, id);
     commitArtifacts(artifactsModel.releaseSpace(artifacts, id));
     for (const tabId of result.removedTabIds) destroyView(tabId);
     commitAndShow(withSomethingActive(result.state));
@@ -7250,6 +7260,17 @@ export async function createTabs(
   });
 
   // The Library panel reads the lists (it asks again when told they changed).
+  // Test runs only: remove the Spaces a test made (see testScope.ts).
+  const scope = testScope;
+  if (scope) {
+    ipcMain.handle('dev:cleanup-test-spaces', (event) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      const ids = scope.spaces(state.spaces).map((space) => space.id);
+      for (const id of ids) deleteSpaceQuietly(id);
+      scope.created.clear();
+      return ids.length;
+    });
+  }
   ipcMain.handle('library:history', (event, query: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     const text = typeof query === 'string' ? query.slice(0, 200) : '';
@@ -8223,6 +8244,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('download-settings:set');
     ipcMain.removeHandler('download-settings:pick-folder');
     ipcMain.removeHandler('downloads:open-folder');
+    ipcMain.removeHandler('dev:cleanup-test-spaces');
     ipcMain.removeHandler('library:history');
     ipcMain.removeHandler('library:bookmarks');
     ipcMain.removeHandler('library:deleted');

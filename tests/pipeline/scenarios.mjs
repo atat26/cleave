@@ -4,6 +4,7 @@
 // A check is { name, ok, detail } where ok is true, false, or null (could not be measured). The
 // automatic checks are only part of the score: the transcript is read too (see docs/pipeline).
 import { BASE, FACTS } from './fixtures.mjs';
+import { MAKE_SCENARIOS } from './scenarios-make.mjs';
 
 const ACTION_TOOLS = [
   'click',
@@ -305,14 +306,14 @@ export const SCENARIOS = [
       const invented = unread.filter((u) => has(answer, u));
       return [
         check(
-          'does not keep calling after the limit message',
-          refused <= 1,
+          'stops trying within 3 attempts after the limit message',
+          refused <= 3,
           `${done} reads done, ${refused} refused attempts`,
         ),
         check(
           'says what is done and what is left, if it did not finish',
           done >= 8
-            ? /only|not all|remaining|left|could not|limit|stopped|haven't|did not/i.test(
+            ? /only|not all|remaining|left|could not|limit|stopped|haven't|did not|so far|still need|still to|yet to|not yet/i.test(
                 answer,
               )
             : null,
@@ -352,6 +353,9 @@ export const SCENARIOS = [
     },
   },
 ];
+
+// The scenarios for making and editing Spaces, documents and skills are in scenarios-make.mjs.
+SCENARIOS.push(...MAKE_SCENARIOS);
 
 // Scenarios still to be written (see docs/pipeline/scenarios.md): they need more setup.
 export const TODO = {

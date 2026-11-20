@@ -3,8 +3,10 @@
 //
 // Before running:
 //   1. node tests/pipeline/serve.mjs                         (the fixture pages, on this machine)
-//   2. start the app:  $env:AIB_TRACE='1'; npm.cmd start -- -- --remote-debugging-port=9333
-//      (AIB_TRACE=1 makes the app write one line of sizes per model call; never what was said)
+//   2. start the app:  $env:AIB_TRACE='1'; $env:AIB_TEST_SCOPE='1'; npm.cmd start -- -- --remote-debugging-port=9333
+//      (AIB_TRACE=1 makes the app write one line of sizes per model call; never what was said.
+//       AIB_TEST_SCOPE=1 hides the owner's real tabs, Spaces, history and chats from the assistant
+//       and lets the driver remove the Spaces a test made. Runs refuse to start without it.)
 //   3. keep the app window open (not minimised)
 //   4. node tests/pipeline/run.mjs --repeat 3
 //
@@ -12,7 +14,8 @@
 // ("openrouter/free" is accepted as the free router), and a run that reports any cost stops
 // everything at once. The app's default model is changed for the runs and put back at the end.
 //
-// Options: --model id  --fallback id,id  --repeat n  --only s1,s3  --port 9333  --list
+// Options: --model id  --fallback id,id  --strict  --repeat n  --only s1,s3  --port 9333  --list
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -96,6 +99,8 @@ const snapshotExpr = `(async () => {
     tabs: s.tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, loading: t.loading, spaceId: t.spaceId, closed: t.closed })),
     active: s.active,
     spaces: s.spaces.map((x) => ({ id: x.id, name: x.name })),
+    artifacts: s.artifacts.map((a) => ({ id: a.id, title: a.title, kind: a.kind })),
+    skills: s.skills.map((k) => ({ id: k.id, name: k.name })),
     activeChat: s.chats.activeId,
     chats: s.chats.conversations.map((c) => ({ id: c.id, generating: c.generating, model: c.model })),
     view: s.viewMode,
@@ -184,6 +189,55 @@ async function runOnce(app, scenario, model) {
       }
       tabIds.push(id);
     }
+    // Test Spaces, each with its own fixture tabs.
+    const spaceIds = [];
+    for (const wanted of scenario.spaces ?? []) {
+      await app.ev(`window.browserApi.newSpace(); 0`);
+      await sleep(700);
+      const snap = JSON.parse(await app.ev(snapshotExpr));
+      const known = new Set(before.spaces.map((x) => x.id).concat(spaceIds));
+      const made = snap.spaces.find((x) => !known.has(x.id));
+      if (!made) throw new Error('A test Space could not be made.');
+      await app.ev(
+        `window.browserApi.renameSpace(${made.id}, ${J(wanted.name)}); 0`,
+      );
+      await sleep(400);
+      spaceIds.push(made.id);
+      for (const url of wanted.tabs ?? []) {
+        await app.ev(`window.browserApi.newTab(${made.id}); 0`);
+        await sleep(1200);
+        let s2 = JSON.parse(await app.ev(snapshotExpr));
+        const id = s2.active.id;
+        created.tabs.push(id);
+        await app.ev(`window.browserApi.navigate(${J(url)}); 0`);
+        for (let i = 0; i < 40; i++) {
+          await sleep(400);
+          s2 = JSON.parse(await app.ev(snapshotExpr));
+          const tab = s2.tabs.find((t) => t.id === id);
+          if (tab && tab.url.startsWith(url) && !tab.loading && tab.title)
+            break;
+        }
+      }
+    }
+    // Test artifacts (in no Space), linked to the chat below.
+    const artifactIds = [];
+    for (const wanted of scenario.artifacts ?? []) {
+      const id = JSON.parse(
+        await app.ev(
+          `window.browserApi.artifactCreate(${J(wanted.kind)}, ${J(wanted.title)}, null).then((r) => JSON.stringify(r))`,
+        ),
+      );
+      if (id === null) throw new Error('A test artifact could not be made.');
+      const doc = JSON.parse(
+        await app.ev(
+          `window.browserApi.artifactRead(${id}).then((d) => JSON.stringify(d))`,
+        ),
+      );
+      await app.ev(
+        `window.browserApi.artifactWrite(${id}, ${J(wanted.content)}, ${doc.revision}).then(() => 0)`,
+      );
+      artifactIds.push(id);
+    }
     await app.ev(`window.browserApi.setViewMode('both'); 0`);
     await app.ev(`window.browserApi.newChat(); 0`);
     await sleep(900);
@@ -192,6 +246,18 @@ async function runOnce(app, scenario, model) {
     for (const index of scenario.link ?? []) {
       await app.ev(
         `window.browserApi.chatLink(${chat}, 'tab', ${tabIds[index]}); 0`,
+      );
+      await sleep(250);
+    }
+    for (const index of scenario.linkSpaces ?? []) {
+      await app.ev(
+        `window.browserApi.chatLink(${chat}, 'space', ${spaceIds[index]}); 0`,
+      );
+      await sleep(250);
+    }
+    for (const index of scenario.linkArtifacts ?? []) {
+      await app.ev(
+        `window.browserApi.chatLink(${chat}, 'artifact', ${artifactIds[index]}); 0`,
       );
       await sleep(250);
     }
@@ -282,10 +348,12 @@ async function runOnce(app, scenario, model) {
         break;
       }
     }
+    // What the run left behind, read before it is cleaned away (for the checks).
+    result.after = await readAfter(app, before);
   } catch (error) {
     result.error = String(error?.message ?? error);
   } finally {
-    // Put everything back: stop and delete the chat, close the test tabs.
+    // Put everything back: stop and delete the chat, close the test tabs, remove what was made.
     try {
       if (created.chat !== null) {
         await app.ev(`window.browserApi.chatStop(${created.chat}); 0`);
@@ -297,6 +365,7 @@ async function runOnce(app, scenario, model) {
         await app.ev(`window.browserApi.removeTab(${id}); 0`);
         await sleep(300);
       }
+      await removeMade(app, before, created.chat);
       if (before.activeChat !== null)
         await app.ev(`window.browserApi.selectChat(${before.activeChat}); 0`);
       if (before.active?.kind === 'tab')
@@ -337,8 +406,134 @@ function summariseTrace(entries) {
   };
 }
 
+// What a run made: Spaces (with their tabs), new artifacts and new skills, read for the checks.
+async function readAfter(app, before) {
+  const snap = JSON.parse(await app.ev(snapshotExpr));
+  const knownSpaces = new Set(before.spaces.map((x) => x.id));
+  const spaces = snap.spaces
+    .filter((x) => !knownSpaces.has(x.id))
+    .map((x) => ({
+      id: x.id,
+      name: x.name,
+      tabs: snap.tabs
+        .filter((t) => t.spaceId === x.id && !t.closed)
+        .map((t) => t.title),
+    }));
+  const knownArtifacts = new Set(before.artifacts.map((x) => x.id));
+  const artifacts = [];
+  for (const a of snap.artifacts.filter(
+    (x) => !knownArtifacts.has(x.id) || x.title.startsWith('Test '),
+  )) {
+    const doc = JSON.parse(
+      await app.ev(
+        `window.browserApi.artifactRead(${a.id}).then((d) => JSON.stringify(d))`,
+      ),
+    );
+    artifacts.push({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      isNew: !knownArtifacts.has(a.id),
+      chars: doc?.content?.length ?? 0,
+      content: doc?.content ?? '',
+    });
+  }
+  const knownSkills = new Set(before.skills.map((x) => x.id));
+  const skills = [];
+  for (const k of snap.skills.filter((x) => !knownSkills.has(x.id))) {
+    const doc = JSON.parse(
+      await app.ev(
+        `window.browserApi.skillGet(${k.id}).then((d) => JSON.stringify(d))`,
+      ),
+    );
+    skills.push({
+      id: k.id,
+      name: k.name,
+      description: doc?.description ?? '',
+      instructions: doc?.instructions ?? '',
+    });
+  }
+  return { spaces, artifacts, skills };
+}
+
+// Remove everything a run made: Spaces (with no question), artifacts and skills, and their copies
+// in Recently deleted. Anything that was there before the run is left alone.
+// The app asks first, in a native dialog, before deleting for good; this answers it, but only for the
+// named test item (see confirm-dialog.ps1).
+function confirmDeleteForGood(title) {
+  spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      path.join(here, 'confirm-dialog.ps1'),
+      '-Titles',
+      title,
+      '-WaitSeconds',
+      '4',
+    ],
+    { stdio: 'ignore' },
+  );
+}
+
+async function removeMade(app, before, chatId = null) {
+  await app.ev(`window.browserApi.devCleanupTestSpaces().then((n) => n)`);
+  await sleep(300);
+  // Tabs the assistant opened itself on the fixture server (the driver only knows the ones it made).
+  const known = new Set(before.tabs.map((t) => t.id));
+  const opened = JSON.parse(await app.ev(snapshotExpr)).tabs.filter(
+    (t) => !known.has(t.id) && t.url.startsWith(BASE),
+  );
+  for (const tab of opened) {
+    await app.ev(`window.browserApi.removeTab(${tab.id}); 0`);
+    await sleep(300);
+  }
+  const snap = JSON.parse(await app.ev(snapshotExpr));
+  const knownArtifacts = new Set(before.artifacts.map((x) => x.id));
+  const knownSkills = new Set(before.skills.map((x) => x.id));
+  const newArtifacts = snap.artifacts
+    .filter((x) => !knownArtifacts.has(x.id))
+    .map((x) => x.id);
+  const newSkills = snap.skills
+    .filter((x) => !knownSkills.has(x.id))
+    .map((x) => x.id);
+  for (const id of newArtifacts)
+    await app.ev(`window.browserApi.artifactDelete(${id}); 0`);
+  for (const id of newSkills)
+    await app.ev(`window.browserApi.skillDelete(${id}); 0`);
+  await sleep(500);
+  const trash = JSON.parse(
+    await app.ev(
+      `window.browserApi.libraryDeleted().then((t) => JSON.stringify(t))`,
+    ),
+  );
+  for (const item of trash) {
+    if (
+      (item.kind === 'artifact' && newArtifacts.includes(item.id)) ||
+      (item.kind === 'skill' && newSkills.includes(item.id)) ||
+      (item.kind === 'chat' && chatId !== null && item.id === chatId)
+    ) {
+      await app.ev(
+        `window.browserApi.libraryDeleteForever(${J(item.kind)}, ${item.id}); 0`,
+      );
+      confirmDeleteForGood(item.title);
+    }
+  }
+}
+
 // ---- main ---------------------------------------------------------------------------
 const app = await connect();
+// The test scope must be on, so the assistant never sees the owner's real tabs, Spaces or history.
+// (This also clears any Spaces an earlier run left.)
+try {
+  await app.ev(`window.browserApi.devCleanupTestSpaces().then((n) => n)`);
+} catch {
+  throw new Error(
+    'Start the app with AIB_TEST_SCOPE=1 (and AIB_TRACE=1): without it the assistant could see your real tabs, Spaces and history, so nothing was run.',
+  );
+}
 const startModel = JSON.parse(
   await app.ev(
     `window.browserApi.llmStatus().then((s) => JSON.stringify({ model: s.model, hasKey: s.hasKey }))`,
@@ -350,7 +545,8 @@ if (!startModel.hasKey)
 const wanted = [
   opt('model') ?? startModel.model,
   ...(opt('fallback') ? opt('fallback').split(',') : []),
-  'openrouter/free',
+  // --strict: only the chosen model (so every number is for the same model); a rate limit is waited out.
+  ...(flag('strict') ? [] : ['openrouter/free']),
 ].filter(Boolean);
 const chainIds = [...new Set(wanted)];
 const verdicts = await verifyFree(app, chainIds);
@@ -372,7 +568,11 @@ try {
   for (const scenario of scenarios) {
     for (let n = 1; n <= REPEAT; n++) {
       let result;
-      for (let attempt = 0; attempt < chain.length; attempt++) {
+      for (
+        let attempt = 0;
+        attempt < (flag('strict') ? 6 : chain.length);
+        attempt++
+      ) {
         const model = chain[(modelIndex + attempt) % chain.length];
         await app.ev(
           `window.browserApi.llmSetModel(${J(model)}).then(() => 0)`,
@@ -393,7 +593,7 @@ try {
         console.log(
           `  (${model} was limited: ${result.error}; trying the next free model)`,
         );
-        await sleep(4000);
+        await sleep(flag('strict') ? 45000 : 4000);
       }
       const checks = result.error
         ? []
@@ -402,6 +602,7 @@ try {
             asks: result.asks,
             turns: result.turns,
             tokens: result.tokens,
+            after: result.after,
           });
       result.checks = checks;
       result.pass = !result.error && checks.every((c) => c.ok !== false);
