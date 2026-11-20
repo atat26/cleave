@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { onSectionRequested, takeRequestedSection } from './settingsNav';
+import { AboutSection } from './AboutSection';
 import { AppearanceSettings } from './AppearanceSettings';
 import { DownloadsSection } from './DownloadsSection';
 import { PrivacySection } from './PrivacySection';
@@ -136,6 +137,11 @@ const SECTIONS = [
     id: 'web-search',
     label: 'Web search',
     about: 'Search provider and key for the assistant',
+  },
+  {
+    id: 'about',
+    label: 'About Cleave',
+    about: 'Version and where your data is kept',
   },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]['id'];
@@ -639,6 +645,7 @@ export function SettingsPanel() {
 
       {section === 'web-search' && <WebSearchSettings />}
       {section === 'appearance' && <AppearanceSettings />}
+      {section === 'about' && <AboutSection />}
       {section === 'naming' && <NamingSection />}
       {section === 'extensions' && <ExtensionsSection />}
       {section === 'sleep' && <SleepSection />}

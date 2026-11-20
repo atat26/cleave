@@ -1,9 +1,9 @@
 {
-  "name": "ai-browser",
-  "productName": "ai-browser",
-  "version": "1.0.0",
+  "name": "cleave",
+  "productName": "Cleave",
+  "version": "0.1.0",
   "private": true,
-  "description": "My Electron application description",
+  "description": "Cleave: a browser with an assistant built in",
   "keywords": [],
   "license": "MIT",
   "author": {
@@ -16,6 +16,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "release": "electron-forge release",
+    "release:github": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
     "typecheck": "tsc --noEmit",
