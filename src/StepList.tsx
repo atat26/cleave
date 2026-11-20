@@ -247,6 +247,48 @@ export function StepRow({
   );
 }
 
+// Steps that look at your own data (history, bookmarks, chats, your tabs): a bordered block that says
+// what they find is sent to your chosen model, with the steps always showing inside it.
+export function OwnDataBlock({
+  parts,
+  message,
+  chatId,
+  tabs,
+  isNewestReply,
+  busy,
+}: {
+  parts: ToolPartView[];
+  message: ChatMessage;
+  chatId: number;
+  tabs: TabInfo[];
+  isNewestReply: boolean;
+  busy: boolean;
+}) {
+  const steps = parts.map((p) => stepView(p, message.status));
+  return (
+    <div className="owndata" role="group" aria-label="Your own data">
+      <div className="owndata-head">
+        <Icon name="lock" />
+        <strong>Your own data</strong>
+        <span className="owndata-what">sent to the model</span>
+        <Badge tone="ai">Private</Badge>
+      </div>
+      {steps.map((s) => (
+        <StepRow
+          key={s.part.id}
+          step={s}
+          chatId={chatId}
+          messageId={message.id}
+          tabs={tabs}
+          isNewestReply={isNewestReply}
+          busy={busy}
+          nested
+        />
+      ))}
+    </div>
+  );
+}
+
 // Three or more page reads in a row, as one line that opens to the steps.
 export function StepGroup({
   parts,

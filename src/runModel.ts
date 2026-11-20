@@ -227,26 +227,49 @@ export const GROUP_MIN = 3;
 export type Block =
   | { type: 'part'; index: number }
   // Consecutive page reads, shown as one line that opens to the steps.
-  | { type: 'group'; indexes: number[] };
+  | { type: 'group'; indexes: number[] }
+  // Consecutive steps that look at the person's own data (history, bookmarks, chats, the list of
+  // their tabs), in a bordered block that says it goes to the model.
+  | { type: 'owndata'; indexes: number[] };
+
+// The steps that look at the person's own data and send what they find to the model.
+const OWN_DATA_TOOLS = new Set([
+  'search_history',
+  'search_bookmarks',
+  'search_chats',
+  'read_chat',
+  'list_all_tabs',
+]);
+export const isOwnDataTool = (toolName: string): boolean =>
+  OWN_DATA_TOOLS.has(toolName);
 
 // Walk a reply's parts: three or more reading steps in a row (none waiting for you)
-// become one group; everything else stays as it is.
+// become one group, steps on the person's own data in a row (none waiting for you) become one
+// block however few, and everything else stays as it is.
 export function blocksOf(parts: readonly MessagePart[]): Block[] {
   const blocks: Block[] = [];
   let run: number[] = [];
+  let own: number[] = [];
   const flush = () => {
     if (run.length >= GROUP_MIN) blocks.push({ type: 'group', indexes: run });
     else for (const index of run) blocks.push({ type: 'part', index });
     run = [];
+    if (own.length > 0) blocks.push({ type: 'owndata', indexes: own });
+    own = [];
   };
   parts.forEach((part, index) => {
-    if (
-      part.type === 'tool' &&
-      isReadingTool(part.name) &&
-      part.status !== 'waiting'
-    ) {
-      run.push(index);
-      return;
+    if (part.type === 'tool' && part.status !== 'waiting') {
+      if (isReadingTool(part.name)) {
+        // (A read between two own-data steps ends the block, and the other way round.)
+        if (own.length > 0) flush();
+        run.push(index);
+        return;
+      }
+      if (isOwnDataTool(part.name)) {
+        if (run.length > 0) flush();
+        own.push(index);
+        return;
+      }
     }
     flush();
     blocks.push({ type: 'part', index });

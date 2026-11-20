@@ -6,6 +6,7 @@ import {
   canRetry,
   groupState,
   groupTitle,
+  isOwnDataTool,
   recentSteps,
   retryRequest,
   runningNote,
@@ -432,4 +433,46 @@ test('the words of the limit banner are neutral and the Continue request carries
     /error|fail|wrong|sorry/i,
   );
   assert.match(CONTINUE_TEXT, /carry on where you left off/i);
+});
+
+test('steps on your own data in a row become one block, however few; a waiting one and anything else stay out', () => {
+  const own = (name = 'search_history', over: Partial<ToolPartView> = {}) =>
+    tool({ name, ...over });
+  const parts: MessagePart[] = [
+    { type: 'text', text: 'Looking' },
+    own('search_history'),
+    own('search_chats'),
+    own('read_chat'),
+    { type: 'text', text: 'Found it' },
+    own('list_all_tabs'),
+    tool({ name: 'click' }),
+  ];
+  assert.deepEqual(blocksOf(parts), [
+    { type: 'part', index: 0 },
+    { type: 'owndata', indexes: [1, 2, 3] },
+    { type: 'part', index: 4 },
+    { type: 'owndata', indexes: [5] },
+    { type: 'part', index: 6 },
+  ]);
+  // A step waiting for your OK is shown on its own, with its card.
+  assert.deepEqual(
+    blocksOf([own(), own('search_bookmarks', { status: 'waiting' }), own()]),
+    [
+      { type: 'owndata', indexes: [0] },
+      { type: 'part', index: 1 },
+      { type: 'owndata', indexes: [2] },
+    ],
+  );
+  // Saving a bookmark is not looking at your data.
+  assert.deepEqual(blocksOf([own('bookmark_page')]), [
+    { type: 'part', index: 0 },
+  ]);
+  // Page reads and own-data steps do not mix in one block, and reads still fold at three.
+  assert.deepEqual(blocksOf([own(), tool(), tool(), tool(), own()]), [
+    { type: 'owndata', indexes: [0] },
+    { type: 'group', indexes: [1, 2, 3] },
+    { type: 'owndata', indexes: [4] },
+  ]);
+  assert.equal(isOwnDataTool('read_chat'), true);
+  assert.equal(isOwnDataTool('read_page'), false);
 });
