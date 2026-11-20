@@ -33,6 +33,8 @@ export interface AgentVisualSettings {
   keepFinished: boolean;
   // The assistant's cursor is drawn on the page while it clicks, types, chooses or scrolls.
   showCursor: boolean;
+  // A small picture in the step row of a screenshot the assistant took (kept for this session only).
+  showThumbnails: boolean;
 }
 
 export const defaultAgentVisualSettings = (): AgentVisualSettings => ({
@@ -40,6 +42,7 @@ export const defaultAgentVisualSettings = (): AgentVisualSettings => ({
   showWork: 'glow-marker',
   keepFinished: true,
   showCursor: true,
+  showThumbnails: true,
 });
 
 // Turn whatever is on disk into valid settings; anything odd gets its default. Never throws.
@@ -52,6 +55,8 @@ export function parseAgentVisualSettings(raw: unknown): AgentVisualSettings {
   if (typeof r.keepFinished === 'boolean')
     settings.keepFinished = r.keepFinished;
   if (typeof r.showCursor === 'boolean') settings.showCursor = r.showCursor;
+  if (typeof r.showThumbnails === 'boolean')
+    settings.showThumbnails = r.showThumbnails;
   return settings;
 }
 

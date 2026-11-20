@@ -525,6 +525,8 @@ const browserApi: BrowserApi = {
     };
   },
   overlayPeek: (on) => ipcRenderer.send('overlay:peek', on),
+  chatThumbnail: (chatId, messageId, partId) =>
+    ipcRenderer.invoke('chat:thumbnail', chatId, messageId, partId),
   overlayStop: () => ipcRenderer.send('overlay:stop'),
   overlayContinue: () => ipcRenderer.send('overlay:continue'),
   overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),

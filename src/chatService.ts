@@ -202,6 +202,13 @@ export function createChatService(options: {
     partId: number,
     target: StepTarget,
   ): void;
+  // A step took a picture of a page (see chatRunner.ts).
+  onPicture?(
+    chatId: number,
+    messageId: number,
+    partId: number,
+    picture: { mime: string; data: string },
+  ): void;
   openSettings(): void;
   // Show a menu in the popup layer at a place in the window; `choose` gets the
   // id of the item picked. The keyboard goes back to `opener` afterwards.
@@ -325,6 +332,8 @@ export function createChatService(options: {
     onMessage: markDirty,
     onStepTarget: (chatId, messageId, partId, target) =>
       options.onStepTarget?.(chatId, messageId, partId, target),
+    onPicture: (chatId, messageId, partId, picture) =>
+      options.onPicture?.(chatId, messageId, partId, picture),
     onRunningChange: () => {
       flush();
       options.onMeta();
