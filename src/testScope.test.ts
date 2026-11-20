@@ -98,17 +98,40 @@ test('what is out of scope cannot be changed or read through the tools', () => {
   assert.deepEqual(calls, ['move 2->20', 'move 2->null', 'close 3', 'note 20']);
 });
 
-test("the recall tools find nothing of the owner's", () => {
+test("the recall tools find nothing of the owner's, only a small made-up set", () => {
+  const NOW = 1_000_000_000;
   const recall = scopedRecall({
-    now: () => 5,
-    searchHistory: () => [{ title: 't', url: 'u', visitedAt: 1 } as never],
-    searchBookmarks: () => [{ title: 't', url: 'u' } as never],
-    searchChats: () => [{ id: 1 } as never],
-    readChat: () => ({ id: 1 }) as never,
+    now: () => NOW,
+    // The owner's real data: none of this may ever come out.
+    searchHistory: () => [
+      { title: 'REAL', url: 'https://real.example/', at: 1 },
+    ],
+    searchBookmarks: () => [
+      { title: 'REAL', url: 'https://real.example/', at: 1 },
+    ],
+    searchChats: () => [{ id: 1, title: 'REAL', at: 1, snippet: null }],
+    readChat: () => ({ title: 'REAL', at: 1, messages: [] }),
   });
-  assert.deepEqual(recall.searchHistory('x', 5), []);
-  assert.deepEqual(recall.searchBookmarks('x', 5), []);
-  assert.deepEqual(recall.searchChats('x', 5), []);
+  // Nothing that matches only the owner's data.
+  assert.deepEqual(recall.searchHistory('real', 5), []);
+  assert.deepEqual(recall.searchBookmarks('real', 5), []);
+  assert.deepEqual(recall.searchChats('real', 5), []);
   assert.equal(recall.readChat(1), null);
-  assert.equal(recall.now(), 5);
+  assert.equal(recall.now(), NOW);
+
+  // The made-up set: all words must match the title or address, any case, newest first, limited.
+  const gpus = recall.searchHistory('GRAPHICS cards', 5);
+  assert.deepEqual(
+    gpus.map((p) => p.url),
+    ['https://shop.example/gpus'],
+  );
+  assert.equal(gpus[0].at, NOW - 3 * 86_400_000);
+  assert.equal(recall.searchHistory('shop.example', 5).length, 2);
+  assert.equal(recall.searchHistory('shop.example', 1).length, 1);
+  assert.equal(recall.searchHistory('', 5).length, 3);
+  assert.equal(recall.searchHistory('zebra', 5).length, 0);
+  assert.equal(recall.searchBookmarks('trail', 5).length, 1);
+  const chats = recall.searchChats('lisbon', 5);
+  assert.equal(chats.length, 1);
+  assert.match(recall.readChat(chats[0].id)?.messages[1].text ?? '', /Belem/);
 });
