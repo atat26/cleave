@@ -431,7 +431,7 @@ export const SCENARIOS = [
     checks: ({ calls, turns }) => {
       const answer = turns[0].answer;
       const fixtureUrls = FACTS.history.map(([, url]) => url);
-      const urlsInAnswer = answer.match(/https?:\/\/[^\s)>\]"']+/g) ?? [];
+      const urlsInAnswer = answer.match(/https?:\/\/[^\s)>\]"'`]+/g) ?? [];
       const invented = urlsInAnswer.filter(
         (u) => !fixtureUrls.some((f) => u.replace(/[.,;]+$/, '') === f),
       );
