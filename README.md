@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<h3 align="center">A browser with an assistant built in.</h3>
+<h3 align="center">Full browser. Full agent</h3>
 
 <p align="center">
   Web on top, chat below. Cleave keeps the pages, chats and notes for each piece of work together,<br>
