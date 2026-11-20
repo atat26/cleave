@@ -12,6 +12,7 @@ import type { ChatsState } from './chats.ts';
 import { MAX_PAGE_CHARS } from './agentTools.ts';
 import type { AgentTools, ToolOutcome } from './agentTools.ts';
 import { cutOffNote } from './cutOffNote.ts';
+import { SET_PLAN } from './taskPlan.ts';
 import { lengthNote } from './lengthNote.ts';
 import { pruneConversation } from './pruneConversation.ts';
 import { ChatError } from './openrouter.ts';
@@ -258,12 +259,40 @@ export function createChatRunner(deps: RunnerDeps) {
         // Pictures the tools of this round want the model to look at.
         const pictures: NonNullable<ToolOutcome['images']> = [];
         let refused = 0;
+        // The user said no to the plan: the rest of this round's calls are not started.
+        let planDeclined = false;
         for (const call of calls) {
           if (controller.signal.aborted) break;
+          if (planDeclined) {
+            const held = chats.addToolPart(deps.getState(), chatId, replyId, {
+              callId: call.id,
+              name: call.name,
+              arguments: call.arguments,
+              label: tools.describe(call),
+            });
+            if (held) {
+              deps.setState(
+                chats.finishToolPart(held.state, chatId, replyId, held.partId, {
+                  ok: false,
+                  blocked: true,
+                  outcome: 'Not started: you did not approve the plan.',
+                }),
+              );
+              changed();
+            }
+            conversation.push({
+              role: 'tool',
+              toolCallId: call.id,
+              content:
+                'Not started: the user did not approve the plan. Wait for what they want.',
+            });
+            continue;
+          }
           const plan = tools.plan(call);
           // Asking you first, unless you already allowed the rest of this reply
           // and this one is not a kind that always asks.
-          const mustAsk = plan.kind === 'ask' && !(allowRest && !plan.risky);
+          const mustAsk =
+            plan.kind === 'ask' && !(allowRest && !plan.risky && !plan.always);
           const added = chats.addToolPart(deps.getState(), chatId, replyId, {
             callId: call.id,
             name: call.name,
@@ -341,10 +370,12 @@ export function createChatRunner(deps: RunnerDeps) {
                 ),
               );
               changed();
+              if (call.name === SET_PLAN) planDeclined = true;
               conversation.push({
                 role: 'tool',
                 toolCallId: call.id,
                 content:
+                  (plan.kind === 'ask' ? plan.declinedResult : undefined) ??
                   'The user did not allow this. Do not try it again. Tell the user briefly what you were trying to do, then use offer_choices to give them a few ways to continue (for example another approach, or doing it themselves).',
               });
               continue;
@@ -392,6 +423,7 @@ export function createChatRunner(deps: RunnerDeps) {
                   outcome: outcome.note,
                   details: outcome.details,
                   made: outcome.made,
+                  plan: outcome.plan,
                 },
               ),
             );

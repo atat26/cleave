@@ -51,7 +51,8 @@ import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
 import { scopedRecall, scopedTabs, testScope } from './testScope';
 import { groupsForMessage, groupsUsed } from './toolGroups';
-import { HOW_TO_WORK } from './chatContext';
+import { HOW_TO_WORK, HOW_TO_WORK_NO_PLAN } from './chatContext';
+import { planningEnabled } from './taskPlan';
 import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
 import { SearchError } from './webSearch';
@@ -513,7 +514,11 @@ export function createChatService(options: {
         model,
         systemPrompt: settings.systemPrompt,
         // The rules are about using tools, so a model without tools does not get them.
-        rules: canRead ? HOW_TO_WORK : null,
+        rules: canRead
+          ? planningEnabled()
+            ? HOW_TO_WORK
+            : HOW_TO_WORK_NO_PLAN
+          : null,
         linked: buildLinkedContext(refs, workspace, canRead),
         // Skills are listed only when the model can use tools (it needs use_skill).
         // A skill you name as "/Name" has its steps put in right here, so it costs no extra step.

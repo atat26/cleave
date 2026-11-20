@@ -3,7 +3,13 @@
 // summary of the whole run (for the run bar). Pure code with no Electron and no React,
 // so it is easy to test. The look is in StepList.tsx and components.css.
 import { MAX_ACTIONS } from './agentActions.ts';
-import type { ChatMessage, LimitKind, MadeItem, MessagePart } from './chats.ts';
+import type {
+  ChatMessage,
+  LimitKind,
+  MadeItem,
+  MessagePart,
+  TaskPlan,
+} from './chats.ts';
 import { TOOL_CATALOG } from './toolPolicy.ts';
 
 export type ToolPartView = Extract<MessagePart, { type: 'tool' }>;
@@ -341,15 +347,50 @@ export const LIMIT_WORDS: Record<LimitKind, string> = {
   reads: 'This reply read as many pages as it is allowed to at once.',
 };
 
+// A mark in the run bar: a step's state, or "not started yet" for a step of the plan still to come.
+export type TickState = StepState | 'todo';
+
+// The plan the reply last had approved (set_plan), or null. The newest one wins: a change replaces it.
+export function planOf(message: ChatMessage | undefined): TaskPlan | null {
+  if (!message || message.role !== 'assistant') return null;
+  for (let i = message.parts.length - 1; i >= 0; i--) {
+    const part = message.parts[i];
+    if (part.type === 'tool' && part.status === 'ok' && part.plan) {
+      return part.plan;
+    }
+  }
+  return null;
+}
+
+// The marks for a plan: done steps, the one being worked on, and those still to do. When the reply
+// ended, the unfinished ones show as stopped, unless it finished well: then the whole plan is done.
+export function planTicks(
+  plan: TaskPlan,
+  word: RunWord,
+  current: StepState,
+): TickState[] {
+  const total = plan.steps.length;
+  if (word === 'finished') return plan.steps.map(() => 'done');
+  const ended = word === 'stopped' || word === 'stuck';
+  return plan.steps.map((_, i): TickState => {
+    if (i < plan.done) return 'done';
+    if (ended) return 'stopped';
+    if (i === plan.done && plan.done < total) return current;
+    return 'todo';
+  });
+}
+
 export interface RunView {
   word: RunWord;
   // What it is doing now (or did last): "Read" and "Best Buy Store Locator".
   verb: string;
   target: string | null;
-  // One mark per step so far.
-  ticks: StepState[];
-  // Which step this is ("Step 4"); the total is not known unless there is a plan.
+  // One mark per step so far, or (with a plan) one per step of the plan.
+  ticks: TickState[];
+  // Which step this is ("Step 4"); with a plan, which step of the plan the work is on.
   stepNumber: number;
+  // The plan the user approved, if there is one: how many steps it has and how many are done.
+  plan?: { total: number; done: number };
   // Which step it is (its number in the reply) and how it is going.
   partId: number;
   state: StepState;
@@ -457,12 +498,21 @@ export function runOf(message: ChatMessage | undefined): RunView | null {
   } else {
     word = bad ? 'stuck' : 'finished';
   }
+  const plan = planOf(message);
+  const total = plan?.steps.length ?? 0;
+  const done = plan ? (word === 'finished' ? total : plan.done) : 0;
+  // The step being worked on shows as "waiting" while a card waits for an answer, else "running".
+  const nowState: StepState =
+    current.state === 'waiting' ? 'waiting' : 'running';
   return {
     word,
     verb: current.verb,
     target: current.target,
-    ticks: steps.slice(-MAX_TICKS).map((s) => s.state),
-    stepNumber: steps.indexOf(current) + 1,
+    ticks: plan
+      ? planTicks(plan, word, nowState)
+      : steps.slice(-MAX_TICKS).map((s) => s.state),
+    stepNumber: plan ? Math.min(done + 1, total) : steps.indexOf(current) + 1,
+    ...(plan ? { plan: { total, done } } : {}),
     partId: current.part.id,
     state: current.state,
     tabId,

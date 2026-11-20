@@ -1176,3 +1176,73 @@ test('every request carries the limit on the reply, and a reply that reaches it 
   await done.done;
   assert.equal(calm.chat.messages[1].content, 'Short.');
 });
+
+// A set_plan that asks (like a new plan), with the words the model is told when it is declined.
+const planningTools = () => {
+  const made = fakeTools();
+  const tools: AgentTools = {
+    ...made.tools,
+    plan: (c) =>
+      c.name === 'set_plan'
+        ? {
+            kind: 'ask',
+            text: 'Plan this task in 3 steps',
+            risky: false,
+            always: true,
+            declinedResult: 'PLAN NOT APPROVED. Do not start.',
+          }
+        : made.tools.plan(c),
+  };
+  return { tools, runs: made.runs };
+};
+const twoCalls = (first: string, second: string): StreamEvent => ({
+  type: 'tool-calls',
+  calls: [
+    { id: 'p1', name: first, arguments: '{}' },
+    { id: 'w1', name: second, arguments: '{"tab":3}' },
+  ],
+});
+
+test('a plan the user declines also stops the other calls of that step, and the model is told why', async () => {
+  const { tools, runs } = planningTools();
+  const t = setup(
+    scripted([twoCalls('set_plan', 'read_page')], [text('Not started.')]),
+  );
+  t.answerWith(async () => 'deny');
+  const started = t.runner.send(t.chatId, 'Do the big task', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+  // Nothing ran: not the plan, and not the page read that came with it.
+  assert.deepEqual(runs, []);
+  const parts = toolParts(t.chat.messages[1]);
+  assert.deepEqual(
+    parts.map((p) => [p.name, p.status]),
+    [
+      ['set_plan', 'declined'],
+      ['read_page', 'error'],
+    ],
+  );
+  assert.equal(parts[1].blocked, true);
+  const told = t.calls[1].messages.slice(-2);
+  assert.equal(told[0].content, 'PLAN NOT APPROVED. Do not start.');
+  assert.match(String(told[1].content), /Not started/);
+});
+
+test('a plan still asks after "Allow the rest of this reply"', async () => {
+  const { tools } = planningTools();
+  const t = setup(
+    scripted([act('a1', 'click')], [act('p1', 'set_plan')], [text('Done.')]),
+  );
+  const answers = ['allow-rest', 'allow'] as const;
+  let n = 0;
+  t.answerWith(async () => answers[n++]);
+  const started = t.runner.send(t.chatId, 'Go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  // Both asked: the plan was not skipped by "allow the rest".
+  assert.equal(t.asked.length, 2);
+  assert.equal(t.asked[1].text, 'Plan this task in 3 steps');
+});

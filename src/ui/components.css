@@ -1319,6 +1319,10 @@ button {
 .run-tick[data-state='running'] {
   background: var(--c-accent);
 }
+.run-tick[data-state='todo'] {
+  background: var(--c-text-3);
+  opacity: 0.45;
+}
 .run-tick[data-state='waiting'] {
   background: var(--c-warn-edge);
 }

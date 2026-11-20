@@ -263,7 +263,10 @@ export function OverlayApp() {
             </span>
           )}
           {!state.ended && !state.minimized && (
-            <span className="ao-step">Step {state.step}</span>
+            <span className="ao-step">
+              Step {state.step}
+              {state.total !== undefined ? ` of ${state.total}` : ''}
+            </span>
           )}
           {state.minimized && (
             <>

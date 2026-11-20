@@ -39,6 +39,31 @@ export const isMadeItem = (value: unknown): value is MadeItem =>
   Number.isInteger((value as { id?: unknown }).id) &&
   (value as { id: number }).id > 0;
 
+// The plan of a task the user approved (see taskPlan.ts): its steps, and how many are finished.
+export const MAX_PLAN_STEPS = 8;
+export const MAX_PLAN_STEP_CHARS = 70;
+export interface TaskPlan {
+  steps: string[];
+  done: number;
+}
+export const isTaskPlan = (value: unknown): value is TaskPlan => {
+  if (typeof value !== 'object' || value === null) return false;
+  const { steps, done } = value as { steps?: unknown; done?: unknown };
+  return (
+    Array.isArray(steps) &&
+    steps.length >= 1 &&
+    steps.length <= MAX_PLAN_STEPS &&
+    steps.every(
+      (s) =>
+        typeof s === 'string' && s !== '' && s.length <= MAX_PLAN_STEP_CHARS,
+    ) &&
+    typeof done === 'number' &&
+    Number.isInteger(done) &&
+    done >= 0 &&
+    done <= steps.length
+  );
+};
+
 // A limit a reply ran into (see agentTools.ts): the actions it may take, or the pages it may read.
 export type LimitKind = 'actions' | 'reads';
 const LIMIT_KINDS: readonly LimitKind[] = ['actions', 'reads'];
@@ -104,6 +129,8 @@ export type MessagePart =
       card?: CardDetails;
       // What the step made, if it made something (the chat then offers to open it).
       made?: MadeItem;
+      // For a step that set or changed the plan of the task, once the user approved it.
+      plan?: TaskPlan;
     };
 
 export interface Mention extends ChatRef {
@@ -321,6 +348,9 @@ function parseParts(raw: unknown): MessagePart[] {
         skipped: r.skipped === true,
         ...(r.status === 'ok' && isMadeItem(r.made)
           ? { made: { kind: r.made.kind, id: r.made.id } }
+          : {}),
+        ...(r.status === 'ok' && isTaskPlan(r.plan)
+          ? { plan: { steps: [...r.plan.steps], done: r.plan.done } }
           : {}),
       });
     }
@@ -1265,6 +1295,7 @@ export function finishToolPart(
     outcome?: string;
     details?: string;
     made?: MadeItem;
+    plan?: TaskPlan;
   },
 ): ChatsState {
   return updateMessage(state, chatId, messageId, (m) => ({
@@ -1274,6 +1305,7 @@ export function finishToolPart(
         ? {
             ...p,
             ...(result.ok && result.made ? { made: result.made } : {}),
+            ...(result.ok && result.plan ? { plan: result.plan } : {}),
             status: result.declined ? 'declined' : result.ok ? 'ok' : 'error',
             blocked: result.blocked === true,
             skipped: result.skipped === true,

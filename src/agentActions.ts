@@ -224,6 +224,11 @@ export type Plan =
       card?: CardDetails;
       // The element it acts on (for the marker on the page).
       target?: StepTarget;
+      // Asks even after "Allow the rest of this reply" (without the risky look and keys): for what
+      // the user should always see before it takes effect, like the plan of a task.
+      always?: boolean;
+      // What the model is told when the user says no, instead of the usual "try another way".
+      declinedResult?: string;
     }
   // Not done at all, and the model is told why.
   | { kind: 'refuse'; label: string; note: string; result: string };

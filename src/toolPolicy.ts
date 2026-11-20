@@ -440,6 +440,15 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     defaultLevel: 'always',
     changesThings: false,
   },
+  {
+    name: 'set_plan',
+    group: 'chat',
+    title: 'Plan a long task',
+    summary:
+      'Show you the steps of a task with several parts, before it starts and whenever they change.',
+    defaultLevel: 'ask',
+    changesThings: false,
+  },
 ];
 
 const BY_NAME = new Map(TOOL_CATALOG.map((tool) => [tool.name, tool]));

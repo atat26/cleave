@@ -98,6 +98,7 @@ const WHAT: Record<string, string> = {
   create_space: 'Makes a Space',
   create_skill: 'Makes a skill',
   edit_skill: 'Changes a skill',
+  set_plan: 'Plans the task',
 };
 
 // Why a risky one always asks, by tool.
@@ -146,6 +147,8 @@ export function nextLine(toolName: string): string {
       return 'It reads the result, then carries on.';
     case 'screenshot_page':
       return 'It takes the picture and looks at it, then carries on.';
+    case 'set_plan':
+      return 'Nothing is done by the plan itself: it then starts on the first step, and every action still asks as usual.';
     case 'close_tab':
       return 'The tab closes. You can open it again from the Space or Recently closed.';
     case 'move_tabs':
