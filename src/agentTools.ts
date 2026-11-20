@@ -1013,6 +1013,10 @@ export function createAgentTools(
       return {
         label: text,
         ok: true,
+        // Which fields got which text (kept with the step, for you and for a later question).
+        ...(decided.kind === 'ask' && decided.card?.list
+          ? { details: decided.card.list.join('\n') }
+          : {}),
         note: `Done: ${filled} field${filled === 1 ? '' : 's'} filled.`,
         result: `Done. ${filled} field${filled === 1 ? ' was' : 's were'} filled. Nothing was submitted.`,
       };
