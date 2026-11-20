@@ -92,6 +92,14 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     changesThings: false,
   },
   {
+    name: 'read_pages',
+    group: 'look',
+    title: 'Read several pages',
+    summary: "Read several pages' text in one step.",
+    defaultLevel: 'always',
+    changesThings: false,
+  },
+  {
     name: 'screenshot_page',
     group: 'look',
     title: 'Take a screenshot',

@@ -64,6 +64,7 @@ export const stepKind = (toolName: string): StepKind => {
 // The page-reading tools: three or more in a row fold into one line.
 const READING_TOOLS = new Set([
   'read_page',
+  'read_pages',
   'read_link',
   'look_at_page',
   'read_tables',
