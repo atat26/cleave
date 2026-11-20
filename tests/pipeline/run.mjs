@@ -256,6 +256,16 @@ async function runOnce(app, scenario, model) {
       );
       artifactIds.push(id);
     }
+    // Test skills (on), for scenarios that name or use one. They are removed with the other new
+    // skills afterwards.
+    for (const wanted of scenario.skills ?? []) {
+      const saved = JSON.parse(
+        await app.ev(
+          `window.browserApi.skillSave(${J(wanted)}).then((r) => JSON.stringify(r))`,
+        ),
+      );
+      if (!saved.ok) throw new Error('A test skill could not be made.');
+    }
     await app.ev(`window.browserApi.setViewMode('both'); 0`);
     await app.ev(`window.browserApi.newChat(); 0`);
     await sleep(900);

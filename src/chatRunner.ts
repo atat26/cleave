@@ -9,7 +9,9 @@ import type { StepTarget } from './marker.ts';
 import { buildMessages } from './chatContext.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
+import { MAX_PAGE_CHARS } from './agentTools.ts';
 import type { AgentTools, ToolOutcome } from './agentTools.ts';
+import { cutOffNote } from './cutOffNote.ts';
 import { ChatError } from './openrouter.ts';
 import type {
   ChatMessageInput,
@@ -142,6 +144,9 @@ export function createChatRunner(deps: RunnerDeps) {
       [...refusedBy.values()].some((n) => n >= MAX_REFUSALS_PER_TOOL) ||
       [...failedBy.values()].some((n) => n >= MAX_FAILURES_PER_TOOL);
     let toldNoMoreTools = false;
+    // Pages read in this reply that were cut at the limit, and the words of the last answer.
+    let cutOffPages = 0;
+    let lastText = '';
     try {
       for (let round = 0; ; round++) {
         // Once the tool rounds are used up the model is asked to just answer.
@@ -202,6 +207,7 @@ export function createChatRunner(deps: RunnerDeps) {
           if (controller.signal.aborted) break;
         }
         if (controller.signal.aborted) break;
+        lastText = roundText;
         if (!useTools || calls.length === 0) break;
 
         // The model asked for tools: run each one, show it as a step, and hand
@@ -368,6 +374,7 @@ export function createChatRunner(deps: RunnerDeps) {
             content: outcome.result,
           });
           if (outcome.images) pictures.push(...outcome.images);
+          cutOffPages += outcome.cutOff ?? 0;
           if (outcome.blocked) {
             refused++;
             noteRefused(call.name);
@@ -403,6 +410,17 @@ export function createChatRunner(deps: RunnerDeps) {
       result = controller.signal.aborted
         ? { status: 'stopped' }
         : { status: 'done' };
+      // A page was cut and the answer does not say so: the app says it (the model often does not).
+      const note =
+        result.status === 'done'
+          ? cutOffNote(lastText, cutOffPages, MAX_PAGE_CHARS)
+          : null;
+      if (note !== null) {
+        deps.setState(
+          chats.appendToMessage(deps.getState(), chatId, replyId, note, ''),
+        );
+        changed();
+      }
     } catch (error) {
       if (
         controller.signal.aborted ||
