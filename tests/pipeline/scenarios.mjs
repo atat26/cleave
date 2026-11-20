@@ -562,6 +562,73 @@ SCENARIOS.push(
 );
 
 SCENARIOS.push({
+  id: 's23',
+  title: 'Two screenshots (the older picture need not be sent again)',
+  turns: [
+    'Take a screenshot of the contact form page and describe it in one line. Only after that, take a screenshot of the other page, and tell me which of the two has a chart.',
+  ],
+  tabs: [`${BASE}/form`, `${BASE}/chart`],
+  link: [0, 1],
+  approve: allowAll,
+  budgetTokens: 20000,
+  checks: ({ calls, turns }) => {
+    const shots = calls.filter(
+      (c) => c.name === 'screenshot_page' && c.status === 'ok',
+    );
+    return [
+      check(
+        'takes a screenshot of each page',
+        shots.length >= 2,
+        `${shots.length} screenshots`,
+      ),
+      check(
+        'says which page has the chart',
+        /chart|visitors|quillbase.*visit|second/i.test(turns[0].answer) &&
+          !/contact form has the chart/i.test(turns[0].answer),
+        '(read the answer)',
+      ),
+    ];
+  },
+});
+
+SCENARIOS.push({
+  id: 's22',
+  title: 'Several clicks on a big page (every click changes the page)',
+  turns: [
+    'On this page, add the three cheapest items to the list, then tell me the list total shown on the page.',
+  ],
+  tabs: [`${BASE}/catalog`],
+  link: [0],
+  approve: refuseChanges('click'),
+  budgetTokens: 40000,
+  checks: ({ calls, turns }) => {
+    const prices = FACTS.catalog.items
+      .map((i) => i.price)
+      .sort((a, b) => a - b);
+    const total = prices.slice(0, 3).reduce((a, b) => a + b, 0);
+    const clicks = calls.filter((c) => c.name === 'click' && c.status === 'ok');
+    return [
+      check(
+        'clicks Add three times',
+        clicks.length === 3,
+        `${clicks.length} clicks`,
+      ),
+      check(
+        'reports the right total',
+        has(turns[0].answer, `EUR ${total}`) ||
+          new RegExp(`\\b${total}\\b`).test(turns[0].answer),
+        `expected ${total}`,
+      ),
+      check(
+        'looks at the page at most 6 times',
+        helpers.count(calls, 'look_at_page') <= 6,
+        `x${helpers.count(calls, 'look_at_page')}`,
+      ),
+    ];
+  },
+});
+
+SCENARIOS.push({
   id: 's7b',
   title: 'A tab is closed while a step waits for your OK',
   // The assistant asks to click a button; while the card is waiting, the tab is closed; then the

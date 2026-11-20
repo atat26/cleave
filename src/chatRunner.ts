@@ -12,6 +12,7 @@ import type { ChatsState } from './chats.ts';
 import { MAX_PAGE_CHARS } from './agentTools.ts';
 import type { AgentTools, ToolOutcome } from './agentTools.ts';
 import { cutOffNote } from './cutOffNote.ts';
+import { pruneConversation } from './pruneConversation.ts';
 import { ChatError } from './openrouter.ts';
 import type {
   ChatMessageInput,
@@ -171,7 +172,12 @@ export function createChatRunner(deps: RunnerDeps) {
         let roundText = '';
         for await (const event of deps.stream({
           model: context.model,
-          messages: conversation,
+          // What is sent leaves out what no longer helps (old page looks, repeated reads, old
+          // pictures). AIB_NO_PRUNE=1 sends everything (to compare, see docs/pipeline).
+          messages:
+            typeof process !== 'undefined' && process.env?.AIB_NO_PRUNE === '1'
+              ? conversation
+              : pruneConversation(conversation),
           tools: useTools ? tools.definitions : undefined,
           signal: controller.signal,
         })) {
