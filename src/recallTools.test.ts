@@ -244,3 +244,126 @@ test('helpers: text is cleaned, dates read plainly, pages and transcripts are on
     'You: hi\n\nAssistant: hello',
   );
 });
+
+test('several searches go in one step: the results of each, nothing repeated, one look-up each', async () => {
+  const { tools, searched } = world();
+  const out = await tools.run(
+    call('search_history', { queries: ['goldfish', 'pond', 'liner'] }),
+  );
+  assert.equal(out.ok, true);
+  assert.deepEqual(searched, [
+    'history:goldfish:10',
+    'history:pond:10',
+    'history:liner:10',
+  ]);
+  assert.equal(out.label, 'Searched your history: "goldfish", "pond", "liner"');
+  assert.match(out.result, /not instructions/);
+  assert.match(
+    out.result,
+    /Results for "goldfish":\n1\. "Goldfish care guide"/,
+  );
+  // "pond" and "liner" both find Pond liners: it is listed once, under the first search that found it.
+  assert.equal(out.result.split('Pond liners').length - 1, 1);
+  assert.match(out.result, /Results for "liner":\n\(Nothing new matched\.\)/);
+  assert.match(out.note, /2 results for 3 searches/);
+  // Each search counted as a look-up.
+  assert.equal(tools.used(), 3);
+});
+
+test('a single search, or a list of one, gives the same answer as before', async () => {
+  const a = world().tools;
+  const b = world().tools;
+  const one = await a.run(call('search_history', { query: 'goldfish' }));
+  const list = await b.run(call('search_history', { queries: ['goldfish'] }));
+  assert.equal(list.result, one.result);
+  assert.equal(list.label, one.label);
+  // An empty list falls back to the one query.
+  const c = world().tools;
+  const fallback = await c.run(
+    call('search_history', { queries: [' ', ''], query: 'goldfish' }),
+  );
+  assert.equal(fallback.result, one.result);
+});
+
+test('a batch is limited to five searches, drops repeats, and refuses a list that is not all text', async () => {
+  const { tools, searched } = world();
+  await tools.run(
+    call('search_history', {
+      queries: ['a', 'b', 'a', 'c', 'd', 'e', 'f', 'g'],
+    }),
+  );
+  assert.deepEqual(
+    searched.map((s) => s.split(':')[1]),
+    ['a', 'b', 'c', 'd', 'e'],
+  );
+  assert.equal(
+    tools.plan(call('search_history', { queries: ['ok', 5] })).kind,
+    'refuse',
+  );
+  assert.equal(
+    tools.plan(call('search_history', { queries: 'goldfish' })).kind,
+    'auto',
+  );
+});
+
+test('a batch only runs as many searches as the reply has look-ups left, and says so', async () => {
+  const { tools, searched } = world();
+  for (let i = 0; i < MAX_RECALLS - 2; i++) {
+    await tools.run(call('search_history', { query: 'a' }));
+  }
+  searched.length = 0;
+  const out = await tools.run(
+    call('search_history', { queries: ['x1', 'x2', 'x3', 'x4'] }),
+  );
+  assert.deepEqual(
+    searched.map((s) => s.split(':')[1]),
+    ['x1', 'x2'],
+  );
+  assert.match(out.result, /2 more searches were not run/);
+  assert.equal(tools.used(), MAX_RECALLS);
+  assert.equal(
+    tools.plan(call('search_history', { queries: ['x'] })).kind,
+    'refuse',
+  );
+});
+
+test('the card for a batch lists every search; chats and bookmarks can be batched too; chats still need something to look for', async () => {
+  const ask = world(() => 'ask').tools;
+  const plan = ask.plan(
+    call('search_history', { queries: ['goldfish', 'pond liner'] }),
+  );
+  assert.ok(plan.kind === 'ask');
+  assert.equal(
+    plan.text,
+    'Search your browsing history for "goldfish", "pond liner"',
+  );
+  const { tools } = world();
+  const chats = await tools.run(
+    call('search_chats', { queries: ['pond', 'liner'] }),
+  );
+  assert.match(chats.label, /^Searched your earlier chats: "pond", "liner"/);
+  // The chat the assistant is in is never listed; a chat found twice is listed once.
+  assert.ok(!chats.result.includes('This chat'));
+  assert.equal(chats.result.split('chat 5:').length - 1, 1);
+  const marks = await tools.run(
+    call('search_bookmarks', { queries: ['koi', 'pond'] }),
+  );
+  assert.match(marks.label, /^Searched your bookmarks: "koi", "pond"/);
+  assert.equal(tools.plan(call('search_chats', {})).kind, 'refuse');
+  assert.equal(
+    tools.plan(call('search_chats', { queries: [' '] })).kind,
+    'refuse',
+  );
+});
+
+test('the definitions offer an optional list of searches, and chats no longer require one single query', async () => {
+  const { RECALL_DEFINITIONS } = await import('./recallTools.ts');
+  for (const name of ['search_history', 'search_bookmarks', 'search_chats']) {
+    const definition = RECALL_DEFINITIONS.find((d) => d.name === name)!;
+    const properties = (
+      definition.parameters as { properties: Record<string, unknown> }
+    ).properties;
+    assert.ok('queries' in properties, name);
+    assert.equal('required' in definition.parameters, false, name);
+  }
+});

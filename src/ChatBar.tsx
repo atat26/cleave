@@ -84,6 +84,10 @@ export function ChatBar({
       void window.browserApi.chatSend(chats.activeId, CONTINUE_TEXT, []);
     }
   };
+  // "Open" on a finished run that made something (a document, a skill or a Space).
+  const openMade = () => {
+    if (run?.made) window.browserApi.openMade(run.made.kind, run.made.id);
+  };
   const wasGenerating = useRef(false);
   const newestRef = useRef(newest);
   newestRef.current = newest;
@@ -358,6 +362,7 @@ export function ChatBar({
             run={run}
             onDismiss={() => setEndedFor(null)}
             onContinue={carryOn}
+            onOpen={openMade}
           />
         )}
         {limitVisible && !showNew && run?.limit && (
@@ -384,6 +389,7 @@ export function ChatBar({
               run={run}
               onDismiss={() => setEndedFor(null)}
               onContinue={carryOn}
+              onOpen={openMade}
             />
           </div>
         )}

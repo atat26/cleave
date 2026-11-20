@@ -997,6 +997,60 @@ test('stray blank text between tool calls makes no part, so no gap shows', () =>
   );
 });
 
+test('what a step made is kept with it, only for a step that worked, and survives a save and load; a bad value is dropped', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'make', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = reply.state;
+  const first = addToolPart(state, chatId, reply.id, {
+    callId: 'a',
+    name: 'create_artifact',
+    arguments: '{}',
+    label: 'Make',
+  })!;
+  state = finishToolPart(first.state, chatId, reply.id, first.partId, {
+    ok: true,
+    made: { kind: 'artifact', id: 7 },
+  });
+  const second = addToolPart(state, chatId, reply.id, {
+    callId: 'b',
+    name: 'create_space',
+    arguments: '{}',
+    label: 'Make',
+  })!;
+  // A step that failed makes nothing, whatever it says.
+  state = finishToolPart(second.state, chatId, reply.id, second.partId, {
+    ok: false,
+    made: { kind: 'space', id: 9 },
+  });
+  const parts = findMessage(state, chatId, reply.id)!.parts;
+  assert.deepEqual(parts[0].type === 'tool' && parts[0].made, {
+    kind: 'artifact',
+    id: 7,
+  });
+  assert.equal(parts[1].type === 'tool' && 'made' in parts[1], false);
+  // Saved and loaded again.
+  const raw = JSON.parse(JSON.stringify(state));
+  const loaded = parseChats(raw, NOW).conversations[0].messages[1].parts[0];
+  assert.deepEqual(loaded.type === 'tool' && loaded.made, {
+    kind: 'artifact',
+    id: 7,
+  });
+  // A made item that is not a known kind or a whole number is dropped.
+  for (const bad of [
+    { kind: 'folder', id: 7 },
+    { kind: 'artifact', id: 'x' },
+    { kind: 'artifact', id: 0 },
+    'artifact',
+  ]) {
+    const odd = JSON.parse(JSON.stringify(state));
+    odd.conversations[0].messages[1].parts[0].made = bad;
+    const part = parseChats(odd, NOW).conversations[0].messages[1].parts[0];
+    assert.equal(part.type === 'tool' && 'made' in part, false);
+  }
+});
+
 test('what a tool found is kept with the call, cut to a limit, and survives a save and load', () => {
   let state = defaultChats(NOW);
   const chatId = state.activeId;

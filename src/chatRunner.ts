@@ -360,6 +360,7 @@ export function createChatRunner(deps: RunnerDeps) {
                   label: outcome.label,
                   outcome: outcome.note,
                   details: outcome.details,
+                  made: outcome.made,
                 },
               ),
             );

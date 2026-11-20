@@ -173,7 +173,7 @@ import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
 import { parseQuickChoice, quickSearchItems } from './quickSearch';
-import { CONTINUE_TEXT, retryRequest, stepState } from './runModel';
+import { CONTINUE_TEXT, madeOf, retryRequest, stepState } from './runModel';
 import {
   createThumbnailStore,
   THUMBNAIL_WIDTH,
@@ -5469,7 +5469,21 @@ export async function createTabs(
   // ---- Requests from the UI --------------------------------------------------
   // We only accept messages that come from our own two UI pages, and we check
   // the type of everything they send.
+  // Open something the assistant made: a document, a Space (its page), or the skills panel.
+  const openMade = (kind: unknown, id: unknown) => {
+    if (!isId(id)) return;
+    if (kind === 'artifact') openArtifact(id);
+    else if (kind === 'space') select({ kind: 'lead', spaceId: id });
+    else if (kind === 'skill') {
+      state = model.setRightPanel(state, 'skills');
+      saver.schedule();
+      applyLayout(true);
+      sendState();
+    }
+  };
+
   const requests: Record<string, (...args: unknown[]) => void> = {
+    'made:open': (kind, id) => openMade(kind, id),
     'tab:navigate': (input) => {
       const id = activeTabId();
       if (id === null || typeof input !== 'string') return;
@@ -8026,6 +8040,13 @@ ${artifact.content.slice(0, 1500)}`;
       chatService?.sendMessage(overlayReply.chatId, CONTINUE_TEXT);
     }
   };
+  // "Open" on the pill of a finished reply: what that reply made last (worked out here from the
+  // reply itself, not taken from the pill).
+  const onOverlayOpenMade = (event: Electron.IpcMainEvent) => {
+    if (!fromOverlay(event) || !overlayReply) return;
+    const made = madeOf(overlayReply.message);
+    if (made) openMade(made.kind, made.id);
+  };
   const onOverlayDismiss = (event: Electron.IpcMainEvent) => {
     if (!fromOverlay(event) || !overlayReply) return;
     dismissedReplies.add(overlayReply.message.id);
@@ -8113,6 +8134,7 @@ ${artifact.content.slice(0, 1500)}`;
   ipcMain.on('overlay:peek', onOverlayPeek);
   ipcMain.on('overlay:stop', onOverlayStop);
   ipcMain.on('overlay:continue', onOverlayContinue);
+  ipcMain.on('overlay:open-made', onOverlayOpenMade);
   ipcMain.on('overlay:dismiss', onOverlayDismiss);
   // The chat asks for what the overlay shows when it opens (it may have missed the news).
   ipcMain.handle('overlay:flags-get', (event) => {
@@ -8311,6 +8333,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('overlay:peek', onOverlayPeek);
     ipcMain.removeListener('overlay:stop', onOverlayStop);
     ipcMain.removeListener('overlay:continue', onOverlayContinue);
+    ipcMain.removeListener('overlay:open-made', onOverlayOpenMade);
     ipcMain.removeListener('overlay:dismiss', onOverlayDismiss);
     ipcMain.removeListener('overlay:minimize', onOverlayMinimize);
     ipcMain.removeListener('overlay:go-to-tab', onOverlayGoToTab);

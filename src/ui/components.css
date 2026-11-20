@@ -3207,6 +3207,12 @@ button {
   border-color: var(--c-warn-edge);
   color: var(--c-surface);
 }
+/* "Open" on a finished run, for what it made. */
+.btn-open {
+  background: var(--c-ok);
+  border-color: var(--c-ok);
+  color: var(--c-surface);
+}
 
 /* The small picture of a screenshot the assistant took, under its step. */
 .step-thumb {

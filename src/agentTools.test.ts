@@ -1220,6 +1220,8 @@ test('making an artifact asks by default, links nothing itself, and creates it w
   assert.equal(docs.get(3)?.title, 'Plan');
   assert.equal(docs.get(3)?.spaceId, null);
   assert.match(outcome.result, /Artifact 3/);
+  // The chat can offer to open it.
+  assert.deepEqual(outcome.made, { kind: 'artifact', id: 3 });
 });
 
 test('making an artifact in a Space needs that Space to be linked', async () => {
@@ -1423,6 +1425,7 @@ test('making a Space asks first, then makes it with the name, emoji and colour i
   ]);
   assert.match(outcome.result, /Space 51/);
   assert.match(outcome.result, /create_artifact_in_space/);
+  assert.deepEqual(outcome.made, { kind: 'space', id: 51 });
 });
 
 test('a Space needs a name, and a made-up emoji or colour does not get through', async () => {

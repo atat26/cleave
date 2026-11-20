@@ -543,6 +543,7 @@ export function createSkillTools(
       return {
         label: `Made the skill: ${cleanLabel(result.name, 60)}`,
         ok: true,
+        made: { kind: 'skill', id: result.id },
         note: 'The skill is saved and on.',
         result: `Made the skill "${cleanLabel(result.name, 60)}". It is on, and you can use it with use_skill.`,
       };

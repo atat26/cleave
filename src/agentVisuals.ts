@@ -6,6 +6,7 @@
 // above the page, is managed in tabs.ts.
 import type { CardDetails } from './approvalCard.ts';
 import type { CursorView } from './cursor.ts';
+import type { MadeItem } from './chats.ts';
 import type { MarkerView, Rect } from './marker.ts';
 import { stepSite } from './runModel.ts';
 import type {
@@ -158,6 +159,8 @@ export interface OverlayState {
   goToTab: boolean;
   // The question's first line (for the minimized strip), or null.
   askLine: string | null;
+  // What a finished run made last, for the pill's Open button.
+  made?: MadeItem | null;
 }
 
 // What the chat needs to know of the overlay, so each fact is shown in one place: while the
@@ -281,6 +284,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     minimized: false,
     goToTab: false,
     askLine: null,
+    made: run.word === 'finished' ? (run.made ?? null) : null,
   };
 }
 

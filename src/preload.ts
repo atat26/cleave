@@ -529,6 +529,8 @@ const browserApi: BrowserApi = {
     ipcRenderer.invoke('chat:thumbnail', chatId, messageId, partId),
   overlayStop: () => ipcRenderer.send('overlay:stop'),
   overlayContinue: () => ipcRenderer.send('overlay:continue'),
+  overlayOpenMade: () => ipcRenderer.send('overlay:open-made'),
+  openMade: (kind, id) => ipcRenderer.send('made:open', kind, id),
   overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),
   overlayFlagsGet: () => ipcRenderer.invoke('overlay:flags-get'),
   overlayMinimize: (on) => ipcRenderer.send('overlay:minimize', on),
