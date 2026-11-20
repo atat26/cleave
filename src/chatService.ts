@@ -316,7 +316,7 @@ export function createChatService(options: {
     getState: options.getChats,
     setState: options.setChats,
     confirm,
-    stream: async function* ({ model, messages, tools, signal }) {
+    stream: async function* ({ model, messages, tools, maxTokens, signal }) {
       const apiKey = llm?.getApiKey() ?? null;
       if (llm === null || apiKey === null) throw new ChatError('auth');
       yield* streamChat({
@@ -324,6 +324,7 @@ export function createChatService(options: {
         model,
         messages,
         tools,
+        maxTokens,
         signal,
         fetchImpl: llm.fetchImpl,
       });
@@ -638,6 +639,14 @@ export function createChatService(options: {
     mentions: unknown,
   ): ChatSendResult => {
     if (!isId(chatId) || typeof text !== 'string') return invalid;
+    // Too long to send (the box used to say "Type a message first", which was wrong).
+    if (text.trim().length > chats.MAX_USER_CHARS) {
+      return {
+        ok: false,
+        kind: 'too-long',
+        error: `That message is too long (over ${chats.MAX_USER_CHARS.toLocaleString('en-US')} characters). Shorten it, or attach the text as a file.`,
+      };
+    }
     const prepared = contextFor(chatId, text);
     if (!prepared.ok) return prepared;
     const started = runner.send(

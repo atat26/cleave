@@ -12,6 +12,7 @@ import type { ChatsState } from './chats.ts';
 import { MAX_PAGE_CHARS } from './agentTools.ts';
 import type { AgentTools, ToolOutcome } from './agentTools.ts';
 import { cutOffNote } from './cutOffNote.ts';
+import { lengthNote } from './lengthNote.ts';
 import { pruneConversation } from './pruneConversation.ts';
 import { ChatError } from './openrouter.ts';
 import type {
@@ -36,6 +37,23 @@ export const MAX_REFUSALS_PER_TOOL = 2;
 // any more either.
 export const MAX_FAILURES_PER_TOOL = 3;
 
+// The most the model may write in one reply (words, thinking and tool-call text together). The
+// longest real outputs measured were about 2,300 tokens (a 1,200-word answer; an 8,000-character
+// document, which is near the most a tool call may hold), so this is about seven times that: only a
+// runaway (a loop repeating itself) reaches it, and it costs at most this much. See
+// docs/pipeline/changes-12.md.
+export const MAX_REPLY_TOKENS = 16_000;
+
+// The limit in use: MAX_REPLY_TOKENS, or (for testing the limit, docs/pipeline) the number in the
+// environment variable AIB_MAX_REPLY_TOKENS.
+const replyLimit = (): number => {
+  const set =
+    typeof process !== 'undefined'
+      ? Number(process.env?.AIB_MAX_REPLY_TOKENS)
+      : NaN;
+  return Number.isInteger(set) && set > 0 ? set : MAX_REPLY_TOKENS;
+};
+
 // Said to the model once, when its tools are taken away, so its last answer is honest about what was
 // and was not done (without it a model answered "based on all ten pages" after reading eight).
 export const NO_MORE_TOOLS_NOTE =
@@ -49,6 +67,7 @@ export interface RunnerDeps {
     model: string;
     messages: ChatMessageInput[];
     tools?: ToolDefinition[];
+    maxTokens?: number;
     signal: AbortSignal;
   }): AsyncIterable<StreamEvent>;
   now(): number;
@@ -156,6 +175,8 @@ export function createChatRunner(deps: RunnerDeps) {
     // Pages read in this reply that were cut at the limit, and the words of the last answer.
     let cutOffPages = 0;
     let lastText = '';
+    // Why the last request ended ("length": it reached MAX_REPLY_TOKENS).
+    let lastFinish: string | null = null;
     try {
       for (let round = 0; ; round++) {
         // Once the tool rounds are used up the model is asked to just answer.
@@ -170,7 +191,9 @@ export function createChatRunner(deps: RunnerDeps) {
         }
         let calls: ToolCall[] = [];
         let roundText = '';
+        lastFinish = null;
         for await (const event of deps.stream({
+          maxTokens: replyLimit(),
           model: context.model,
           // What is sent leaves out what no longer helps (old page looks, repeated reads, old
           // pictures). AIB_NO_PRUNE=1 sends everything (to compare, see docs/pipeline).
@@ -216,6 +239,8 @@ export function createChatRunner(deps: RunnerDeps) {
             if (event.cost !== null) cost = (cost ?? 0) + event.cost;
           } else if (event.type === 'tool-calls') {
             calls = event.calls;
+          } else if (event.type === 'finish') {
+            lastFinish = event.reason;
           }
           // Stop pressed: stop reading even if the stream does not notice.
           if (controller.signal.aborted) break;
@@ -438,7 +463,8 @@ export function createChatRunner(deps: RunnerDeps) {
       // A page was cut and the answer does not say so: the app says it (the model often does not).
       const note =
         result.status === 'done'
-          ? cutOffNote(lastText, cutOffPages, MAX_PAGE_CHARS)
+          ? (lengthNote(lastFinish, lastText, replyLimit()) ??
+            cutOffNote(lastText, cutOffPages, MAX_PAGE_CHARS))
           : null;
       if (note !== null) {
         deps.setState(

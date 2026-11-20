@@ -160,6 +160,9 @@ export function buildMessages(options: {
   while (chosen.length > 1 && chosen[0].role === 'assistant') chosen.shift();
 
   const newest = chosen.length - 1;
+  // How many of the first messages are not sent (the chat is longer than what fits): without being
+  // told, the assistant could only say "I have no record" and went looking in other chats for it.
+  const omitted = usable.length - chosen.length;
   const earlier = rememberedSearches(chosen);
   const done = rememberedSteps(chosen);
   const system = [
@@ -169,6 +172,9 @@ export function buildMessages(options: {
     options.skillsContext,
     earlier,
     done,
+    omitted > 0
+      ? `The start of this conversation is not shown to you: its first ${omitted} message${omitted === 1 ? ' is' : 's are'} left out because the conversation is long. If the user asks about something from the start, say plainly that you can no longer see the start of this conversation and ask them to say it again. Do not search their history or other chats for it. Your own earlier replies that you can see may have been based on those left-out messages, so do not say they were wrong or made up just because you cannot see where they came from.`
+      : null,
   ]
     .filter((part): part is string => !!part)
     .join('\n\n');

@@ -283,6 +283,7 @@ export type ChatSendResult =
         | 'no-model'
         | 'busy'
         | 'empty'
+        | 'too-long'
         | 'unknown-chat'
         | 'nothing-to-retry'
         | 'invalid';
