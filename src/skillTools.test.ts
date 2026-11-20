@@ -235,6 +235,7 @@ test('making a skill asks by default with the FULL text on the card, and saves i
   assert.equal(out.ok, true);
   assert.deepEqual(log, ['make Tidy desk']);
   assert.equal(out.label, 'Made the skill: Tidy desk');
+  assert.deepEqual(out.made, { kind: 'skill', id: 10 });
 });
 
 test('after web content was read, making or changing a skill always asks as risky, even at "always"', () => {

@@ -3207,6 +3207,12 @@ button {
   border-color: var(--c-warn-edge);
   color: var(--c-surface);
 }
+/* "Open" on a finished run, for what it made. */
+.btn-open {
+  background: var(--c-ok);
+  border-color: var(--c-ok);
+  color: var(--c-surface);
+}
 
 /* The overlay on the page (OverlayApp.tsx, agentVisuals.ts): a glow inside the page's
    edge while the assistant works in it, and a pill hanging from the top. */

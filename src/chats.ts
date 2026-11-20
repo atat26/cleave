@@ -26,6 +26,19 @@ export interface MessageUsage {
   cost: number | null;
 }
 
+// Something a step made (a document, a skill or a Space), so the chat can offer to open it.
+export const MADE_KINDS = ['artifact', 'skill', 'space'] as const;
+export interface MadeItem {
+  kind: (typeof MADE_KINDS)[number];
+  id: number;
+}
+export const isMadeItem = (value: unknown): value is MadeItem =>
+  typeof value === 'object' &&
+  value !== null &&
+  MADE_KINDS.some((k) => k === (value as { kind?: unknown }).kind) &&
+  Number.isInteger((value as { id?: unknown }).id) &&
+  (value as { id: number }).id > 0;
+
 // A limit a reply ran into (see agentTools.ts): the actions it may take, or the pages it may read.
 export type LimitKind = 'actions' | 'reads';
 const LIMIT_KINDS: readonly LimitKind[] = ['actions', 'reads'];
@@ -89,6 +102,8 @@ export type MessagePart =
       skipped?: boolean;
       // The details of the approval card while the step waits for you (not saved).
       card?: CardDetails;
+      // What the step made, if it made something (the chat then offers to open it).
+      made?: MadeItem;
     };
 
 export interface Mention extends ChatRef {
@@ -304,6 +319,9 @@ function parseParts(raw: unknown): MessagePart[] {
         risky: r.risky === true,
         blocked: r.blocked === true,
         skipped: r.skipped === true,
+        ...(r.status === 'ok' && isMadeItem(r.made)
+          ? { made: { kind: r.made.kind, id: r.made.id } }
+          : {}),
       });
     }
   }
@@ -1246,6 +1264,7 @@ export function finishToolPart(
     label?: string;
     outcome?: string;
     details?: string;
+    made?: MadeItem;
   },
 ): ChatsState {
   return updateMessage(state, chatId, messageId, (m) => ({
@@ -1254,6 +1273,7 @@ export function finishToolPart(
       p.type === 'tool' && p.id === partId
         ? {
             ...p,
+            ...(result.ok && result.made ? { made: result.made } : {}),
             status: result.declined ? 'declined' : result.ok ? 'ok' : 'error',
             blocked: result.blocked === true,
             skipped: result.skipped === true,

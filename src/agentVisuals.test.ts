@@ -74,6 +74,22 @@ test('while it works on the page on screen, the page glows with its state in the
   assert.equal(state?.step, 2);
 });
 
+test('the pill of a finished run offers to open what it made; no other pill does', () => {
+  const made = { kind: 'artifact' as const, id: 4 };
+  assert.deepEqual(
+    overlayFor(input({ run: run({ word: 'finished', made }) }))?.made,
+    made,
+  );
+  assert.equal(
+    overlayFor(input({ run: run({ word: 'finished' }) }))?.made,
+    null,
+  );
+  // Not after a Stop or when stuck, even if it made something before that.
+  for (const word of ['stopped', 'stuck'] as const) {
+    assert.equal(overlayFor(input({ run: run({ word, made }) }))?.made, null);
+  }
+});
+
 test('only reading gives a softer glow; waiting for you is always strong and amber', () => {
   assert.equal(overlayFor(input({ run: run({ reading: true }) }))?.soft, true);
   const waiting = overlayFor(
