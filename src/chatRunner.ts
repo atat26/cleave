@@ -62,6 +62,14 @@ export interface RunnerDeps {
     partId: number,
     target: StepTarget,
   ): void;
+  // A step took a picture (a screenshot of a page): its small copy for the step row. The full
+  // picture only goes to the model; this is for showing a thumbnail, in memory, this session only.
+  onPicture?(
+    chatId: number,
+    messageId: number,
+    partId: number,
+    picture: { mime: string; data: string },
+  ): void;
   // A chat started or stopped generating.
   onRunningChange(): void;
   // Ask you to approve something the assistant wants to do, and wait for your
@@ -374,7 +382,17 @@ export function createChatRunner(deps: RunnerDeps) {
             toolCallId: call.id,
             content: outcome.result,
           });
-          if (outcome.images) pictures.push(...outcome.images);
+          if (outcome.images) {
+            pictures.push(...outcome.images);
+            if (added && outcome.images.length > 0) {
+              deps.onPicture?.(
+                chatId,
+                replyId,
+                added.partId,
+                outcome.images[0],
+              );
+            }
+          }
           cutOffPages += outcome.cutOff ?? 0;
           if (outcome.blocked) {
             refused++;

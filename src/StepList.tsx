@@ -25,6 +25,7 @@ import {
 } from './runModel';
 import type { RunView, StepState, StepView, ToolPartView } from './runModel';
 import type { CardDetails } from './approvalCard';
+import { isThumbnailUrl } from './thumbnails';
 import type { ChatMessage } from './chats';
 import type { TabInfo } from './types';
 import { Badge, Button, IconButton } from './ui/controls';
@@ -149,6 +150,43 @@ function showArguments(raw: string): string {
   }
 }
 
+// The small picture of a screenshot the assistant took, under its step. It is kept in memory for this
+// session only (see thumbnails.ts), so after a restart there is none and nothing is shown.
+function StepThumbnail({
+  chatId,
+  messageId,
+  partId,
+}: {
+  chatId: number;
+  messageId: number;
+  partId: number;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void window.browserApi
+      .chatThumbnail(chatId, messageId, partId)
+      .then((found) => {
+        if (live) setUrl(isThumbnailUrl(found) ? found : null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [chatId, messageId, partId]);
+  if (url === null) return null;
+  return (
+    <div className="step-thumb">
+      <img
+        src={url}
+        alt="The screenshot the assistant took"
+        width={84}
+        height={52}
+      />
+      <span>Kept for this session only</span>
+    </div>
+  );
+}
+
 // One step. Click (or Enter) shows the details; "Try again" and the details arrow show
 // when the pointer or the keyboard is on the row; the right-click menu has both.
 export function StepRow({
@@ -242,6 +280,13 @@ export function StepRow({
         >
           Try again
         </Button>
+      )}
+      {step.part.name === 'screenshot_page' && step.state === 'done' && (
+        <StepThumbnail
+          chatId={chatId}
+          messageId={messageId}
+          partId={step.part.id}
+        />
       )}
       {open && <StepDetails step={step} />}
     </div>

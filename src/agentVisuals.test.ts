@@ -46,7 +46,23 @@ test('settings fall back to the defaults, and odd values are ignored', () => {
   assert.deepEqual(parseAgentVisualSettings('x'), defaultAgentVisualSettings());
   assert.deepEqual(
     parseAgentVisualSettings({ showWork: 'glow', keepFinished: false }),
-    { version: 1, showWork: 'glow', keepFinished: false, showCursor: true },
+    {
+      version: 1,
+      showWork: 'glow',
+      keepFinished: false,
+      showCursor: true,
+      showThumbnails: true,
+    },
+  );
+  // Thumbnails of screenshots are on unless switched off, and an odd value changes nothing.
+  assert.equal(parseAgentVisualSettings({}).showThumbnails, true);
+  assert.equal(
+    parseAgentVisualSettings({ showThumbnails: false }).showThumbnails,
+    false,
+  );
+  assert.equal(
+    parseAgentVisualSettings({ showThumbnails: 'no' }).showThumbnails,
+    true,
   );
   assert.equal(
     parseAgentVisualSettings({ showCursor: false }).showCursor,

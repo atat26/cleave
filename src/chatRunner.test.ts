@@ -9,7 +9,7 @@ import {
   MAX_TOOL_ROUNDS,
   NO_MORE_TOOLS_NOTE,
 } from './chatRunner.ts';
-import type { RunContext } from './chatRunner.ts';
+import type { RunContext, RunnerDeps } from './chatRunner.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
 import { ChatError } from './openrouter.ts';
@@ -39,7 +39,7 @@ type StreamFn = (options: {
 }) => AsyncIterable<StreamEvent>;
 
 // A runner wired to an in-memory chat state and a fake model.
-function setup(stream: StreamFn) {
+function setup(stream: StreamFn, extra: Partial<RunnerDeps> = {}) {
   let state: ChatsState = chats.defaultChats(NOW);
   const calls: {
     model: string;
@@ -79,6 +79,7 @@ function setup(stream: StreamFn) {
     now: () => NOW,
     onMessage: (chatId, messageId) => changes.push(`m${chatId}:${messageId}`),
     onRunningChange: () => changes.push('running'),
+    ...extra,
   });
   return {
     runner,
@@ -599,6 +600,40 @@ test('a page that was cut gets a note from the app after the answer, unless the 
   assert.ok(startedC.ok);
   await startedC.done;
   assert.equal(c.chat.messages[1].content, 'Short page.');
+});
+
+test('a picture a step took is handed on for the step row, with the step it belongs to, and is never saved in the chat', async () => {
+  const picture = { label: 'Pricing', mime: 'image/jpeg', data: 'QUJD' };
+  const { tools } = fakeTools(async () => ({
+    label: 'Looked at the page',
+    ok: true,
+    note: 'Took a screenshot.',
+    result: 'A screenshot follows.',
+    images: [picture],
+  }));
+  const seen: unknown[] = [];
+  const t = setup(
+    scripted([call('c1', 3)], [text('It shows a pricing table.')]),
+    {
+      onPicture: (chatId, messageId, partId, image) =>
+        seen.push([chatId, messageId, partId, image]),
+    },
+  );
+  const started = t.runner.send(t.chatId, 'Show me', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  const reply = t.chat.messages[1];
+  const step = toolParts(reply)[0];
+  assert.deepEqual(seen, [
+    [
+      t.chatId,
+      reply.id,
+      step.id,
+      { mime: 'image/jpeg', data: 'QUJD', label: 'Pricing' },
+    ],
+  ]);
+  // The picture itself is not in the saved chat.
+  assert.ok(!JSON.stringify(t.chat).includes('QUJD'));
 });
 
 test('a chat without tools sends none and never loops', async () => {

@@ -805,6 +805,11 @@ export interface BrowserApi {
   onOverlayDismissed: (callback: (messageId: number) => void) => () => void;
   // The pill's hover list is open (true) or closed: the strip grows to hold it.
   overlayPeek: (on: boolean) => void;
+  chatThumbnail: (
+    chatId: number,
+    messageId: number,
+    partId: number,
+  ) => Promise<string | null>;
   overlayStop: () => void;
   overlayContinue: () => void;
   overlayOpenMade: () => void;

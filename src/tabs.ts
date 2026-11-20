@@ -174,6 +174,11 @@ import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
 import { parseQuickChoice, quickSearchItems } from './quickSearch';
 import { CONTINUE_TEXT, madeOf, retryRequest, stepState } from './runModel';
+import {
+  createThumbnailStore,
+  THUMBNAIL_WIDTH,
+  thumbnailKey,
+} from './thumbnails';
 import { parseTabSearchChoice, tabSearchItems } from './tabSearch';
 import {
   clearHiddenPickUp,
@@ -862,6 +867,8 @@ export async function createTabs(
   const minimizedCards = new Set<string>();
   let focusedCardKey: string | null = null;
   // The reply the overlay follows, and the replies whose pill you dismissed.
+  // Small pictures of the screenshots taken this session, for the step rows (never saved).
+  const thumbnails = createThumbnailStore();
   let overlayReply: { chatId: number; message: chatsModel.ChatMessage } | null =
     null;
   const dismissedReplies = new Set<number>();
@@ -3902,6 +3909,26 @@ export async function createTabs(
       chatsSaver.schedule();
     },
     onMeta: sendState,
+    // A screenshot the assistant took: keep a small copy, in memory only, for the step row.
+    onPicture: (chatId, messageId, partId, picture) => {
+      if (!agentVisualSettings.showThumbnails) return;
+      try {
+        const image = nativeImage.createFromBuffer(
+          Buffer.from(picture.data, 'base64'),
+        );
+        if (image.isEmpty()) return;
+        const small =
+          image.getSize().width > THUMBNAIL_WIDTH
+            ? image.resize({ width: THUMBNAIL_WIDTH })
+            : image;
+        thumbnails.set(
+          thumbnailKey(chatId, messageId, partId),
+          'data:image/jpeg;base64,' + small.toJPEG(70).toString('base64'),
+        );
+      } catch {
+        // A thumbnail is only a picture for the row: never a reason to stop a reply.
+      }
+    },
     onStepTarget: (_chatId, messageId, partId, target) => {
       stepTargets.set(stepKey(messageId, partId), target);
       // Measure it now (the element scrolls into view), so the ring is there while it
@@ -8121,6 +8148,16 @@ ${artifact.content.slice(0, 1500)}`;
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return agentVisualSettings;
   });
+  // The small picture of a screenshot, for its step row (null: none, or switched off).
+  ipcMain.handle(
+    'chat:thumbnail',
+    (event, chatId: unknown, messageId: unknown, partId: unknown) => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (!agentVisualSettings.showThumbnails) return null;
+      if (!isId(chatId) || !isId(messageId) || !isId(partId)) return null;
+      return thumbnails.get(thumbnailKey(chatId, messageId, partId));
+    },
+  );
   ipcMain.handle('agent-visuals:set', (event, changes: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     agentVisualSettings = parseAgentVisualSettings({
@@ -8301,6 +8338,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('overlay:minimize', onOverlayMinimize);
     ipcMain.removeListener('overlay:go-to-tab', onOverlayGoToTab);
     ipcMain.removeHandler('agent-visuals:get');
+    ipcMain.removeHandler('chat:thumbnail');
     ipcMain.removeHandler('agent-visuals:set');
     ipcMain.removeHandler('quick:query');
     ipcMain.removeHandler('tools:preset');
