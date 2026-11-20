@@ -393,11 +393,22 @@ async function runOnce(app, scenario, model) {
     }
     // Scenario 13: ask the app to name the chat with AI, as the "name it with AI" button does (an
     // automatic naming of the first message may be running; it is waited out).
-    if (scenario.naming) {
+    // (Scenarios 28 and 29 do the same for a Space and for a document, with nameSpace / nameArtifact.)
+    if (
+      scenario.naming ||
+      scenario.nameSpace !== undefined ||
+      scenario.nameArtifact !== undefined
+    ) {
+      const [kind, id] =
+        scenario.nameSpace !== undefined
+          ? ['space', spaceIds[scenario.nameSpace]]
+          : scenario.nameArtifact !== undefined
+            ? ['artifact', artifactIds[scenario.nameArtifact]]
+            : ['chat', created.chat];
       for (let i = 0; i < 8; i++) {
         result.naming = JSON.parse(
           await app.ev(
-            `window.browserApi.nameWithAi('chat', ${created.chat}).then((r) => JSON.stringify(r))`,
+            `window.browserApi.nameWithAi('${kind}', ${id}).then((r) => JSON.stringify(r))`,
           ),
         );
         if (
@@ -406,6 +417,14 @@ async function runOnce(app, scenario, model) {
         )
           break;
         await sleep(1500);
+      }
+      // The AI name replaced the test name, and the cleanup finds a test Space by that name: put it
+      // back, or the Space would be left behind.
+      if (kind === 'space') {
+        await app.ev(
+          `window.browserApi.renameSpace(${id}, 'Test Space (named)'); 0`,
+        );
+        await sleep(400);
       }
     }
     // What the run left behind, read before it is cleaned away (for the checks).

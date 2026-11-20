@@ -5,6 +5,7 @@
 // automatic checks are only part of the score: the transcript is read too (see docs/pipeline).
 import { BASE, FACTS } from './fixtures.mjs';
 import { MAKE_SCENARIOS } from './scenarios-make.mjs';
+import { LONG_SCENARIOS } from './scenarios-long.mjs';
 
 const ACTION_TOOLS = [
   'click',
@@ -694,6 +695,7 @@ SCENARIOS.push({
 
 // The scenarios for making and editing Spaces, documents and skills are in scenarios-make.mjs.
 SCENARIOS.push(...MAKE_SCENARIOS);
+SCENARIOS.push(...LONG_SCENARIOS);
 
 // Scenarios still to be written (see docs/pipeline/scenarios.md): they need more setup.
 export const TODO = {};

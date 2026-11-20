@@ -815,3 +815,46 @@ test('a user message with a picture is sent as text and an image address', () =>
     content: 'hi',
   });
 });
+
+test('a limit on the reply goes in the request as max_tokens, and is left out when there is none', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const fetchImpl: FetchLike = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return streamResponse([chunk('hi'), 'data: [DONE]\n\n']);
+  };
+  await collect(
+    streamChat({
+      apiKey: KEY,
+      model: 'm',
+      messages: [{ role: 'user', content: 'Hi' }],
+      maxTokens: 16000,
+      fetchImpl,
+    }),
+  );
+  await collect(
+    streamChat({
+      apiKey: KEY,
+      model: 'm',
+      messages: [{ role: 'user', content: 'Hi' }],
+      fetchImpl,
+    }),
+  );
+  assert.equal(bodies[0].max_tokens, 16000);
+  assert.equal('max_tokens' in bodies[1], false);
+});
+
+test('a reply that ends because of the limit is reported as such', async () => {
+  const fetchImpl: FetchLike = async () =>
+    streamResponse([
+      chunk('A very long answer'),
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ]);
+  const events = await collect(
+    streamChat({ apiKey: KEY, model: 'm', messages: [], fetchImpl }),
+  );
+  assert.deepEqual(
+    events.filter((e) => e.type === 'finish'),
+    [{ type: 'finish', reason: 'length' }],
+  );
+});

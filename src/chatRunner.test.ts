@@ -4,6 +4,7 @@ import { DEFAULT_SYSTEM_PROMPT } from './chatContext.ts';
 import {
   createChatRunner,
   MAX_FAILURES_PER_TOOL,
+  MAX_REPLY_TOKENS,
   MAX_REFUSALS_PER_TOOL,
   MAX_STUCK_ROUNDS,
   MAX_TOOL_ROUNDS,
@@ -35,6 +36,7 @@ type StreamFn = (options: {
   model: string;
   messages: ChatMessageInput[];
   tools?: ToolDefinition[];
+  maxTokens?: number;
   signal: AbortSignal;
 }) => AsyncIterable<StreamEvent>;
 
@@ -1146,4 +1148,31 @@ test('a failure caused by you closing the tab is not counted against the tool', 
   await started.done;
   assert.equal(runs.length, 4);
   assert.notEqual(t.calls[4].tools, undefined);
+});
+
+test('every request carries the limit on the reply, and a reply that reaches it says so', async () => {
+  const sizes: (number | undefined)[] = [];
+  const stream: StreamFn = async function* (options) {
+    sizes.push(options.maxTokens);
+    yield text('A very long essay about');
+    yield { type: 'finish', reason: 'length' };
+  };
+  const t = setup(stream);
+  const started = t.runner.send(t.chatId, 'Write an essay', CONTEXT);
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(sizes, [MAX_REPLY_TOKENS]);
+  const reply = t.chat.messages[1];
+  assert.equal(reply.status, 'done');
+  assert.match(
+    reply.content,
+    /^A very long essay about\n\n_Note from the app: this reply was cut off/,
+  );
+
+  // A reply that ends on its own gets no note.
+  const calm = setup(sends(text('Short.'), { type: 'finish', reason: 'stop' }));
+  const done = calm.runner.send(calm.chatId, 'Hi', CONTEXT);
+  assert.ok(done.ok);
+  await done.done;
+  assert.equal(calm.chat.messages[1].content, 'Short.');
 });

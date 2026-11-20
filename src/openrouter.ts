@@ -379,6 +379,9 @@ interface StreamChatOptions {
   messages: ChatMessageInput[];
   // Tools the model may ask for (leave out for a plain chat).
   tools?: ToolDefinition[];
+  // The most the model may write in one reply (its words, its thinking and the text of its tool
+  // calls together). Leave out for no limit from us.
+  maxTokens?: number;
   signal?: AbortSignal;
   fetchImpl: FetchLike;
 }
@@ -386,7 +389,8 @@ interface StreamChatOptions {
 async function* streamChatRaw(
   options: StreamChatOptions,
 ): AsyncGenerator<StreamEvent> {
-  const { apiKey, model, messages, tools, signal, fetchImpl } = options;
+  const { apiKey, model, messages, tools, maxTokens, signal, fetchImpl } =
+    options;
 
   let response: Response;
   try {
@@ -397,6 +401,7 @@ async function* streamChatRaw(
         model,
         messages: messages.map(toApiMessage),
         stream: true,
+        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
         ...(tools && tools.length > 0
           ? {
               tools: tools.map((tool) => ({

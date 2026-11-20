@@ -407,3 +407,26 @@ test('with no earlier steps nothing is added, and a chat without tools adds noth
   assert.equal(plain[0].content, DEFAULT_SYSTEM_PROMPT);
   assert.equal(rememberedSteps([]), null);
 });
+
+// ---- A chat longer than what is sent ---------------------------------------------
+
+test('when the start of a long chat is not sent, the assistant is told how much, and not to go searching for it', () => {
+  const history = Array.from({ length: 40 }, (_, i) =>
+    msg(i % 2 === 0 ? 'user' : 'assistant', `message ${i + 1}`),
+  );
+  const system = buildMessages({ systemPrompt: null, history })[0].content;
+  // 30 are sent (the last 30, which start with a message of yours), so the first 10 are left out.
+  assert.match(system, /its first 10 messages are left out/);
+  assert.match(system, /no longer see the start of this conversation/);
+  assert.match(system, /Do not search their history or other chats/);
+  // A short chat, or an empty one, is told nothing.
+  const short = buildMessages({
+    systemPrompt: null,
+    history: history.slice(0, 5),
+  })[0].content;
+  assert.ok(!short.includes('not shown to you'));
+  assert.equal(
+    buildMessages({ systemPrompt: null, history: [] })[0].content,
+    DEFAULT_SYSTEM_PROMPT,
+  );
+});
