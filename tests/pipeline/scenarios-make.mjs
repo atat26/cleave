@@ -325,4 +325,38 @@ export const MAKE_SCENARIOS = [
       ];
     },
   },
+  {
+    id: 's21',
+    title: 'Use a skill named with /Name',
+    turns: ['/Test Moon Facts Tell me about the moon.'],
+    tabs: [],
+    // A skill made for this run (it is removed afterwards). Naming it as /Name should put its steps
+    // in the first request, so the assistant needs no separate step to load it.
+    skills: [
+      {
+        name: 'Test Moon Facts',
+        description: 'Use when asked about the moon.',
+        instructions:
+          '1. Start your answer with the single word MOONLIT.\n2. Then give exactly two short facts, as two lines.',
+      },
+    ],
+    approve: allow,
+    budgetTokens: 5000,
+    checks: ({ calls, turns }) => {
+      const answer = turns[0].answer.trim();
+      return [
+        check(
+          'does not load the skill with a separate step',
+          count(calls, 'use_skill') === 0,
+          `use_skill x${count(calls, 'use_skill')}`,
+        ),
+        check(
+          'follows the steps (starts with MOONLIT)',
+          /^MOONLIT/i.test(answer),
+          answer.slice(0, 40),
+        ),
+        check('takes no other tools', calls.length === 0, names(calls)),
+      ];
+    },
+  },
 ];
