@@ -53,3 +53,7 @@ npm.cmd run check      # typecheck, lint and format check, unit tests
 A copy started with `npm start` keeps its data in `%APPDATA%\ai-browser`; the installed app keeps its own in `%APPDATA%\Cleave`, so the two never mix and can run side by side.
 
 **Making a release.** Raise `version` in `package.json`, merge it to `main`, then from an up-to-date `main` run `npm.cmd run release:github` (add `-- -DryRun` to build without publishing). It runs the checks, builds the installer, and publishes it with checksums to GitHub Releases.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
