@@ -7,6 +7,7 @@
 // changed through them). Pure code with no Electron, so it is easy to test.
 import type { SpaceRow, TabChange, TabRow, TabsEnv } from './tabTools.ts';
 import type { RecallEnv } from './recallTools.ts';
+import { looseSearch } from './looseSearch.ts';
 
 export const TEST_ORIGIN = 'http://127.0.0.1:5290/';
 export const TEST_SPACE_PREFIX = 'Test Space';
@@ -124,14 +125,25 @@ export function scopedRecall(
   const at = (daysAgo: number) => store.now() - daysAgo * DAY;
   return {
     now: store.now,
-    searchHistory: (query, limit) =>
-      FAKE_HISTORY.filter((p) => matches(query, p.title, p.url))
-        .slice(0, limit)
-        .map((p) => ({ title: p.title, url: p.url, at: at(p.daysAgo) })),
-    searchBookmarks: (query, limit) =>
-      FAKE_BOOKMARKS.filter((p) => matches(query, p.title, p.url))
-        .slice(0, limit)
-        .map((p) => ({ title: p.title, url: p.url, at: at(p.daysAgo) })),
+    // The same forgiving search as the real one (looseSearch.ts), over the made-up pages.
+    searchHistory: (query, limit, since) =>
+      looseSearch(
+        FAKE_HISTORY.map((p) => ({ ...p, at: at(p.daysAgo) })),
+        query,
+        (p) => `${p.title} ${p.url}`,
+        (p) => p.at,
+        limit,
+        since,
+      ).map((p) => ({ title: p.title, url: p.url, at: p.at })),
+    searchBookmarks: (query, limit, since) =>
+      looseSearch(
+        FAKE_BOOKMARKS.map((p) => ({ ...p, at: at(p.daysAgo) })),
+        query,
+        (p) => `${p.title} ${p.url}`,
+        (p) => p.at,
+        limit,
+        since,
+      ).map((p) => ({ title: p.title, url: p.url, at: p.at })),
     searchChats: (query, limit) =>
       matches(query, FAKE_CHAT.title, ...FAKE_CHAT.messages.map((m) => m.text))
         ? [

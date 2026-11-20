@@ -13,6 +13,7 @@ import {
   removeVisit,
   SAME_VISIT_MS,
   searchHistory,
+  searchHistoryLoose,
   setVisitTitle,
 } from './history.ts';
 
@@ -251,4 +252,47 @@ test('the number of days kept can be chosen', () => {
   assert.equal(pruneHistory(state, NOW + 6 * DAY, 7).entries.length, 1);
   assert.equal(parseHistory(state, NOW + 30 * DAY, 90).entries.length, 2);
   assert.equal(parseHistory(state, NOW + 30 * DAY, 7).entries.length, 0);
+});
+
+test("the assistant's search is forgiving and can be limited to a time; your own search stays strict", () => {
+  let state = defaultHistory();
+  state = addVisit(
+    state,
+    'https://docs.example/models',
+    'Models overview',
+    NOW,
+  );
+  state = addVisit(
+    state,
+    'https://shop.example/gpu',
+    'Graphics cards',
+    NOW + HOUR,
+  );
+  state = addVisit(
+    state,
+    'https://shop.example/tablet',
+    'Graphics tablet',
+    NOW + 2 * HOUR,
+  );
+  // Your own search: every word must be there.
+  assert.equal(searchHistory(state, 'what graphics cards last week').length, 0);
+  // The assistant's: the words about the question are left out, so the page is found.
+  assert.deepEqual(
+    searchHistoryLoose(state, 'what graphics cards last week').map(
+      (e) => e.title,
+    ),
+    ['Graphics cards'],
+  );
+  // One word finds both, newest first; a start time leaves out older visits.
+  assert.deepEqual(
+    searchHistoryLoose(state, 'graphics').map((e) => e.title),
+    ['Graphics tablet', 'Graphics cards'],
+  );
+  assert.deepEqual(
+    searchHistoryLoose(state, 'graphics', 10, NOW + 2 * HOUR).map(
+      (e) => e.title,
+    ),
+    ['Graphics tablet'],
+  );
+  assert.equal(searchHistoryLoose(state, '', 2).length, 2);
 });

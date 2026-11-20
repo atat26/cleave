@@ -4,6 +4,7 @@ import {
   cleanText,
   createRecallTools,
   MAX_CHAT_CHARS,
+  MAX_DAYS,
   MAX_RECALLS,
   MAX_RESULTS,
   pageLine,
@@ -366,4 +367,57 @@ test('the definitions offer an optional list of searches, and chats no longer re
     assert.ok('queries' in properties, name);
     assert.equal('required' in definition.parameters, false, name);
   }
+});
+
+test('days limits a search to the last so many days, is shown on the card, is capped, and an odd value is ignored', async () => {
+  const since: (number | undefined)[] = [];
+  const base = world();
+  const env = {
+    ...base.env,
+    searchHistory: (q: string, l: number, s?: number) => {
+      since.push(s);
+      return base.env.searchHistory(q, l, s);
+    },
+  };
+  const tools = createRecallTools(env, () => 'always');
+  await tools.run(call('search_history', { query: 'goldfish', days: 7 }));
+  await tools.run(call('search_history', { query: 'goldfish', days: 9999 }));
+  await tools.run(call('search_history', { query: 'goldfish', days: 'week' }));
+  await tools.run(call('search_history', { query: 'goldfish', days: 0 }));
+  await tools.run(call('search_history', { queries: ['a', 'b'], days: 2 }));
+  assert.deepEqual(since, [
+    NOW - 7 * DAY,
+    NOW - MAX_DAYS * DAY,
+    undefined,
+    undefined,
+    NOW - 2 * DAY,
+    NOW - 2 * DAY,
+  ]);
+  const ask = world(() => 'ask').tools;
+  const card = ask.plan(call('search_history', { query: 'goldfish', days: 7 }));
+  assert.ok(card.kind === 'ask');
+  assert.equal(
+    card.text,
+    'Search your browsing history for "goldfish" from the last 7 days',
+  );
+  const one = ask.plan(call('search_history', { days: 1 }));
+  assert.ok(one.kind === 'ask');
+  assert.equal(
+    one.text,
+    'Look at your most recent browsing history from the last 1 day',
+  );
+});
+
+test('the history and bookmark tools say the match is forgiving and offer days; chats do not take days', async () => {
+  const { RECALL_DEFINITIONS } = await import('./recallTools.ts');
+  const get = (name: string) =>
+    RECALL_DEFINITIONS.find((d) => d.name === name)!;
+  const props = (name: string) =>
+    (get(name).parameters as { properties: Record<string, unknown> })
+      .properties;
+  assert.ok('days' in props('search_history'));
+  assert.ok('days' in props('search_bookmarks'));
+  assert.equal('days' in props('search_chats'), false);
+  assert.match(get('search_history').description, /most of the words/);
+  assert.match(get('search_history').description, /use days/);
 });

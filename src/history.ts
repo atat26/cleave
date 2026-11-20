@@ -1,3 +1,4 @@
+import { looseSearch } from './looseSearch.ts';
 // Browsing history: the pages you have visited, newest last, saved to history.json.
 // Pure data and functions with no Electron, so it is easy to test.
 //
@@ -185,6 +186,25 @@ export function searchHistory(
     if (words.every((word) => text.includes(word))) found.push(entry);
   }
   return found;
+}
+
+// The same, for the assistant: a forgiving search (see looseSearch.ts) that finds a page when most of
+// the words are in it, best first, and can be limited to visits since a time. Your own search above
+// stays strict.
+export function searchHistoryLoose(
+  state: HistoryState,
+  query: string,
+  limit = 200,
+  since?: number,
+): HistoryEntry[] {
+  return looseSearch(
+    state.entries,
+    query,
+    (entry) => `${entry.title} ${entry.url}`,
+    (entry) => entry.visitedAt,
+    limit,
+    since,
+  );
 }
 
 export function removeVisit(state: HistoryState, id: number): HistoryState {
