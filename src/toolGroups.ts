@@ -13,7 +13,8 @@ export type ToolGroup =
   | 'docs'
   | 'skills'
   | 'memory'
-  | 'pictures';
+  | 'pictures'
+  | 'plan';
 
 export const GROUPS: readonly ToolGroup[] = [
   'web',
@@ -23,6 +24,7 @@ export const GROUPS: readonly ToolGroup[] = [
   'skills',
   'memory',
   'pictures',
+  'plan',
 ];
 
 // What each group is, in the owner's words (also what the assistant is told).
@@ -34,6 +36,7 @@ export const GROUP_HELP: Record<ToolGroup, string> = {
   skills: 'make or change skills',
   memory: "search the owner's history, bookmarks and past chats",
   pictures: 'take a screenshot of a page',
+  plan: 'state the steps of a task with about four or more separate pieces for the user to approve, before you start it',
 };
 
 // The group of every tool that is not in the core. Anything not listed is in the core (always sent).
@@ -71,6 +74,7 @@ const GROUP_OF: Record<string, ToolGroup> = {
   search_chats: 'memory',
   read_chat: 'memory',
   screenshot_page: 'pictures',
+  set_plan: 'plan',
 };
 
 // The tool for asking for another group.
@@ -94,6 +98,8 @@ const HINTS: Record<ToolGroup, RegExp> = {
     /\b(history|visited|earlier|before|last (week|month|time)|yesterday|remember|bookmarks?|chats?|conversation|previous|used to|that page|read about)\b/i,
   pictures:
     /\b(screenshots?|pictures?|images?|photos?|charts?|graphs?|diagrams?|plots?|infographics?|illustrations?|looks? like|appearance|layout|design|colou?rs?)\b/i,
+  // A request in several parts. (A longer task that does not say so can still ask for the group.)
+  plan: /\b(then|afterwards?|after that|finally|one by one|step by step)\b|^\s*\d+[.)]\s.*\n\s*\d+[.)]\s/ims,
 };
 
 // The groups a message points to.

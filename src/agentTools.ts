@@ -75,6 +75,12 @@ import {
 } from './skillTools.ts';
 import type { SkillsEnv } from './skillTools.ts';
 import {
+  createEarlierTools,
+  EARLIER_DEFINITION,
+  EARLIER_TOOL,
+} from './earlierTools.ts';
+import type { EarlierEnv } from './earlierTools.ts';
+import {
   PLAN_DEFINITION,
   SET_PLAN,
   createTaskPlanTools,
@@ -184,6 +190,7 @@ export interface AgentEnv
     EyesEnv,
     TabsEnv,
     RecallEnv,
+    EarlierEnv,
     SaveEnv,
     SkillsEnv {
   // Reading a page by its address in a hidden, private window (see linkReader.ts).
@@ -653,6 +660,7 @@ export function createAgentTools(
   const saveTools = createSaveTools(env, levelOf);
   const skillTools = createSkillTools(env, levelOf, () => readWebContent());
   const taskPlan = createTaskPlanTools(levelOf);
+  const earlier = createEarlierTools(env, levelOf);
 
   // Has the assistant read web content in this reply (a page, a link, a page's
   // controls or search results)? Pages are written by strangers, so after that
@@ -664,6 +672,7 @@ export function createAgentTools(
     eyes.used() > 0 ||
     tabTools.used() > 0 ||
     recall.used() > 0 ||
+    earlier.used() > 0 ||
     saveTools.used() > 0;
 
   const plan = (call: ToolCall): Plan => {
@@ -699,6 +708,7 @@ export function createAgentTools(
     if (isSaveTool(call.name)) return saveTools.plan(call);
     if (isSkillTool(call.name)) return skillTools.plan(call);
     if (call.name === SET_PLAN) return taskPlan.plan(call);
+    if (call.name === EARLIER_TOOL) return earlier.plan(call);
     const own: Plan = isActionName(call.name)
       ? planAction(call, actionContext)
       : call.name === 'web_search'
@@ -1083,6 +1093,7 @@ export function createAgentTools(
     if (isSaveTool(call.name)) return saveTools.describe(call);
     if (isSkillTool(call.name)) return skillTools.describe(call);
     if (call.name === SET_PLAN) return taskPlan.describe(call);
+    if (call.name === EARLIER_TOOL) return earlier.describe(call);
     if (call.name === 'read_pages') {
       const count = tabNumbers(call).length;
       return count === 1 ? 'Reading a page' : `Reading ${count} pages`;
@@ -1174,6 +1185,7 @@ export function createAgentTools(
     if (isSaveTool(call.name)) return saveTools.run(call, signal);
     if (isSkillTool(call.name)) return skillTools.run(call);
     if (call.name === SET_PLAN) return taskPlan.run(call);
+    if (call.name === EARLIER_TOOL) return earlier.run(call);
     if (isActionName(call.name)) return runAction(call, signal);
     if (call.name === 'web_search') return runSearch(call, signal);
     if (call.name === 'read_link') return runReadLink(call, signal);
@@ -1364,6 +1376,7 @@ export function createAgentTools(
     ...ACTION_DEFINITIONS,
     ...ARTIFACT_DEFINITIONS,
     ...(planningEnabled() ? [PLAN_DEFINITION] : []),
+    EARLIER_DEFINITION,
   ].filter((definition) => levelOf(definition.name) !== 'never');
 
   // Tools whose limit for this reply is used up. Telling the model in words was not enough (it kept
@@ -1419,7 +1432,10 @@ export function createAgentTools(
 
   return {
     get definitions() {
-      const sent = definitionsFor(offered, open, everything);
+      // The look-back tool is only there while something is left out of this chat.
+      const sent = definitionsFor(offered, open, everything).filter(
+        (definition) => definition.name !== EARLIER_TOOL || earlier.available(),
+      );
       const gone = spent();
       return gone.size === 0
         ? sent

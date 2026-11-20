@@ -51,7 +51,7 @@ import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
 import { scopedRecall, scopedTabs, testScope } from './testScope';
 import { groupsForMessage, groupsUsed } from './toolGroups';
-import { HOW_TO_WORK, HOW_TO_WORK_NO_PLAN } from './chatContext';
+import { howToWork, unsentMessages } from './chatContext';
 import { planningEnabled } from './taskPlan';
 import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
@@ -461,6 +461,15 @@ export function createChatService(options: {
             bookmarkPage: options.saveStore.bookmarkPage,
             checkPreview: options.saveStore.checkPreview,
             currentChatId: () => chatId,
+            // What is left out of what is sent in this chat (see chatContext.ts).
+            unsentMessages: () =>
+              unsentMessages(
+                chats.findConversation(options.getChats(), chatId)?.messages ??
+                  [],
+              ).map((message) => ({
+                role: message.role,
+                text: message.content,
+              })),
             now: recallStore.now,
             searchHistory: recallStore.searchHistory,
             searchBookmarks: recallStore.searchBookmarks,
@@ -515,10 +524,11 @@ export function createChatService(options: {
         systemPrompt: settings.systemPrompt,
         // The rules are about using tools, so a model without tools does not get them.
         rules: canRead
-          ? planningEnabled()
-            ? HOW_TO_WORK
-            : HOW_TO_WORK_NO_PLAN
+          ? howToWork(planningEnabled() && open.has('plan'))
           : null,
+        // The assistant can look up the start of a long chat when it was left out.
+        canLookUpStart:
+          canRead && options.toolLevel('earlier_in_this_chat') !== 'never',
         linked: buildLinkedContext(refs, workspace, canRead),
         // Skills are listed only when the model can use tools (it needs use_skill).
         // A skill you name as "/Name" has its steps put in right here, so it costs no extra step.

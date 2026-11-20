@@ -78,6 +78,11 @@ test('the scenario requests point to the groups they need', () => {
     ],
     ['What does the diagram on this page show?', ['pictures']],
     ['Search the web for the best trail shoes', ['web']],
+    [
+      'Read my four pages, then make a Space and move the tabs into it.',
+      ['plan'],
+    ],
+    ['1. Read the pages\n2. Write a summary\n3. Save it', ['plan']],
   ];
   for (const [text, expected] of cases) {
     for (const group of expected) {
@@ -95,6 +100,12 @@ test('the scenario requests point to the groups they need', () => {
     [],
   );
   assert.deepEqual(groups('What does the Pro plan cost per month?'), []);
+  // A short task with no sequence does not open planning.
+  assert.ok(
+    !groups(
+      'Read my two open pages and tell me which is about cooking.',
+    ).includes('plan'),
+  );
 });
 
 test('tools are in groups, and the core is everything else', () => {
@@ -103,6 +114,7 @@ test('tools are in groups, and the core is everything else', () => {
   assert.equal(groupOf('type_text'), 'act');
   assert.equal(groupOf('create_space'), 'tabs');
   assert.equal(groupOf('create_skill'), 'skills');
+  assert.equal(groupOf('set_plan'), 'plan');
   assert.equal(groupOf('nonsense'), null);
   assert.equal(isGroup('docs'), true);
   assert.equal(isGroup('everything'), false);
@@ -148,5 +160,12 @@ test('the more-tools tool lists only the groups that are closed', () => {
   const enumValues = (
     tool.parameters as { properties: { group: { enum: string[] } } }
   ).properties.group.enum;
-  assert.deepEqual(enumValues, ['web', 'docs', 'skills', 'memory', 'pictures']);
+  assert.deepEqual(enumValues, [
+    'web',
+    'docs',
+    'skills',
+    'memory',
+    'pictures',
+    'plan',
+  ]);
 });

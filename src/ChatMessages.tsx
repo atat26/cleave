@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
@@ -9,6 +9,7 @@ import { Markdown } from './MarkdownView';
 import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
+import { firstSentIndex } from './chatContext';
 import { blocksOf, stepView } from './runModel';
 import {
   ApprovalCard,
@@ -764,6 +765,8 @@ export function MessageList({
   }, [messages, chatId]);
 
   const lastId = messages[messages.length - 1]?.id;
+  // Where what is sent to the assistant begins (a long chat leaves its first messages out).
+  const cutAt = firstSentIndex(messages);
   const newestUserId = [...messages]
     .reverse()
     .find((m) => m.role === 'user')?.id;
@@ -787,19 +790,25 @@ export function MessageList({
           Ask anything. Your chat is saved on this computer.
         </p>
       )}
-      {messages.map((m) => (
-        <MessageView
-          key={m.id}
-          message={m}
-          isLast={m.id === lastId}
-          isNewestUser={m.id === newestUserId}
-          busy={generating}
-          chatId={chatId}
-          tabs={tabs}
-          spaces={spaces}
-          artifacts={artifacts}
-          poppedOut={poppedOut}
-        />
+      {messages.map((m, i) => (
+        <Fragment key={m.id}>
+          {i === cutAt && (
+            <div className="chat-cut" role="note">
+              Messages above are no longer sent to the assistant
+            </div>
+          )}
+          <MessageView
+            message={m}
+            isLast={m.id === lastId}
+            isNewestUser={m.id === newestUserId}
+            busy={generating}
+            chatId={chatId}
+            tabs={tabs}
+            spaces={spaces}
+            artifacts={artifacts}
+            poppedOut={poppedOut}
+          />
+        </Fragment>
       ))}
     </div>
   );

@@ -4,10 +4,12 @@ import {
   buildMessages,
   DEFAULT_SYSTEM_PROMPT,
   effectiveSystemPrompt,
+  firstSentIndex,
   HOW_TO_WORK,
-  HOW_TO_WORK_NO_PLAN,
+  howToWork,
   MAX_REMEMBERED_STEPS,
   rememberedSteps,
+  unsentMessages,
 } from './chatContext.ts';
 
 type Role = 'user' | 'assistant';
@@ -289,16 +291,14 @@ test('the rules for working with tools follow the system prompt, before anything
   assert.match(HOW_TO_WORK, /Never say you did something you did not do/);
 });
 
-test('the rules ask for a plan only for a long task, and can be had without planning', () => {
-  assert.match(HOW_TO_WORK, /set_plan/);
-  assert.match(HOW_TO_WORK, /four or more separate pieces/);
-  assert.match(HOW_TO_WORK, /never a single tool call/);
-  assert.match(HOW_TO_WORK, /question, a single action or a short task/);
-  assert.equal(HOW_TO_WORK_NO_PLAN.includes('set_plan'), false);
-  assert.match(
-    HOW_TO_WORK_NO_PLAN,
-    /Never say you did something you did not do/,
-  );
+test('planning is not in the rules sent with every request; it is added only when the plan tool is sent', () => {
+  assert.equal(HOW_TO_WORK.includes('set_plan'), false);
+  assert.equal(howToWork(false), HOW_TO_WORK);
+  const withPlan = howToWork(true);
+  assert.match(withPlan, /set_plan/);
+  assert.match(withPlan, /four or more separate pieces/);
+  assert.match(withPlan, /never a single tool call/);
+  assert.match(withPlan, /Never say you did something you did not do/);
 });
 
 // ---- Remembering what was done ---------------------------------------------------
@@ -442,4 +442,53 @@ test('when the start of a long chat is not sent, the assistant is told how much,
     buildMessages({ systemPrompt: null, history: [] })[0].content,
     DEFAULT_SYSTEM_PROMPT,
   );
+});
+
+// ---- What is left out ---------------------------------------------------------------
+
+const many = (n: number): { role: Role; content: string; status: 'done' }[] =>
+  Array.from({ length: n }, (_, i) => ({
+    role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+    content: `message ${i + 1}`,
+    status: 'done' as const,
+  }));
+
+test('a short chat leaves nothing out; a long one leaves out its oldest messages, and what is sent starts with the user', () => {
+  assert.deepEqual(unsentMessages(many(10)), []);
+  assert.equal(firstSentIndex(many(10)), null);
+  const long = many(40);
+  const left = unsentMessages(long);
+  assert.equal(left.length > 0, true);
+  assert.equal(left[0].content, 'message 1');
+  const first = firstSentIndex(long)!;
+  assert.equal(first, left.length);
+  assert.equal(long[first].role, 'user');
+  // The same as what buildMessages sends.
+  const sent = buildMessages({ systemPrompt: null, history: long });
+  assert.equal(sent.length - 1, long.length - left.length);
+});
+
+test('messages that are never sent (empty, failed) do not count as left out', () => {
+  const history = [
+    ...many(4),
+    { role: 'assistant' as const, content: '', status: 'done' as const },
+    { role: 'assistant' as const, content: 'half', status: 'error' as const },
+  ];
+  assert.deepEqual(unsentMessages(history), []);
+  assert.equal(firstSentIndex(history), null);
+});
+
+test('the note about the left-out messages points to the look-up tool only when there is one', () => {
+  const long = many(40);
+  const withTool = buildMessages({
+    systemPrompt: null,
+    history: long,
+    canLookUpStart: true,
+  })[0].content;
+  assert.match(withTool, /earlier_in_this_chat/);
+  assert.match(withTool, /Do not search their history or other chats/);
+  const without = buildMessages({ systemPrompt: null, history: long })[0]
+    .content;
+  assert.equal(without.includes('earlier_in_this_chat'), false);
+  assert.match(without, /ask them to say it again/);
 });
