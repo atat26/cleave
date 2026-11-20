@@ -110,7 +110,7 @@ export const SCENARIOS = [
         ),
         check(
           'says the page was cut short',
-          /cut|truncat|partial|first part|not the (whole|entire)|incomplete|beginning|rest of the page|part of the page/i.test(
+          /cut|truncat|partial|first part|not the (whole|entire)|incomplete|beginning|rest of the page|part of the page|note from the app/i.test(
             answer,
           ),
           '',
