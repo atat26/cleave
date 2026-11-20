@@ -206,6 +206,9 @@ export type StreamEvent =
       completionTokens: number | null;
       totalTokens: number | null;
       cost: number | null;
+      // How many of the prompt tokens the provider served from its cache (cheaper and quicker),
+      // when it says. Absent or null: not reported.
+      cachedTokens?: number | null;
     }
   | { type: 'finish'; reason: string | null }
   // The model asked for tools to be run (all the calls of this reply, complete).
@@ -323,6 +326,9 @@ export function interpretData(data: string): {
       completionTokens: num(json.usage.completion_tokens),
       totalTokens: num(json.usage.total_tokens),
       cost: num(json.usage.cost),
+      cachedTokens: isRecord(json.usage.prompt_tokens_details)
+        ? num(json.usage.prompt_tokens_details.cached_tokens)
+        : null,
     });
   }
   return { events, done: false, error: null };

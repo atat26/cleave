@@ -113,6 +113,7 @@ test('on: one entry per call, with usage, tool names and timing, and no content'
           completionTokens: 8,
           totalTokens: 128,
           cost: 0,
+          cachedTokens: 96,
         },
         { type: 'finish', reason: 'tool_calls' },
         {
@@ -133,6 +134,7 @@ test('on: one entry per call, with usage, tool names and timing, and no content'
   assert.deepEqual(entry.toolCalls, ['click']);
   assert.equal(entry.usage?.totalTokens, 128);
   assert.equal(entry.usage?.cost, 0);
+  assert.equal(entry.usage?.cachedTokens, 96);
   assert.equal(entry.finish, 'tool_calls');
   assert.equal(entry.error, null);
   assert.ok(entry.ms > 0 && entry.firstEventMs !== null);

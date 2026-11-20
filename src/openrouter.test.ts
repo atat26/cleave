@@ -117,6 +117,30 @@ test('text, finish and usage chunks are read; [DONE] ends the stream', () => {
       completionTokens: 7,
       totalTokens: 12,
       cost: 0.0001,
+      cachedTokens: null,
+    },
+  ]);
+
+  // When the provider says how much came from its cache, that is kept too.
+  const cached = interpretData(
+    JSON.stringify({
+      choices: [{ delta: { content: '' } }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 2,
+        total_tokens: 102,
+        prompt_tokens_details: { cached_tokens: 64 },
+      },
+    }),
+  );
+  assert.deepEqual(cached.events, [
+    {
+      type: 'usage',
+      promptTokens: 100,
+      completionTokens: 2,
+      totalTokens: 102,
+      cost: null,
+      cachedTokens: 64,
     },
   ]);
 

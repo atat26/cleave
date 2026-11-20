@@ -41,6 +41,8 @@ export interface TraceEntry extends RequestSummary {
     completionTokens: number | null;
     totalTokens: number | null;
     cost: number | null;
+    // Prompt tokens served from the provider's cache (null: not reported).
+    cachedTokens: number | null;
   } | null;
   finish: string | null;
   // "aborted", an error kind, or null.
@@ -164,6 +166,7 @@ export async function* traced(
           completionTokens: event.completionTokens,
           totalTokens: event.totalTokens,
           cost: event.cost,
+          cachedTokens: event.cachedTokens ?? null,
         };
       } else if (event.type === 'finish') entry.finish = event.reason;
       else if (event.type === 'tool-calls') {

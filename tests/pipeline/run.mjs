@@ -409,6 +409,9 @@ function summariseTrace(entries) {
     requests: entries.length,
     promptTokens: sum((e) => e.usage?.promptTokens),
     completionTokens: sum((e) => e.usage?.completionTokens),
+    // Prompt tokens the provider served from its cache, and in how many requests it said so at all.
+    cachedTokens: sum((e) => e.usage?.cachedTokens),
+    cacheReported: entries.filter((e) => e.usage?.cachedTokens != null).length,
     toolDefsChars: entries[0]?.toolDefs.chars ?? 0,
     toolDefsCount: entries[0]?.toolDefs.count ?? 0,
     toolResultChars:
@@ -643,7 +646,7 @@ try {
         .map((c) => (c.ok === true ? '+' : c.ok === false ? 'X' : '?'))
         .join('');
       console.log(
-        `${scenario.id} #${n} ${result.pass ? 'PASS' : 'FAIL'} [${marks}] ${result.model} ${result.tokens ?? '?'} tok${result.cost ? ` ($${result.cost.toFixed(4)})` : ''}, ${result.trace?.requests ?? '?'} requests (${result.trace?.batchedRounds ?? '?'} batched), ${(result.ms / 1000).toFixed(0)}s${result.error ? `  ERROR: ${result.error}` : ''}`,
+        `${scenario.id} #${n} ${result.pass ? 'PASS' : 'FAIL'} [${marks}] ${result.model} ${result.tokens ?? '?'} tok${result.cost ? ` ($${result.cost.toFixed(4)})` : ''}, ${result.trace?.requests ?? '?'} requests (${result.trace?.batchedRounds ?? '?'} batched), cached ${result.trace?.cacheReported ? result.trace.cachedTokens + '/' + result.trace.promptTokens : 'not reported'}, ${(result.ms / 1000).toFixed(0)}s${result.error ? `  ERROR: ${result.error}` : ''}`,
       );
       for (const c of checks.filter((c) => c.ok === false))
         console.log(`      X ${c.name}${c.detail ? ` (${c.detail})` : ''}`);
