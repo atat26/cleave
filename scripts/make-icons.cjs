@@ -1,4 +1,4 @@
-// Makes the Windows icon file (assets/icon.ico) from the brand's 1024 px app icon.
+// Makes the Windows icon file (assets/icon.ico) from the brand's transparent icon (the bubble and globe, no background square).
 // Run it with Electron itself (it has the image tools we need, so no extra package):
 //   node_modules\electron\dist\electron.exe scripts\make-icons.cjs
 // An .ico is a small index followed by PNG pictures, one per size.
@@ -9,9 +9,10 @@ const path = require('node:path');
 const SIZES = [16, 24, 32, 48, 64, 128, 256];
 const assets = path.join(__dirname, '..', 'assets');
 const source = nativeImage.createFromPath(
-  path.join(assets, 'app-icon-1024.png'),
+  path.join(assets, 'icon-transparent-512.png'),
 );
-if (source.isEmpty()) throw new Error('assets/app-icon-1024.png is missing');
+if (source.isEmpty())
+  throw new Error('assets/icon-transparent-512.png is missing');
 
 const pictures = SIZES.map((size) =>
   source.resize({ width: size, height: size, quality: 'best' }).toPNG(),
