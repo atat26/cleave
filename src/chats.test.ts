@@ -1051,6 +1051,62 @@ test('what a step made is kept with it, only for a step that worked, and survive
   }
 });
 
+test('the plan of a task is kept with its step, only when it worked and is valid, and survives a save and load', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  state = addUserMessage(state, chatId, 'plan', NOW, [])!.state;
+  const reply = startAssistantMessage(state, chatId, 'm', NOW)!;
+  state = reply.state;
+  const first = addToolPart(state, chatId, reply.id, {
+    callId: 'a',
+    name: 'set_plan',
+    arguments: '{}',
+    label: 'Plan',
+  })!;
+  state = finishToolPart(first.state, chatId, reply.id, first.partId, {
+    ok: true,
+    plan: { steps: ['One', 'Two', 'Three'], done: 1 },
+  });
+  const second = addToolPart(state, chatId, reply.id, {
+    callId: 'b',
+    name: 'set_plan',
+    arguments: '{}',
+    label: 'Plan',
+  })!;
+  // A plan that was refused is not kept, whatever it says.
+  state = finishToolPart(second.state, chatId, reply.id, second.partId, {
+    ok: false,
+    plan: { steps: ['x', 'y', 'z'], done: 0 },
+  });
+  const parts = findMessage(state, chatId, reply.id)!.parts;
+  assert.deepEqual(parts[0].type === 'tool' && parts[0].plan, {
+    steps: ['One', 'Two', 'Three'],
+    done: 1,
+  });
+  assert.equal(parts[1].type === 'tool' && 'plan' in parts[1], false);
+  const raw = JSON.parse(JSON.stringify(state));
+  const loaded = parseChats(raw, NOW).conversations[0].messages[1].parts[0];
+  assert.deepEqual(loaded.type === 'tool' && loaded.plan, {
+    steps: ['One', 'Two', 'Three'],
+    done: 1,
+  });
+  // A plan with a bad shape (no steps, too many, a step too long, progress out of range) is dropped.
+  for (const bad of [
+    { steps: [], done: 0 },
+    { steps: Array.from({ length: 9 }, (_, i) => `s${i}`), done: 0 },
+    { steps: ['a'.repeat(71)], done: 0 },
+    { steps: ['a', 'b'], done: 3 },
+    { steps: ['a', 'b'], done: -1 },
+    { steps: ['a', 5], done: 0 },
+    'plan',
+  ]) {
+    const odd = JSON.parse(JSON.stringify(state));
+    odd.conversations[0].messages[1].parts[0].plan = bad;
+    const part = parseChats(odd, NOW).conversations[0].messages[1].parts[0];
+    assert.equal(part.type === 'tool' && 'plan' in part, false);
+  }
+});
+
 test('what a tool found is kept with the call, cut to a limit, and survives a save and load', () => {
   let state = defaultChats(NOW);
   const chatId = state.activeId;

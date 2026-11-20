@@ -7,6 +7,8 @@ import {
   groupState,
   groupTitle,
   isOwnDataTool,
+  planOf,
+  planTicks,
   recentSteps,
   retryRequest,
   runningNote,
@@ -501,4 +503,67 @@ test('a finished reply offers to open what it made last; a stopped or failed one
   assert.match(MADE_WORDS.artifact, /document/);
   assert.match(MADE_WORDS.skill, /skills/);
   assert.match(MADE_WORDS.space, /Space/);
+});
+
+const planPart = (
+  steps: string[],
+  done: number,
+  over: Partial<ToolPartView> = {},
+) =>
+  tool({
+    name: 'set_plan',
+    label: 'Plan: 3 steps',
+    plan: { steps, done },
+    ...over,
+  });
+
+test('the newest approved plan of a reply is its plan; a plan that was not approved is none', () => {
+  assert.equal(planOf(message([tool()])), null);
+  assert.equal(planOf(undefined), null);
+  const older = planPart(['a', 'b', 'c'], 0);
+  const newer = planPart(['a', 'b', 'c', 'd'], 2);
+  assert.deepEqual(planOf(message([older, tool(), newer])), {
+    steps: ['a', 'b', 'c', 'd'],
+    done: 2,
+  });
+  const waiting = tool({ name: 'set_plan', status: 'waiting' });
+  assert.equal(planOf(message([waiting], 'streaming')), null);
+});
+
+test('with a plan the ticks are the plan, with steps still to come marked, and the position says "of"', () => {
+  const steps = ['a', 'b', 'c', 'd'];
+  const working = runOf(
+    message([planPart(steps, 1), tool({ status: 'running' })], 'streaming'),
+  );
+  assert.deepEqual(working?.ticks, ['done', 'running', 'todo', 'todo']);
+  assert.equal(working?.stepNumber, 2);
+  assert.deepEqual(working?.plan, { total: 4, done: 1 });
+  // A card waiting for an answer shows on the step being worked on.
+  const waiting = runOf(
+    message([planPart(steps, 1), tool({ status: 'waiting' })], 'streaming'),
+  );
+  assert.deepEqual(waiting?.ticks, ['done', 'waiting', 'todo', 'todo']);
+});
+
+test('a plan run that ended: finished is all done, stopped or stuck keeps what was done', () => {
+  const steps = ['a', 'b', 'c'];
+  const finished = runOf(message([planPart(steps, 1), tool()], 'done'));
+  assert.deepEqual(finished?.ticks, ['done', 'done', 'done']);
+  assert.deepEqual(finished?.plan, { total: 3, done: 3 });
+  const stopped = runOf(message([planPart(steps, 1), tool()], 'stopped'));
+  assert.deepEqual(stopped?.ticks, ['done', 'stopped', 'stopped']);
+  assert.deepEqual(stopped?.plan, { total: 3, done: 1 });
+  assert.deepEqual(planTicks({ steps, done: 3 }, 'working', 'running'), [
+    'done',
+    'done',
+    'done',
+  ]);
+});
+
+test('without a plan the ticks and the step number are as before', () => {
+  const run = runOf(
+    message([tool(), tool({ status: 'running' })], 'streaming'),
+  );
+  assert.deepEqual(run?.ticks, ['done', 'running']);
+  assert.equal(run?.plan, undefined);
 });

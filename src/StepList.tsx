@@ -438,6 +438,18 @@ const RUN_ICON: Record<RunView['word'], StepState> = {
   stopped: 'stopped',
 };
 
+// "Step 2 of 5" while it works (with a plan), "3 of 5 steps" when it ended; without a plan, "Step 4" and "4 steps".
+export function runPosition(run: RunView, active: boolean): string {
+  if (run.plan) {
+    return active
+      ? `Step ${run.stepNumber} of ${run.plan.total}`
+      : `${run.plan.done} of ${run.plan.total} steps`;
+  }
+  return active
+    ? `Step ${run.stepNumber}`
+    : `${run.ticks.length} step${run.ticks.length === 1 ? '' : 's'}`;
+}
+
 // One line above the message box: its state in a word, what it is doing, and a tick for
 // each step so far. It has no Stop of its own: Stop is on the message box below it (or on
 // the page's pill), once, not twice. When it has finished, stopped or got stuck it stays
@@ -481,11 +493,7 @@ export function RunBar({
           <span key={i} className="run-tick" data-state={state} />
         ))}
       </span>
-      <span className="run-pos">
-        {active
-          ? `Step ${run.stepNumber}`
-          : `${run.ticks.length} step${run.ticks.length === 1 ? '' : 's'}`}
-      </span>
+      <span className="run-pos">{runPosition(run, active)}</span>
       {run.word === 'finished' && run.made && onOpen && (
         <Button
           size="sm"

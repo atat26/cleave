@@ -5,6 +5,7 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   effectiveSystemPrompt,
   HOW_TO_WORK,
+  HOW_TO_WORK_NO_PLAN,
   MAX_REMEMBERED_STEPS,
   rememberedSteps,
 } from './chatContext.ts';
@@ -286,6 +287,18 @@ test('the rules for working with tools follow the system prompt, before anything
   assert.match(HOW_TO_WORK, /vague/);
   assert.match(HOW_TO_WORK, /same kind of step/);
   assert.match(HOW_TO_WORK, /Never say you did something you did not do/);
+});
+
+test('the rules ask for a plan only for a long task, and can be had without planning', () => {
+  assert.match(HOW_TO_WORK, /set_plan/);
+  assert.match(HOW_TO_WORK, /four or more separate pieces/);
+  assert.match(HOW_TO_WORK, /never a single tool call/);
+  assert.match(HOW_TO_WORK, /question, a single action or a short task/);
+  assert.equal(HOW_TO_WORK_NO_PLAN.includes('set_plan'), false);
+  assert.match(
+    HOW_TO_WORK_NO_PLAN,
+    /Never say you did something you did not do/,
+  );
 });
 
 // ---- Remembering what was done ---------------------------------------------------

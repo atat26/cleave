@@ -142,6 +142,8 @@ export interface OverlayState {
   verb: string;
   target: string | null;
   step: number;
+  // How many steps the approved plan has ("Step 2 of 5"); missing when there is no plan.
+  total?: number;
   // It has finished, stopped or got stuck (the pill then has a way to dismiss it).
   ended: boolean;
   // The ring on the element it is acting on, if there is one to show.
@@ -223,6 +225,7 @@ export function overlayFor(input: OverlayInput): OverlayState | null {
     verb: run.verb,
     target: run.target,
     step: run.stepNumber,
+    ...(run.plan ? { total: run.plan.total } : {}),
   };
   if (run.word === 'working' || run.word === 'waiting') {
     const onPage =

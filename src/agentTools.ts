@@ -14,7 +14,7 @@
 // Pure code: reading a page is passed in (see pageReader.ts), so this is testable.
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
-import type { LimitKind, MadeItem } from './chats.ts';
+import type { LimitKind, MadeItem, TaskPlan } from './chats.ts';
 import {
   ACTION_DEFINITIONS,
   CHANGES_PAGE,
@@ -74,6 +74,12 @@ import {
   SKILL_DEFINITIONS,
 } from './skillTools.ts';
 import type { SkillsEnv } from './skillTools.ts';
+import {
+  PLAN_DEFINITION,
+  SET_PLAN,
+  createTaskPlanTools,
+  planningEnabled,
+} from './taskPlan.ts';
 
 export const MAX_PAGE_CHARS = 20_000;
 export const MAX_READS = 8;
@@ -209,6 +215,8 @@ export interface ToolOutcome {
   skipped?: boolean;
   // Something this step made (a document, a skill or a Space): the chat offers to open it.
   made?: MadeItem;
+  // The plan of the task as the user approved it (set_plan): the chat shows "Step 2 of 5" from it.
+  plan?: TaskPlan;
   // A page it read was longer than the limit and was cut (the chat adds a note if the answer does
   // not say so; see cutOffNote.ts). For a step that read several pages: how many were cut.
   cutOff?: number;
@@ -644,6 +652,7 @@ export function createAgentTools(
   const recall = createRecallTools(env, levelOf);
   const saveTools = createSaveTools(env, levelOf);
   const skillTools = createSkillTools(env, levelOf, () => readWebContent());
+  const taskPlan = createTaskPlanTools(levelOf);
 
   // Has the assistant read web content in this reply (a page, a link, a page's
   // controls or search results)? Pages are written by strangers, so after that
@@ -689,6 +698,7 @@ export function createAgentTools(
     if (isRecallTool(call.name)) return recall.plan(call);
     if (isSaveTool(call.name)) return saveTools.plan(call);
     if (isSkillTool(call.name)) return skillTools.plan(call);
+    if (call.name === SET_PLAN) return taskPlan.plan(call);
     const own: Plan = isActionName(call.name)
       ? planAction(call, actionContext)
       : call.name === 'web_search'
@@ -1072,6 +1082,7 @@ export function createAgentTools(
     if (isRecallTool(call.name)) return recall.describe(call);
     if (isSaveTool(call.name)) return saveTools.describe(call);
     if (isSkillTool(call.name)) return skillTools.describe(call);
+    if (call.name === SET_PLAN) return taskPlan.describe(call);
     if (call.name === 'read_pages') {
       const count = tabNumbers(call).length;
       return count === 1 ? 'Reading a page' : `Reading ${count} pages`;
@@ -1162,6 +1173,7 @@ export function createAgentTools(
     if (isRecallTool(call.name)) return recall.run(call);
     if (isSaveTool(call.name)) return saveTools.run(call, signal);
     if (isSkillTool(call.name)) return skillTools.run(call);
+    if (call.name === SET_PLAN) return taskPlan.run(call);
     if (isActionName(call.name)) return runAction(call, signal);
     if (call.name === 'web_search') return runSearch(call, signal);
     if (call.name === 'read_link') return runReadLink(call, signal);
@@ -1351,6 +1363,7 @@ export function createAgentTools(
     ...SKILL_DEFINITIONS,
     ...ACTION_DEFINITIONS,
     ...ARTIFACT_DEFINITIONS,
+    ...(planningEnabled() ? [PLAN_DEFINITION] : []),
   ].filter((definition) => levelOf(definition.name) !== 'never');
 
   // Tools whose limit for this reply is used up. Telling the model in words was not enough (it kept
