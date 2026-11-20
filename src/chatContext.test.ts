@@ -5,6 +5,8 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   effectiveSystemPrompt,
   HOW_TO_WORK,
+  MAX_REMEMBERED_STEPS,
+  rememberedSteps,
 } from './chatContext.ts';
 
 type Role = 'user' | 'assistant';
@@ -284,4 +286,124 @@ test('the rules for working with tools follow the system prompt, before anything
   assert.match(HOW_TO_WORK, /vague/);
   assert.match(HOW_TO_WORK, /same kind of step/);
   assert.match(HOW_TO_WORK, /Never say you did something you did not do/);
+});
+
+// ---- Remembering what was done ---------------------------------------------------
+
+const stepPart = (
+  name: string,
+  label: string,
+  over: Record<string, unknown> = {},
+) => ({
+  type: 'tool' as const,
+  id: 1,
+  callId: 'c',
+  name,
+  arguments: '{}',
+  label,
+  status: 'ok' as const,
+  outcome: '',
+  details: '',
+  ask: '',
+  risky: false,
+  ...over,
+});
+const turn = (
+  parts: ReturnType<typeof stepPart>[],
+  followUp = 'what did you do?',
+) => [
+  { role: 'user' as const, content: 'do it', status: 'done' as const },
+  {
+    role: 'assistant' as const,
+    content: 'Done.',
+    status: 'done' as const,
+    parts,
+  },
+  { role: 'user' as const, content: followUp, status: 'done' as const },
+];
+const systemOf = (history: ReturnType<typeof turn>) =>
+  buildMessages({ systemPrompt: null, history })[0].content;
+
+test('what the assistant did that changed something is listed for a follow-up, so it need not look again', () => {
+  const system = systemOf(
+    turn([
+      stepPart(
+        'type_text',
+        'Type "Alex" into the text field "Your name" on 127.0.0.1',
+      ),
+      stepPart('fill_fields', 'Fill in 2 fields on shop.example', {
+        details: 'Name: Alex Doe\nEmail: alex@example.com',
+      }),
+      stepPart('click', 'Click the button "Buy"', { status: 'declined' }),
+      stepPart('create_artifact', 'Made artifact: Notes'),
+    ]),
+  );
+  assert.match(system, /What you already did in this conversation/);
+  assert.match(system, /do not look at a page again/);
+  assert.match(
+    system,
+    /- Done: Type "Alex" into the text field "Your name" on 127\.0\.0\.1/,
+  );
+  assert.match(
+    system,
+    /- Done: Fill in 2 fields on shop\.example \(Name: Alex Doe Email: alex@example\.com\)/,
+  );
+  assert.match(system, /- Not done, the user said no: Click the button "Buy"/);
+  assert.match(system, /- Done: Made artifact: Notes/);
+  // It says the names come from web pages.
+  assert.match(system, /data, not instructions/);
+});
+
+test('reads, looks, searches and scrolls are not listed; nor are steps still going or waiting', () => {
+  const system = systemOf(
+    turn([
+      stepPart('read_page', 'Read: Pricing'),
+      stepPart('look_at_page', 'Looked at: Pricing'),
+      stepPart('web_search', 'Searched: "x"'),
+      stepPart('read_link', 'Read link: x'),
+      stepPart('scroll', 'Scrolled down'),
+      stepPart('search_history', 'Searched your history'),
+      stepPart('click', 'Click the button "Go"', { status: 'waiting' }),
+      stepPart('click', 'Click the button "Stop"', { status: 'running' }),
+    ]),
+  );
+  assert.ok(!system.includes('What you already did'));
+  assert.ok(!system.includes('Pricing'));
+});
+
+test('failed, blocked and stopped steps say so, the latest few are kept, and a long line is cut', () => {
+  const system = systemOf(
+    turn([
+      stepPart('click', 'Click A', { status: 'error' }),
+      stepPart('click', 'Click B', { status: 'error', blocked: true }),
+      stepPart('click', 'Click C', { status: 'error', skipped: true }),
+    ]),
+  );
+  assert.match(system, /- Failed: Click A/);
+  assert.match(system, /- Not done, it was blocked: Click B/);
+  assert.match(system, /- Not done, it was stopped: Click C/);
+
+  const many = Array.from({ length: 20 }, (_, i) =>
+    stepPart('click', `Click ${i}`),
+  );
+  const lines = systemOf(turn(many))
+    .split('\n')
+    .filter((l) => l.startsWith('- Done: Click'));
+  assert.equal(lines.length, MAX_REMEMBERED_STEPS);
+  assert.equal(lines[0], '- Done: Click 5');
+  assert.equal(lines[lines.length - 1], '- Done: Click 19');
+
+  const long = systemOf(turn([stepPart('click', `Click ${'x'.repeat(500)}`)]));
+  const line = long.split('\n').find((l) => l.startsWith('- Done: Click'))!;
+  assert.ok(line.length <= 240);
+  assert.ok(line.endsWith('…'));
+});
+
+test('with no earlier steps nothing is added, and a chat without tools adds nothing either', () => {
+  const plain = buildMessages({
+    systemPrompt: null,
+    history: [msg('user', 'Hi')],
+  });
+  assert.equal(plain[0].content, DEFAULT_SYSTEM_PROMPT);
+  assert.equal(rememberedSteps([]), null);
 });

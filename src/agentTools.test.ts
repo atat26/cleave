@@ -610,6 +610,8 @@ test('fill_fields types every field after one approval, keeps the numbers, and c
   const outcome = await tools.run(good, ABORT);
   assert.equal(outcome.ok, true);
   assert.match(outcome.result, /2 fields were filled/);
+  // Which field got which text is kept with the step, for a later question.
+  assert.equal(outcome.details?.split('\n').length, 2);
   assert.match(outcome.result, /Nothing was submitted/);
   assert.deepEqual(done, ['type', 'type']);
   // Typing does not change the page, so the numbers still work.
