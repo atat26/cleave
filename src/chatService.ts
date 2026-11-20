@@ -51,6 +51,7 @@ import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
 import { scopedRecall, scopedTabs, testScope } from './testScope';
 import { groupsForMessage, groupsUsed } from './toolGroups';
+import { HOW_TO_WORK } from './chatContext';
 import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
 import { SearchError } from './webSearch';
@@ -501,6 +502,8 @@ export function createChatService(options: {
       context: {
         model,
         systemPrompt: settings.systemPrompt,
+        // The rules are about using tools, so a model without tools does not get them.
+        rules: canRead ? HOW_TO_WORK : null,
         linked: buildLinkedContext(refs, workspace, canRead),
         // Skills are listed only when the model can use tools (it needs use_skill).
         skills: canRead ? skillsContext(options.skillStore.listSkills()) : null,

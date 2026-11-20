@@ -4,6 +4,7 @@ import {
   buildMessages,
   DEFAULT_SYSTEM_PROMPT,
   effectiveSystemPrompt,
+  HOW_TO_WORK,
 } from './chatContext.ts';
 
 type Role = 'user' | 'assistant';
@@ -256,4 +257,31 @@ test('the skills list goes in the system message after the linked items, and is 
       skillsContext: null,
     })[0].content.includes('SKILLS'),
   );
+});
+
+test('the rules for working with tools follow the system prompt, before anything that changes each turn', () => {
+  const messages = buildMessages({
+    systemPrompt: 'Be brief.',
+    rules: HOW_TO_WORK,
+    linkedContext: 'LINKED TABS',
+    skillsContext: 'SKILLS LIST',
+    history: [{ role: 'user', content: 'hi', status: 'done' }],
+  });
+  const system = messages[0].content;
+  assert.ok(system.startsWith('Be brief.'));
+  assert.ok(system.indexOf(HOW_TO_WORK) > 0);
+  assert.ok(system.indexOf(HOW_TO_WORK) < system.indexOf('LINKED TABS'));
+  assert.ok(system.indexOf('LINKED TABS') < system.indexOf('SKILLS LIST'));
+  // Without tools there are no rules about them.
+  const plain = buildMessages({
+    systemPrompt: null,
+    history: [{ role: 'user', content: 'hi', status: 'done' }],
+  });
+  assert.equal(plain[0].content.includes('How to work'), false);
+  // What the rules ask for.
+  assert.match(HOW_TO_WORK, /cut off/);
+  assert.match(HOW_TO_WORK, /instructions for you/);
+  assert.match(HOW_TO_WORK, /vague/);
+  assert.match(HOW_TO_WORK, /same kind of step/);
+  assert.match(HOW_TO_WORK, /Never say you did something you did not do/);
 });

@@ -1747,3 +1747,59 @@ test('with routing only the core is offered, more_tools adds a group, and a clos
   });
   assert.ok(started.tools.definitions.some((d) => d.name === 'move_tabs'));
 });
+
+test('read_pages reads several linked tabs in one step, each counted, with the same checks as read_page', async () => {
+  const { tools, reads } = setup(
+    (id) =>
+      ({
+        ok: true,
+        title: `Page ${id}`,
+        url: `https://shop.example/${id}`,
+        text: `Text of page ${id}.`,
+      }) as const,
+  );
+  const call2 = call('read_pages', { tabs: [1, 2, 2, 'x', 1.5] });
+  assert.equal(tools.plan(call2).kind, 'auto');
+  assert.equal(tools.describe(call2), 'Reading 2 pages');
+  const outcome = await tools.run(call2, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.label, 'Read 2 pages');
+  assert.deepEqual(reads, [1, 2]);
+  assert.match(outcome.result, /Text of page 1\./);
+  assert.match(outcome.result, /Text of page 2\./);
+  assert.equal(
+    (outcome.result.match(/Untrusted web page text/g) ?? []).length,
+    2,
+  );
+  // A tab that is not linked is told apart, and the others still work.
+  const mixed = await tools.run(call('read_pages', { tabs: [1, 99] }), ABORT);
+  assert.equal(mixed.ok, true);
+  assert.equal(mixed.label, 'Read 1 of 2 pages');
+  assert.match(mixed.result, /Tab 99 is not linked/);
+  // Nothing usable asked for.
+  const none = await tools.run(call('read_pages', { tabs: [] }), ABORT);
+  assert.equal(none.ok, false);
+  const junk = await tools.run(call('read_pages', 'not json'), ABORT);
+  assert.equal(junk.ok, false);
+});
+
+test('read_pages counts against the read limit, and is withdrawn with read_page', async () => {
+  const { tools } = setup();
+  const first = await tools.run(call('read_pages', { tabs: [1, 1, 2] }), ABORT);
+  assert.equal(first.ok, true);
+  // Six more reads (5 per call at most) bring it to the limit of 8.
+  await tools.run(call('read_pages', { tabs: [1, 2] }), ABORT);
+  await tools.run(call('read_pages', { tabs: [1, 2] }), ABORT);
+  await tools.run(call('read_pages', { tabs: [1, 2] }), ABORT);
+  assert.equal(
+    tools.definitions.some((d) => d.name === 'read_pages'),
+    false,
+  );
+  assert.equal(
+    tools.definitions.some((d) => d.name === 'read_page'),
+    false,
+  );
+  const refused = await tools.run(call('read_pages', { tabs: [1] }), ABORT);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.blocked, true);
+});

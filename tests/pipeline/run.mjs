@@ -398,6 +398,9 @@ function summariseTrace(entries) {
       Math.max(...entries.map((e) => e.toolResultChars)),
     imageChars: Math.max(0, ...entries.map((e) => e.images.chars)),
     rounds: Math.max(0, ...entries.map((e) => e.rounds)),
+    // Rounds in which the model asked for several tool calls at once (batching), and the most it asked for.
+    batchedRounds: entries.filter((e) => e.toolCalls.length > 1).length,
+    mostCalls: Math.max(0, ...entries.map((e) => e.toolCalls.length)),
     firstRequestChars: entries[0]
       ? entries[0].systemChars +
         entries[0].userChars +
@@ -611,7 +614,7 @@ try {
         .map((c) => (c.ok === true ? '+' : c.ok === false ? 'X' : '?'))
         .join('');
       console.log(
-        `${scenario.id} #${n} ${result.pass ? 'PASS' : 'FAIL'} [${marks}] ${result.model} ${result.tokens ?? '?'} tok, ${result.trace?.requests ?? '?'} requests, ${(result.ms / 1000).toFixed(0)}s${result.error ? `  ERROR: ${result.error}` : ''}`,
+        `${scenario.id} #${n} ${result.pass ? 'PASS' : 'FAIL'} [${marks}] ${result.model} ${result.tokens ?? '?'} tok, ${result.trace?.requests ?? '?'} requests (${result.trace?.batchedRounds ?? '?'} batched), ${(result.ms / 1000).toFixed(0)}s${result.error ? `  ERROR: ${result.error}` : ''}`,
       );
       for (const c of checks.filter((c) => c.ok === false))
         console.log(`      X ${c.name}${c.detail ? ` (${c.detail})` : ''}`);

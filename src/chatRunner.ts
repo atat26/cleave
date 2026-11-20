@@ -36,7 +36,7 @@ export const MAX_FAILURES_PER_TOOL = 3;
 // Said to the model once, when its tools are taken away, so its last answer is honest about what was
 // and was not done (without it a model answered "based on all ten pages" after reading eight).
 export const NO_MORE_TOOLS_NOTE =
-  'No more tools can be used in this reply. Tell the user what you did and what is still not done. Do not say you did something you did not do.';
+  'No more tools can be used in this reply, so do not write any tool calls. Tell the user in plain words what you did and what is still not done. Do not say you did something you did not do.';
 
 export interface RunnerDeps {
   getState(): ChatsState;
@@ -80,6 +80,8 @@ export interface RunnerDeps {
 export interface RunContext {
   model: string;
   systemPrompt: string | null;
+  // How to work when there are tools (see chatContext.ts), or null.
+  rules?: string | null;
   // What the chat has linked (titles and addresses), already cleaned; or null.
   linked?: string | null;
   // The skills that are on, as a short list for the assistant; or null.
@@ -112,6 +114,7 @@ export function createChatRunner(deps: RunnerDeps) {
       chats.findConversation(deps.getState(), chatId)?.messages ?? [];
     let conversation: ChatMessageInput[] = buildMessages({
       systemPrompt: context.systemPrompt,
+      rules: context.rules ?? null,
       linkedContext: context.linked ?? null,
       skillsContext: context.skills ?? null,
       history,

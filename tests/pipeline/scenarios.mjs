@@ -298,9 +298,22 @@ export const SCENARIOS = [
     budgetTokens: 40000,
     checks: ({ calls, turns }) => {
       const answer = turns[0].answer;
-      const reads = calls.filter((c) => c.name === 'read_page');
-      const done = reads.filter((c) => c.status === 'ok').length;
-      const refused = reads.length - done;
+      // read_page reads one page; read_pages reads the pages it names.
+      const reads = calls.filter(
+        (c) => c.name === 'read_page' || c.name === 'read_pages',
+      );
+      const pagesIn = (c) => {
+        if (c.name === 'read_page') return 1;
+        try {
+          return (JSON.parse(c.arguments).tabs ?? []).length;
+        } catch {
+          return 0;
+        }
+      };
+      const done = reads
+        .filter((c) => c.status === 'ok')
+        .reduce((n, c) => n + pagesIn(c), 0);
+      const refused = reads.filter((c) => c.status !== 'ok').length;
       // Prices that only exist on the last two pages must not be invented if they were not read.
       const unread = FACTS.products.slice(8).map((p) => `EUR ${p.price}`);
       const invented = unread.filter((u) => has(answer, u));
