@@ -1276,6 +1276,23 @@ button {
 .run-bar[data-word='stuck'] {
   border-color: color-mix(in srgb, var(--c-danger) 45%, transparent);
 }
+/* After a reply used up one of its limits: neutral, not an error. */
+.limit-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 var(--s-3) var(--s-1);
+  padding: 6px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 9px;
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+}
+.limit-what {
+  flex: 1;
+  min-width: 0;
+  color: var(--c-text-2);
+}
 .run-word {
   flex: none;
   font-weight: 600;

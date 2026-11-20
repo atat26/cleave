@@ -17,7 +17,12 @@ import {
   stepState,
   stepView,
 } from './runModel.ts';
-import { RUN_WORDS, STATE_WORDS } from './runModel.ts';
+import {
+  CONTINUE_TEXT,
+  LIMIT_WORDS,
+  RUN_WORDS,
+  STATE_WORDS,
+} from './runModel.ts';
 import type { ToolPartView } from './runModel.ts';
 
 let nextId = 1;
@@ -401,4 +406,30 @@ test('a running step says when it waits for its page to load, and when the tab w
   // Only while it runs.
   const done = stepView(tool({ status: 'ok', arguments: '{"tab":4}' }), 'done');
   assert.equal(runningNote(done, tabs), null);
+});
+
+test('a finished reply that used up a limit says so in its run; no other run does', () => {
+  const steps = [tool()];
+  const finished = { ...message(steps), limit: 'actions' } as ChatMessage;
+  assert.equal(runOf(finished)?.limit, 'actions');
+  assert.equal(runOf(message(steps))?.limit, undefined);
+  // Not while it is still going, and not after a Stop.
+  assert.equal(
+    runOf({ ...finished, status: 'streaming' } as ChatMessage)?.limit,
+    undefined,
+  );
+  assert.equal(
+    runOf({ ...finished, status: 'stopped' } as ChatMessage)?.limit,
+    undefined,
+  );
+});
+
+test('the words of the limit banner are neutral and the Continue request carries on', () => {
+  assert.match(LIMIT_WORDS.actions, /limit of 25 actions/);
+  assert.match(LIMIT_WORDS.reads, /pages/);
+  assert.doesNotMatch(
+    Object.values(LIMIT_WORDS).join(' '),
+    /error|fail|wrong|sorry/i,
+  );
+  assert.match(CONTINUE_TEXT, /carry on where you left off/i);
 });

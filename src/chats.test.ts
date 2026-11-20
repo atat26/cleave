@@ -627,6 +627,37 @@ test('a reply cut off when the app closed is marked stopped, keeping its text', 
   );
 });
 
+test('a reply that used up a limit keeps which one; only a finished reply, and it survives a save and load', () => {
+  let state = defaultChats(NOW);
+  const chatId = state.activeId;
+  const a = startAssistantMessage(state, chatId, 'm/a', NOW)!;
+  const done = finishMessage(a.state, chatId, a.id, {
+    status: 'done',
+    limit: 'actions',
+  });
+  assert.equal(findMessage(done, chatId, a.id)!.limit, 'actions');
+  // A stopped or failed reply, or one that used no limit, records none.
+  for (const result of [
+    { status: 'stopped' as const, limit: 'actions' as const },
+    { status: 'error' as const, limit: 'reads' as const },
+    { status: 'done' as const, limit: null },
+    { status: 'done' as const },
+  ]) {
+    const other = finishMessage(a.state, chatId, a.id, result);
+    assert.equal('limit' in findMessage(other, chatId, a.id)!, false);
+  }
+  // Saved and loaded again; a bad value is dropped, and your own message never has one.
+  state = done;
+  const loaded = parseChats(JSON.parse(JSON.stringify(state)), NOW);
+  assert.equal(findMessage(loaded, chatId, a.id)?.limit, 'actions');
+  const raw = JSON.parse(JSON.stringify(state));
+  raw.conversations[0].messages[0].limit = 'bogus';
+  assert.equal(
+    'limit' in parseChats(raw, NOW).conversations[0].messages[0],
+    false,
+  );
+});
+
 test('message fields are validated and repaired when loading', () => {
   const state = parseChats(
     {

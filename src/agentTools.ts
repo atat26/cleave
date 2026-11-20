@@ -14,6 +14,7 @@
 // Pure code: reading a page is passed in (see pageReader.ts), so this is testable.
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
+import type { LimitKind } from './chats.ts';
 import {
   ACTION_DEFINITIONS,
   CHANGES_PAGE,
@@ -221,6 +222,9 @@ export interface ToolOutcome {
 }
 
 export interface AgentTools {
+  // Which limit this reply has used up, if any (the actions it may take, then the pages it may
+  // read). The chat then offers to go on. Optional so a simple stand-in for the tools may leave it out.
+  reachedLimit?(): LimitKind | null;
   // The tools to offer on the next request. A tool whose limit for this reply is used up (pages
   // read, looks, searches, actions) is left out, so the model cannot keep calling it.
   readonly definitions: ToolDefinition[];
@@ -1390,6 +1394,8 @@ export function createAgentTools(
         ? sent
         : sent.filter((definition) => !gone.has(definition.name));
     },
+    reachedLimit: () =>
+      actions >= MAX_ACTIONS ? 'actions' : reads >= MAX_READS ? 'reads' : null,
     describe,
     plan,
     run,

@@ -526,6 +526,7 @@ const browserApi: BrowserApi = {
   },
   overlayPeek: (on) => ipcRenderer.send('overlay:peek', on),
   overlayStop: () => ipcRenderer.send('overlay:stop'),
+  overlayContinue: () => ipcRenderer.send('overlay:continue'),
   overlayDismiss: () => ipcRenderer.send('overlay:dismiss'),
   overlayFlagsGet: () => ipcRenderer.invoke('overlay:flags-get'),
   overlayMinimize: (on) => ipcRenderer.send('overlay:minimize', on),

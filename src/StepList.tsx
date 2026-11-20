@@ -15,6 +15,7 @@ import {
   canRetry,
   groupState,
   groupTitle,
+  LIMIT_WORDS,
   RUN_WORDS,
   runningNote,
   STATE_WORDS,
@@ -357,9 +358,12 @@ const RUN_ICON: Record<RunView['word'], StepState> = {
 export function RunBar({
   run,
   onDismiss,
+  onContinue,
 }: {
   run: RunView;
   onDismiss: () => void;
+  // After a Stop: start a new reply that carries on. (The one visible action of a stopped run.)
+  onContinue?: () => void;
 }) {
   const active = run.word === 'working' || run.word === 'waiting';
   const icon: ReactNode = <StatusIcon state={RUN_ICON[run.word]} />;
@@ -392,6 +396,15 @@ export function RunBar({
           ? `Step ${run.stepNumber}`
           : `${run.ticks.length} step${run.ticks.length === 1 ? '' : 's'}`}
       </span>
+      {run.word === 'stopped' && onContinue && (
+        <Button
+          size="sm"
+          onClick={onContinue}
+          title="Carry on where it stopped"
+        >
+          Continue
+        </Button>
+      )}
       {!active && (
         <IconButton
           icon="x"
@@ -401,6 +414,32 @@ export function RunBar({
           onClick={onDismiss}
         />
       )}
+    </div>
+  );
+}
+
+// After a reply used up one of its limits (the actions it may take, or the pages it may read): a
+// neutral line, and a way to go on in a new reply (which has fresh limits) or to leave it there.
+export function LimitBanner({
+  limit,
+  onContinue,
+  onDone,
+}: {
+  limit: NonNullable<RunView['limit']>;
+  onContinue: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <div className="limit-banner" role="status">
+      <span className="limit-what">
+        {LIMIT_WORDS[limit]} Carry on if there is more to do.
+      </span>
+      <Button size="sm" onClick={onContinue}>
+        Continue
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onDone}>
+        That's enough
+      </Button>
     </div>
   );
 }

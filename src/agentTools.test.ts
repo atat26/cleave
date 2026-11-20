@@ -494,12 +494,14 @@ test('look_at_page returns the outline wrapped as untrusted data, for linked tab
 
 test('reading and looking have their own limits per reply', async () => {
   const { tools } = setup();
+  assert.equal(tools.reachedLimit?.(), null);
   for (let i = 0; i < MAX_READS; i++) {
     assert.equal(
       (await tools.run(call('read_page', { tab: 1 }), ABORT)).ok,
       true,
     );
   }
+  assert.equal(tools.reachedLimit?.(), 'reads');
   assert.equal(
     (await tools.run(call('read_page', { tab: 1 }), ABORT)).ok,
     false,
@@ -650,6 +652,8 @@ test('a reply can take only so many actions, and the tab shows as worked in unti
     );
   }
   assert.equal(done.length, MAX_ACTIONS);
+  // The chat is told, so it can offer to go on.
+  assert.equal(tools.reachedLimit?.(), 'actions');
   const over = call('scroll', { tab: 1, direction: 'down' });
   assert.equal(tools.plan(over).kind, 'refuse');
   assert.equal((await tools.run(over, ABORT)).ok, false);
