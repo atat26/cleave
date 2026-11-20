@@ -18,6 +18,8 @@ const config: ForgeConfig = {
   makers: [
     new MakerSquirrel({
       name: 'Cleave',
+      // A fixed name, so the public page can link to the latest one.
+      setupExe: 'Cleave-Setup.exe',
       authors: 'Alex Tracy',
       description: 'Cleave: a browser with an assistant built in',
       // The icon on the installer and in Windows' list of installed apps.
