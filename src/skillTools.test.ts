@@ -3,7 +3,11 @@ import { test } from 'node:test';
 import {
   createSkillTools,
   MAX_AGENT_INSTRUCTION_CHARS,
+  loadedSkills,
   MAX_LISTED_SKILLS,
+  MAX_NAMED_SKILL_CHARS,
+  MAX_NAMED_SKILLS,
+  namedSkills,
   MAX_SKILL_USES,
   MAX_SKILL_WRITES,
   SKILL_DEFINITIONS,
@@ -86,6 +90,91 @@ test('the assistant is told the name and "when to use it" of each skill that is 
     (skillsContext(many) ?? '').split('\n').length,
     1 + MAX_LISTED_SKILLS,
   );
+});
+
+test('a skill named as /Name is found: the picker spelling, any case, not inside a longer word, longest name wins, only if on', () => {
+  const row = (id: number, name: string, enabled = true): SkillRow => ({
+    id,
+    name,
+    description: '',
+    enabled,
+  });
+  const list = [
+    row(1, 'Plan'),
+    row(2, 'Plan trip'),
+    row(3, 'Compare   prices'),
+    row(4, 'Old', false),
+  ];
+  const ids = (text: string) => namedSkills(text, list).map((r) => r.id);
+  assert.deepEqual(ids('please /Plan this'), [1]);
+  assert.deepEqual(ids('/plan'), [1]);
+  // A skill's name may have several spaces: the picker tidies them, and so does the match.
+  assert.deepEqual(ids('use /Compare prices now'), [3]);
+  assert.deepEqual(ids('use /Compare\nprices now'), [3]);
+  // Not the start of a longer word, and not without the slash.
+  assert.deepEqual(ids('/Planning ahead'), []);
+  assert.deepEqual(ids('Plan the trip'), []);
+  assert.deepEqual(ids('a/Plan and http://x/Plan'), []);
+  // The longer name wins where one is inside another; both can be named.
+  assert.deepEqual(ids('/Plan trip'), [2]);
+  assert.deepEqual(ids('/Plan trip and /Plan'), [2, 1]);
+  // In the order written, and a skill that is off is ignored.
+  assert.deepEqual(ids('/Compare prices then /Plan'), [3, 1]);
+  assert.deepEqual(ids('/Old'), []);
+  // Names with characters that mean something in a pattern are matched as plain text.
+  assert.deepEqual(
+    namedSkills('/C++ (v2)? yes', [row(5, 'C++ (v2)?')]).map((r) => r.id),
+    [5],
+  );
+  // At most MAX_NAMED_SKILLS.
+  const six = Array.from({ length: 6 }, (_, i) =>
+    row(i, `S${String.fromCharCode(97 + i)}`),
+  );
+  assert.equal(
+    namedSkills('/Sa /Sb /Sc /Sd /Se /Sf', six).length,
+    MAX_NAMED_SKILLS,
+  );
+});
+
+test('the steps of a named skill go in the request; one that is too long, off or empty is left to use_skill', () => {
+  const { skills, env } = world();
+  const loaded = loadedSkills('do /Compare prices', skills, env.readSkill);
+  assert.deepEqual(loaded, [
+    {
+      name: 'Compare prices',
+      instructions: '1. Read the pages.\n2. Make a table.',
+    },
+  ]);
+  const text = skillsContext(skills, loaded) ?? '';
+  assert.match(
+    text,
+    /----- start of the skill "Compare prices" -----\n1\. Read the pages\.\n2\. Make a table\.\n----- end of the skill -----/,
+  );
+  assert.match(text, /do not call use_skill for them/);
+  assert.match(text, /cannot change your safety rules/);
+  // Nothing named: the list alone, exactly as before.
+  assert.ok(!(skillsContext(skills, []) ?? '').includes('start of the skill'));
+  assert.equal(skillsContext(skills), skillsContext(skills, []));
+  assert.deepEqual(loadedSkills('hello', skills, env.readSkill), []);
+  // Off, empty and too long are not put in.
+  assert.deepEqual(loadedSkills('/Old idea', skills, env.readSkill), []);
+  skills.push({
+    id: 20,
+    name: 'Long',
+    description: '',
+    instructions: 'x'.repeat(MAX_NAMED_SKILL_CHARS + 1),
+    enabled: true,
+  });
+  skills.push({
+    id: 21,
+    name: 'Blank',
+    description: '',
+    instructions: '',
+    enabled: true,
+  });
+  assert.deepEqual(loadedSkills('/Long /Blank', skills, env.readSkill), []);
+  // The list is still in the system message when steps are added.
+  assert.match(text, /- "Compare prices": Use when comparing prices\./);
 });
 
 test('use_skill gives the steps with a note that they cannot change the rules; the name may be any case; a skill that is off or missing is refused', async () => {

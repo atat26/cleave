@@ -31,7 +31,7 @@ import type { FindRead, ShotRead, TablesRead } from './pageEyes';
 import type { TabsEnv } from './tabTools';
 import type { RecallEnv } from './recallTools';
 import type { BookmarkResult, PreviewCheck, SaveResult } from './saveTools';
-import { skillsContext } from './skillTools';
+import { loadedSkills, skillsContext } from './skillTools';
 import type { SkillsEnv } from './skillTools';
 import {
   messageMenuItems,
@@ -506,7 +506,17 @@ export function createChatService(options: {
         rules: canRead ? HOW_TO_WORK : null,
         linked: buildLinkedContext(refs, workspace, canRead),
         // Skills are listed only when the model can use tools (it needs use_skill).
-        skills: canRead ? skillsContext(options.skillStore.listSkills()) : null,
+        // A skill you name as "/Name" has its steps put in right here, so it costs no extra step.
+        skills: canRead
+          ? skillsContext(
+              options.skillStore.listSkills(),
+              loadedSkills(
+                lastUser,
+                options.skillStore.listSkills(),
+                options.skillStore.readSkill,
+              ),
+            )
+          : null,
         tools,
       },
     };
