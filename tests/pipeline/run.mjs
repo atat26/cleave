@@ -14,7 +14,14 @@
 // ("openrouter/free" is accepted as the free router), and a run that reports any cost stops
 // everything at once. The app's default model is changed for the runs and put back at the end.
 //
+// The one exception, approved by the owner for occasional SMALL tests when the free models are
+// restricting a test: --allow-paid <exact model id> names ONE paid model that may be used, and
+// --max-cost <usd> is the most all the runs together may cost (default 0.05, never more than
+// 0.50). The cost is added up from what the app reports, printed, and a run that goes over
+// the cap stops everything. Without --allow-paid nothing paid ever runs.
+//
 // Options: --model id  --fallback id,id  --strict  --repeat n  --only s1,s3  --port 9333  --list
+//          --allow-paid id  --max-cost 0.05
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -37,6 +44,14 @@ const flag = (name) => args.includes(`--${name}`);
 const PORT = Number(opt('port', '9333'));
 const REPEAT = Number(opt('repeat', '3'));
 const ONLY = opt('only') ? opt('only').split(',') : null;
+// One paid model at most, named in full, with a small spending cap.
+const PAID_MODEL = opt('allow-paid');
+const HARD_MAX_COST = 0.5;
+const MAX_COST = Math.min(Number(opt('max-cost', '0.05')), HARD_MAX_COST);
+if (!(MAX_COST > 0)) throw new Error('--max-cost must be a number above 0.');
+if (flag('allow-paid') && !PAID_MODEL)
+  throw new Error('--allow-paid needs the exact model id after it.');
+let spent = 0;
 
 if (flag('list')) {
   for (const s of SCENARIOS)
@@ -129,6 +144,9 @@ async function verifyFree(app, ids) {
     else if (m.promptPerMillion === 0 && m.completionPerMillion === 0) {
       ok = true;
       why = 'free (prompt and completion price are both 0)';
+    } else if (id === PAID_MODEL) {
+      ok = true;
+      why = `PAID, allowed by the owner for small tests (prompt ${m.promptPerMillion}, completion ${m.completionPerMillion} per million; cap $${MAX_COST} in all)`;
     } else
       why = `NOT free (prompt ${m.promptPerMillion}, completion ${m.completionPerMillion} per million)`;
     rows.push({ id, ok, why });
@@ -553,7 +571,11 @@ const wanted = [
 ].filter(Boolean);
 const chainIds = [...new Set(wanted)];
 const verdicts = await verifyFree(app, chainIds);
-console.log('Models (free only):');
+console.log(
+  PAID_MODEL
+    ? 'Models (free, plus one allowed paid model):'
+    : 'Models (free only):',
+);
 for (const v of verdicts)
   console.log(`  ${v.ok ? 'OK ' : 'NO '} ${v.id}: ${v.why}`);
 const chain = verdicts.filter((v) => v.ok).map((v) => v.id);
@@ -581,11 +603,18 @@ try {
           `window.browserApi.llmSetModel(${J(model)}).then(() => 0)`,
         );
         result = await runOnce(app, scenario, model);
-        // A paid answer is never expected: stop everything.
-        if (result.cost !== null && result.cost > 0)
-          throw new Error(
-            `Stopping: ${model} reported a cost of ${result.cost}.`,
-          );
+        // A cost is only expected from the one allowed paid model, and only up to the cap.
+        if (result.cost !== null && result.cost > 0) {
+          if (model !== PAID_MODEL)
+            throw new Error(
+              `Stopping: ${model} reported a cost of ${result.cost}.`,
+            );
+          spent += result.cost;
+          if (spent > MAX_COST)
+            throw new Error(
+              `Stopping: the cost so far ($${spent.toFixed(4)}) is over the cap of $${MAX_COST}.`,
+            );
+        }
         const limited =
           ['rate-limit', 'provider', 'timeout'].includes(result.error ?? '') ||
           /rate/i.test(result.error ?? '');
@@ -614,7 +643,7 @@ try {
         .map((c) => (c.ok === true ? '+' : c.ok === false ? 'X' : '?'))
         .join('');
       console.log(
-        `${scenario.id} #${n} ${result.pass ? 'PASS' : 'FAIL'} [${marks}] ${result.model} ${result.tokens ?? '?'} tok, ${result.trace?.requests ?? '?'} requests (${result.trace?.batchedRounds ?? '?'} batched), ${(result.ms / 1000).toFixed(0)}s${result.error ? `  ERROR: ${result.error}` : ''}`,
+        `${scenario.id} #${n} ${result.pass ? 'PASS' : 'FAIL'} [${marks}] ${result.model} ${result.tokens ?? '?'} tok${result.cost ? ` ($${result.cost.toFixed(4)})` : ''}, ${result.trace?.requests ?? '?'} requests (${result.trace?.batchedRounds ?? '?'} batched), ${(result.ms / 1000).toFixed(0)}s${result.error ? `  ERROR: ${result.error}` : ''}`,
       );
       for (const c of checks.filter((c) => c.ok === false))
         console.log(`      X ${c.name}${c.detail ? ` (${c.detail})` : ''}`);
@@ -639,6 +668,11 @@ try {
   console.log(`\nSaved ${file}`);
   app.close();
 }
+
+if (PAID_MODEL)
+  console.log(
+    'Paid cost in all: $' + spent.toFixed(4) + ' (cap $' + MAX_COST + ')',
+  );
 
 // A short table per scenario.
 console.log('\nScenario summary (passes out of runs):');

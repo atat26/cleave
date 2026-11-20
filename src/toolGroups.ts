@@ -42,6 +42,7 @@ const GROUP_OF: Record<string, ToolGroup> = {
   read_link: 'web',
   click: 'act',
   type_text: 'act',
+  fill_fields: 'act',
   press_key: 'act',
   scroll: 'act',
   select_option: 'act',

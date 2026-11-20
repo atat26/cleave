@@ -99,11 +99,13 @@ export function markerTone(state: StepState): MarkerTone | null {
 const NOW_WORD: Record<string, string> = {
   click: 'Clicking',
   type_text: 'Typing',
+  fill_fields: 'Typing',
   select_option: 'Choosing',
 };
 const DONE_WORD: Record<string, string> = {
   click: 'Clicked',
   type_text: 'Typed',
+  fill_fields: 'Typed',
   select_option: 'Chose',
 };
 export const MAX_MARKER_NAME = 40;
