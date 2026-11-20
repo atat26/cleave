@@ -3233,6 +3233,25 @@ button {
   border-radius: 6px;
 }
 
+/* Steps on your own data: a bordered block saying it goes to the model. */
+.owndata {
+  margin: 4px 0 6px;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 10px;
+}
+.owndata-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 2px 6px 4px;
+  font-size: var(--fs-xs);
+}
+.owndata-what {
+  flex: 1;
+  color: var(--c-text-2);
+}
+
 /* The overlay on the page (OverlayApp.tsx, agentVisuals.ts): a glow inside the page's
    edge while the assistant works in it, and a pill hanging from the top. */
 .ao {
