@@ -526,6 +526,59 @@ test('the assistant can ask for a page, get it, and then answer', async () => {
   assert.ok(!JSON.stringify(t.chat).includes('PAGE TEXT'));
 });
 
+test('a page that was cut gets a note from the app after the answer, unless the answer already says so', async () => {
+  const cut = async (): Promise<ToolOutcome> => ({
+    label: 'Read: Long',
+    ok: true,
+    cutOff: 1,
+    note: 'Returned 20,000 characters (cut off at 20,000).',
+    result: 'PAGE TEXT',
+  });
+  const quiet = fakeTools(cut);
+  const a = setup(
+    scripted([call('c1', 3)], [text('It is about lighthouses.')]),
+  );
+  const startedA = a.runner.send(a.chatId, 'Summarise tab 3', {
+    ...CONTEXT,
+    tools: quiet.tools,
+  });
+  assert.ok(startedA.ok);
+  await startedA.done;
+  assert.match(
+    a.chat.messages[1].content,
+    /^It is about lighthouses\.\n\n_Note from the app: that page was long/,
+  );
+
+  const honest = fakeTools(cut);
+  const b = setup(
+    scripted(
+      [call('c1', 3)],
+      [text('Only the first part was read: lighthouses.')],
+    ),
+  );
+  const startedB = b.runner.send(b.chatId, 'Summarise tab 3', {
+    ...CONTEXT,
+    tools: honest.tools,
+  });
+  assert.ok(startedB.ok);
+  await startedB.done;
+  assert.equal(
+    b.chat.messages[1].content,
+    'Only the first part was read: lighthouses.',
+  );
+
+  // A page that was not cut adds nothing.
+  const whole = fakeTools();
+  const c = setup(scripted([call('c1', 3)], [text('Short page.')]));
+  const startedC = c.runner.send(c.chatId, 'Summarise tab 3', {
+    ...CONTEXT,
+    tools: whole.tools,
+  });
+  assert.ok(startedC.ok);
+  await startedC.done;
+  assert.equal(c.chat.messages[1].content, 'Short page.');
+});
+
 test('a chat without tools sends none and never loops', async () => {
   const t = setup(scripted([text('Hi'), call('c1', 3)]));
   const started = t.runner.send(t.chatId, 'Hello', CONTEXT);
