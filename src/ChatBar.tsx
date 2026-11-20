@@ -11,8 +11,8 @@ import { useEffect, useRef, useState } from 'react';
 import { chatNeedOf, finishedNotice, liveLine } from './chatPreview';
 import { noOverlayFlags } from './agentVisuals';
 import type { OverlayFlags } from './agentVisuals';
-import { runOf } from './runModel';
-import { RunBar, WorkingOnCard } from './StepList';
+import { CONTINUE_TEXT, runOf } from './runModel';
+import { LimitBanner, RunBar, WorkingOnCard } from './StepList';
 import { ChatComposer } from './ChatComposer';
 import { MessageList, useChatMessages } from './ChatMessages';
 import { ChatSwitcher } from './ChatSwitcher';
@@ -78,6 +78,12 @@ export function ChatBar({
   const newest = messages[messages.length - 1];
   const run = runOf(newest);
   const [endedFor, setEndedFor] = useState<number | null>(null);
+  // "Continue" (after a Stop, or a limit): a new reply in the same chat that carries on.
+  const carryOn = () => {
+    if (chats.activeId !== null) {
+      void window.browserApi.chatSend(chats.activeId, CONTINUE_TEXT, []);
+    }
+  };
   const wasGenerating = useRef(false);
   const newestRef = useRef(newest);
   newestRef.current = newest;
@@ -122,6 +128,8 @@ export function ChatBar({
     run !== null &&
     !onPage.pill &&
     (generating || (newest && endedFor === newest.id));
+  // After a reply used up a limit: the banner offering to go on (the page's pill does not carry it).
+  const limitVisible = !generating && !!newest && endedFor === newest.id;
 
   // A reply that finishes while the chat is too slim to show it: say so, until the
   // chat is opened enough to read it (or something new is sent).
@@ -346,7 +354,20 @@ export function ChatBar({
           />
         )}
         {(full || chatOnly) && !showNew && barVisible && run && chat && (
-          <RunBar run={run} onDismiss={() => setEndedFor(null)} />
+          <RunBar
+            run={run}
+            onDismiss={() => setEndedFor(null)}
+            onContinue={carryOn}
+          />
+        )}
+        {limitVisible && !showNew && run?.limit && (
+          <div className={full || chatOnly ? undefined : 'chat-live'}>
+            <LimitBanner
+              limit={run.limit}
+              onContinue={carryOn}
+              onDone={() => setEndedFor(null)}
+            />
+          </div>
         )}
         {chatOnly && !showNew && barVisible && run && workingOn && (
           <WorkingOnCard
@@ -359,7 +380,11 @@ export function ChatBar({
         )}
         {!full && !chatOnly && barVisible && run && chat && (
           <div className="chat-live">
-            <RunBar run={run} onDismiss={() => setEndedFor(null)} />
+            <RunBar
+              run={run}
+              onDismiss={() => setEndedFor(null)}
+              onContinue={carryOn}
+            />
           </div>
         )}
         {!full && !chatOnly && !barVisible && !onPage.pill && live?.working && (

@@ -526,6 +526,28 @@ test('the assistant can ask for a page, get it, and then answer', async () => {
   assert.ok(!JSON.stringify(t.chat).includes('PAGE TEXT'));
 });
 
+test('a reply that used up a limit is marked with it, so the chat can offer to go on', async () => {
+  const { tools } = fakeTools();
+  tools.reachedLimit = () => 'actions';
+  const t = setup(scripted([call('c1', 3)], [text('That is all I can do.')]));
+  const started = t.runner.send(t.chatId, 'Do a lot', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(t.chat.messages[1].status, 'done');
+  assert.equal(t.chat.messages[1].limit, 'actions');
+
+  // Tools that reach no limit leave nothing on the reply.
+  const plain = fakeTools();
+  const u = setup(scripted([call('c1', 3)], [text('Done.')]));
+  const startedPlain = u.runner.send(u.chatId, 'Read it', {
+    ...CONTEXT,
+    tools: plain.tools,
+  });
+  assert.ok(startedPlain.ok);
+  await startedPlain.done;
+  assert.equal('limit' in u.chat.messages[1], false);
+});
+
 test('a page that was cut gets a note from the app after the answer, unless the answer already says so', async () => {
   const cut = async (): Promise<ToolOutcome> => ({
     label: 'Read: Long',

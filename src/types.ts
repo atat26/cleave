@@ -806,6 +806,7 @@ export interface BrowserApi {
   // The pill's hover list is open (true) or closed: the strip grows to hold it.
   overlayPeek: (on: boolean) => void;
   overlayStop: () => void;
+  overlayContinue: () => void;
   overlayDismiss: () => void;
   // Shrink the popped-out card to its strip (true) or bring it back (false), and show the
   // tab its step is about.

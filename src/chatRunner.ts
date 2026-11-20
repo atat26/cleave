@@ -441,6 +441,7 @@ export function createChatRunner(deps: RunnerDeps) {
           replyId,
           {
             ...result,
+            limit: tools?.reachedLimit?.() ?? null,
             usage:
               tokens === null && cost === null
                 ? null

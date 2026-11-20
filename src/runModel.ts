@@ -2,7 +2,8 @@
 // one of a few states, steps grouped when there are many reads in a row, and one
 // summary of the whole run (for the run bar). Pure code with no Electron and no React,
 // so it is easy to test. The look is in StepList.tsx and components.css.
-import type { ChatMessage, MessagePart } from './chats.ts';
+import { MAX_ACTIONS } from './agentActions.ts';
+import type { ChatMessage, LimitKind, MessagePart } from './chats.ts';
 import { TOOL_CATALOG } from './toolPolicy.ts';
 
 export type ToolPartView = Extract<MessagePart, { type: 'tool' }>;
@@ -307,6 +308,16 @@ export const RUN_WORDS: Record<RunWord, string> = {
   stopped: 'Stopped by you',
 };
 
+// What "Continue" says on your behalf after a Stop or a limit: a new reply in the same chat (which
+// gets its own fresh limits), picking up from what the conversation already holds.
+export const CONTINUE_TEXT = 'Please carry on where you left off.';
+
+// The banner after a reply used up one of its limits. Neutral: a limit is not an error.
+export const LIMIT_WORDS: Record<LimitKind, string> = {
+  actions: `This reply reached its limit of ${MAX_ACTIONS} actions.`,
+  reads: 'This reply read as many pages as it is allowed to at once.',
+};
+
 export interface RunView {
   word: RunWord;
   // What it is doing now (or did last): "Read" and "Best Buy Store Locator".
@@ -325,6 +336,8 @@ export interface RunView {
   touchesPage: boolean;
   // ...and only reads it.
   reading: boolean;
+  // The limit the finished reply used up, if any (the chat offers to go on).
+  limit?: LimitKind;
 }
 
 // The tab a step names in its arguments, or null.
@@ -410,5 +423,8 @@ export function runOf(message: ChatMessage | undefined): RunView | null {
     touchesPage:
       tabId !== null && (current.kind === 'read' || current.kind === 'act'),
     reading: current.kind === 'read',
+    ...(message.status === 'done' && message.limit
+      ? { limit: message.limit }
+      : {}),
   };
 }

@@ -287,6 +287,15 @@ export function OverlayApp() {
               )}
             </>
           )}
+          {state.ended && state.word === 'stopped' && (
+            <Button
+              size="sm"
+              title="Carry on where it stopped"
+              onClick={() => window.browserApi.overlayContinue()}
+            >
+              Continue
+            </Button>
+          )}
           {state.ended ? (
             <IconButton
               icon="x"

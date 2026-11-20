@@ -173,7 +173,7 @@ import type { AskKind } from './permissions';
 import { crashPageUrl, isLoadError, loadErrorUrl } from './errorPage';
 import { addBlocked, decidePopup, opensInBackground } from './popups';
 import { parseQuickChoice, quickSearchItems } from './quickSearch';
-import { retryRequest, stepState } from './runModel';
+import { CONTINUE_TEXT, retryRequest, stepState } from './runModel';
 import { parseTabSearchChoice, tabSearchItems } from './tabSearch';
 import {
   clearHiddenPickUp,
@@ -7989,6 +7989,16 @@ ${artifact.content.slice(0, 1500)}`;
     if (fromOverlay(event) && overlayReply)
       chatService?.stop(overlayReply.chatId);
   };
+  // "Continue" on the pill of a stopped reply: carry on in a new reply of the same chat.
+  const onOverlayContinue = (event: Electron.IpcMainEvent) => {
+    if (
+      fromOverlay(event) &&
+      overlayReply &&
+      overlayReply.message.status === 'stopped'
+    ) {
+      chatService?.sendMessage(overlayReply.chatId, CONTINUE_TEXT);
+    }
+  };
   const onOverlayDismiss = (event: Electron.IpcMainEvent) => {
     if (!fromOverlay(event) || !overlayReply) return;
     dismissedReplies.add(overlayReply.message.id);
@@ -8075,6 +8085,7 @@ ${artifact.content.slice(0, 1500)}`;
   ipcMain.on('overlay:ready', onOverlayReady);
   ipcMain.on('overlay:peek', onOverlayPeek);
   ipcMain.on('overlay:stop', onOverlayStop);
+  ipcMain.on('overlay:continue', onOverlayContinue);
   ipcMain.on('overlay:dismiss', onOverlayDismiss);
   // The chat asks for what the overlay shows when it opens (it may have missed the news).
   ipcMain.handle('overlay:flags-get', (event) => {
@@ -8262,6 +8273,7 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeListener('overlay:wheel', onOverlayWheel);
     ipcMain.removeListener('overlay:peek', onOverlayPeek);
     ipcMain.removeListener('overlay:stop', onOverlayStop);
+    ipcMain.removeListener('overlay:continue', onOverlayContinue);
     ipcMain.removeListener('overlay:dismiss', onOverlayDismiss);
     ipcMain.removeListener('overlay:minimize', onOverlayMinimize);
     ipcMain.removeListener('overlay:go-to-tab', onOverlayGoToTab);

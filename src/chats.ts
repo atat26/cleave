@@ -26,6 +26,10 @@ export interface MessageUsage {
   cost: number | null;
 }
 
+// A limit a reply ran into (see agentTools.ts): the actions it may take, or the pages it may read.
+export type LimitKind = 'actions' | 'reads';
+const LIMIT_KINDS: readonly LimitKind[] = ['actions', 'reads'];
+
 export interface ChatMessage {
   id: number;
   role: 'user' | 'assistant';
@@ -39,6 +43,8 @@ export interface ChatMessage {
   model: string | null;
   usage: MessageUsage | null;
   errorKind: ChatErrorKind | null;
+  // For a reply that used up one of its limits: which (so the chat can offer to go on).
+  limit?: LimitKind;
   // For your messages: the Spaces and tabs you mentioned with "@" in it, drawn as
   // small tokens where their "@name" (`tag`) is in the text, plus anything newly
   // attached without an "@name" (empty `tag`), drawn under the message. They keep
@@ -392,6 +398,9 @@ function parseConversation(
         model: isValidModelId(m.model) ? m.model : null,
         usage,
         errorKind: ERROR_KINDS.find((k) => k === m.errorKind) ?? null,
+        ...(m.role === 'assistant' && LIMIT_KINDS.some((k) => k === m.limit)
+          ? { limit: m.limit as LimitKind }
+          : {}),
         mentions: parseMentions(m.mentions),
         parts: parsed.parts,
       });
@@ -1089,6 +1098,8 @@ export function finishMessage(
     status: 'done' | 'stopped' | 'error';
     usage?: MessageUsage | null;
     errorKind?: ChatErrorKind | null;
+    // A limit the reply used up (only kept for a reply that finished).
+    limit?: LimitKind | null;
   },
   now = Date.now(),
 ): ChatsState {
@@ -1098,6 +1109,9 @@ export function finishMessage(
     messageId,
     (m) => ({
       ...m,
+      ...(result.status === 'done' && result.limit
+        ? { limit: result.limit }
+        : {}),
       status: result.status,
       usage: result.usage ?? m.usage,
       errorKind:
