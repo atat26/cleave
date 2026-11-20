@@ -93,7 +93,7 @@ const HINTS: Record<ToolGroup, RegExp> = {
   memory:
     /\b(history|visited|earlier|before|last (week|month|time)|yesterday|remember|bookmarks?|chats?|conversation|previous|used to|that page|read about)\b/i,
   pictures:
-    /\b(screenshots?|pictures?|images?|looks? like|appearance|layout|design|colou?rs?)\b/i,
+    /\b(screenshots?|pictures?|images?|photos?|charts?|graphs?|diagrams?|plots?|infographics?|illustrations?|looks? like|appearance|layout|design|colou?rs?)\b/i,
 };
 
 // The groups a message points to.

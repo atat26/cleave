@@ -72,6 +72,11 @@ test('the scenario requests point to the groups they need', () => {
     ['Save this page as a document.', ['docs']],
     ['What did I read about graphics cards last week?', ['memory']],
     ['Take a screenshot of this page and describe it.', ['pictures']],
+    [
+      'Look at the chart on this page and tell me which month is highest.',
+      ['pictures'],
+    ],
+    ['What does the diagram on this page show?', ['pictures']],
     ['Search the web for the best trail shoes', ['web']],
   ];
   for (const [text, expected] of cases) {
