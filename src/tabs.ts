@@ -214,6 +214,7 @@ import {
   removeBookmark,
   removeBookmarkByUrl,
   searchBookmarks,
+  searchBookmarksLoose,
 } from './bookmarks';
 import {
   defaultLibrarySettings,
@@ -229,6 +230,7 @@ import {
   pruneHistory,
   removeVisit,
   searchHistory,
+  searchHistoryLoose,
   setVisitTitle,
 } from './history';
 import {
@@ -3686,14 +3688,14 @@ export async function createTabs(
     },
     recallStore: {
       now: () => Date.now(),
-      searchHistory: (query, limit) =>
-        searchHistory(history, query, limit).map((e) => ({
+      searchHistory: (query, limit, since) =>
+        searchHistoryLoose(history, query, limit, since).map((e) => ({
           title: e.title,
           url: e.url,
           at: e.visitedAt,
         })),
-      searchBookmarks: (query, limit) =>
-        searchBookmarks(bookmarks, query, limit).map((b) => ({
+      searchBookmarks: (query, limit, since) =>
+        searchBookmarksLoose(bookmarks, query, limit, since).map((b) => ({
           title: b.title,
           url: b.url,
           at: b.addedAt,

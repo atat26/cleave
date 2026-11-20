@@ -135,3 +135,27 @@ test("the recall tools find nothing of the owner's, only a small made-up set", (
   assert.equal(chats.length, 1);
   assert.match(recall.readChat(chats[0].id)?.messages[1].text ?? '', /Belem/);
 });
+
+test('the made-up history is searched forgivingly, like the real one, and can be limited to recent days', () => {
+  const NOW = 1_000_000_000;
+  const recall = scopedRecall({
+    now: () => NOW,
+    searchHistory: () => [],
+    searchBookmarks: () => [],
+    searchChats: () => [],
+    readChat: () => null,
+  });
+  // The question's own words are left out.
+  assert.deepEqual(
+    recall
+      .searchHistory('what did I read about graphics cards last week', 5)
+      .map((p) => p.url),
+    ['https://shop.example/gpus'],
+  );
+  // Only the last 3 days: the Tesla page was 4 days ago.
+  const recent = recall.searchHistory('', 5, NOW - 3 * 86_400_000 - 1);
+  assert.deepEqual(
+    recent.map((p) => p.url),
+    ['https://shop.example/gpus'],
+  );
+});

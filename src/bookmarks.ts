@@ -5,6 +5,7 @@
 // username, password and "#" part of the address removed. A page is bookmarked
 // once: bookmarking it again does nothing.
 import { historyUrl } from './history.ts';
+import { looseSearch } from './looseSearch.ts';
 
 export interface Bookmark {
   id: number;
@@ -101,6 +102,24 @@ export function addBookmark(
       { id: state.nextId, url: kept, title: cleanTitle(title), addedAt: now },
     ],
   };
+}
+
+// The same, for the assistant: a forgiving search (see looseSearch.ts), best match first, and
+// limited to bookmarks added since a time if that is given. Your own search above stays strict.
+export function searchBookmarksLoose(
+  state: BookmarksState,
+  query: string,
+  limit = 300,
+  since?: number,
+): Bookmark[] {
+  return looseSearch(
+    state.items,
+    query,
+    (item) => `${item.title} ${item.url}`,
+    (item) => item.addedAt,
+    limit,
+    since,
+  );
 }
 
 export function removeBookmarkByUrl(

@@ -9,6 +9,7 @@ import {
   removeBookmark,
   removeBookmarkByUrl,
   searchBookmarks,
+  searchBookmarksLoose,
 } from './bookmarks.ts';
 
 test('a web page can be bookmarked once, and is found again by its address', () => {
@@ -113,4 +114,39 @@ test('junk on disk is dropped, good entries and a repeated page survive once', (
   for (const junk of [null, 5, 'x', [], {}, { items: 'no' }]) {
     assert.equal(parseBookmarks(junk).items.length, 0);
   }
+});
+
+test("the assistant's bookmark search is forgiving and can be limited to a time; your own stays strict", () => {
+  let state = defaultBookmarks();
+  state = addBookmark(
+    state,
+    'https://docs.example/models',
+    'Models overview',
+    1,
+  );
+  state = addBookmark(state, 'https://shop.example/gpu', 'Graphics cards', 2);
+  state = addBookmark(
+    state,
+    'https://shop.example/tablet',
+    'Graphics tablet',
+    3,
+  );
+  assert.equal(
+    searchBookmarks(state, 'what graphics cards last week').length,
+    0,
+  );
+  assert.deepEqual(
+    searchBookmarksLoose(state, 'what graphics cards last week').map(
+      (b) => b.title,
+    ),
+    ['Graphics cards'],
+  );
+  assert.deepEqual(
+    searchBookmarksLoose(state, 'graphics').map((b) => b.title),
+    ['Graphics tablet', 'Graphics cards'],
+  );
+  assert.deepEqual(
+    searchBookmarksLoose(state, 'graphics', 10, 3).map((b) => b.title),
+    ['Graphics tablet'],
+  );
 });
