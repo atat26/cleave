@@ -89,6 +89,7 @@ const WHAT: Record<string, string> = {
   search_history: 'Your own data',
   search_bookmarks: 'Your own data',
   search_chats: 'Your own data',
+  earlier_in_this_chat: 'Your own data',
   read_chat: 'Your own data',
   bookmark_page: 'Adds a bookmark',
   save_page_as_artifact: 'Makes an artifact',
@@ -160,6 +161,7 @@ export function nextLine(toolName: string): string {
     case 'search_bookmarks':
     case 'search_chats':
     case 'read_chat':
+    case 'earlier_in_this_chat':
       return 'What it finds goes to your chosen model, then it carries on.';
     default:
       return 'It saves this, then carries on.';

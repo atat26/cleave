@@ -113,6 +113,8 @@ export interface RunContext {
   systemPrompt: string | null;
   // How to work when there are tools (see chatContext.ts), or null.
   rules?: string | null;
+  // The assistant has a tool to look up the start of a long chat (earlier_in_this_chat).
+  canLookUpStart?: boolean;
   // What the chat has linked (titles and addresses), already cleaned; or null.
   linked?: string | null;
   // The skills that are on, as a short list for the assistant; or null.
@@ -148,6 +150,7 @@ export function createChatRunner(deps: RunnerDeps) {
       rules: context.rules ?? null,
       linkedContext: context.linked ?? null,
       skillsContext: context.skills ?? null,
+      canLookUpStart: context.canLookUpStart ?? false,
       history,
     });
     const tools = context.tools ?? null;

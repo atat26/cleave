@@ -298,6 +298,7 @@ function setup(
     }),
     // (The recall tools have their own tests in recallTools.test.ts.)
     currentChatId: () => 1,
+    unsentMessages: () => [],
     now: () => 1_700_000_000_000,
     searchHistory: () => [],
     searchBookmarks: () => [],
@@ -1887,4 +1888,34 @@ test('read_pages counts against the read limit, and is withdrawn with read_page'
   const refused = await tools.run(call('read_pages', { tabs: [1] }), ABORT);
   assert.equal(refused.ok, false);
   assert.equal(refused.blocked, true);
+});
+
+test('the look-back tool is offered only while something is left out of the chat, and works through the tools', async () => {
+  const none = createAgentTools(setup().env, () => 'always').definitions.map(
+    (d) => d.name,
+  );
+  assert.ok(!none.includes('earlier_in_this_chat'));
+  const left = [
+    { role: 'user' as const, text: 'My dog is called Biscuit.' },
+    { role: 'assistant' as const, text: 'Nice name!' },
+  ];
+  const env = { ...setup().env, unsentMessages: () => left };
+  const tools = createAgentTools(env, () => 'always');
+  assert.ok(tools.definitions.some((d) => d.name === 'earlier_in_this_chat'));
+  assert.ok(defaultLevel('earlier_in_this_chat') !== undefined);
+  // Turned off in the Tools panel: not offered.
+  const off = createAgentTools(env, (tool) =>
+    tool === 'earlier_in_this_chat' ? 'never' : 'always',
+  );
+  assert.ok(!off.definitions.some((d) => d.name === 'earlier_in_this_chat'));
+  const outcome = await tools.run(
+    {
+      id: 'c1',
+      name: 'earlier_in_this_chat',
+      arguments: '{"query":"dog name"}',
+    },
+    new AbortController().signal,
+  );
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /Biscuit/);
 });

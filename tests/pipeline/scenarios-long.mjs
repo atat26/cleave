@@ -124,7 +124,7 @@ export const LONG_SCENARIOS = [
     tabs: [],
     approve: allow,
     budgetTokens: 60000,
-    checks: ({ turns }) => {
+    checks: ({ turns, calls }) => {
       const early = turns[7].answer;
       const late = turns[turns.length - 1].answer;
       const perTurn = turns.map((t) => t.tokens ?? 0);
@@ -153,8 +153,53 @@ export const LONG_SCENARIOS = [
               !/\b(rex|max|buddy|charlie|luna|bella|fido|spot)\b/i.test(late)),
           late.slice(0, 160),
         ),
+        check(
+          'looks the start up in this chat (once or twice) and gives both facts',
+          calls.filter((c) => c.name === 'earlier_in_this_chat').length >= 1 &&
+            calls.filter((c) => c.name === 'earlier_in_this_chat').length <=
+              3 &&
+            knows,
+          `earlier_in_this_chat x${calls.filter((c) => c.name === 'earlier_in_this_chat').length}: ${late.slice(0, 120)}`,
+        ),
+        check(
+          'does not go looking in other chats or the history for it',
+          !calls.some((c) =>
+            ['search_chats', 'read_chat', 'search_history'].includes(c.name),
+          ),
+          calls.map((c) => c.name).join(', '),
+        ),
+        check(
+          'the last turn costs under 9,000 tokens (it was up to 15,000 when it searched other chats)',
+          (turns[turns.length - 1].tokens ?? 0) < 9000,
+          `${turns[turns.length - 1].tokens} tokens`,
+        ),
       ];
     },
+  },
+  {
+    id: 's33',
+    title:
+      'A long chat, and a question that does not need the start: no look-up at all',
+    turns: [
+      'Please remember two things for later: my dog is called Biscuit, and my favourite colour is teal. Just say OK.',
+      ...FILLER.slice(0, 19),
+      'What is 5 plus 6? Number only.',
+    ],
+    tabs: [],
+    approve: allow,
+    budgetTokens: 60000,
+    checks: ({ turns, calls }) => [
+      check(
+        'answers without looking anything up',
+        calls.length === 0,
+        calls.map((c) => c.name).join(', ') || 'no tools',
+      ),
+      check(
+        'answers right',
+        /\b11\b/.test(turns[turns.length - 1].answer),
+        turns[turns.length - 1].answer.slice(0, 80),
+      ),
+    ],
   },
   {
     id: 's25',
@@ -173,7 +218,7 @@ export const LONG_SCENARIOS = [
     tabs: [],
     approve: allow,
     budgetTokens: 60000,
-    checks: ({ turns }) => {
+    checks: ({ turns, calls }) => {
       const answer = turns[turns.length - 1].answer;
       const admits =
         /(no longer|can't see|cannot see|can’t see|not shown|left out|not able to see|don't have|do not have|unable|start of)/i.test(
@@ -184,6 +229,12 @@ export const LONG_SCENARIOS = [
           'gives the code word, or says plainly it can no longer see the start (it must not guess)',
           has(answer, CODE) || admits,
           answer.slice(0, 200),
+        ),
+        check(
+          'finds the code word by looking back (the start is a long message)',
+          has(answer, CODE) &&
+            calls.some((c) => c.name === 'earlier_in_this_chat'),
+          `earlier_in_this_chat x${calls.filter((c) => c.name === 'earlier_in_this_chat').length}`,
         ),
         check(
           'does not make up a different code word',

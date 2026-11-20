@@ -71,7 +71,10 @@ test('the catalog has every tool once, and the defaults are the behaviour from b
 });
 
 test('the catalog matches the tools the assistant is really given, so none is missed', () => {
-  const env = {} as AgentEnv;
+  // (The look-back tool is only offered while something is left out of the chat.)
+  const env = {
+    unsentMessages: () => [{ role: 'user', text: 'x' }],
+  } as unknown as AgentEnv;
   const offered = createAgentTools(env)
     .definitions.map((d) => d.name)
     .sort();

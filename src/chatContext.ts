@@ -18,23 +18,23 @@ const WORK_RULES = [
   '- If a request is vague about what to close, move or delete, ask what is meant (use offer_choices) before you do anything.',
   '- When you need the same kind of step for several things that do not depend on each other (several pages to read, several fields to fill), ask for all of them in one step, not one at a time.',
 ];
-const PLAN_RULE =
-  '- Before you start a task that has about four or more separate pieces of work, state a plan with set_plan and wait for the user to approve it; then report your progress with it. A step is a piece of the task, never a single tool call. For a question, a single action or a short task, just do it without a plan.';
 const LIMIT_RULE =
   '- If a limit, a refusal or a failure stops you, say plainly what is done and what is not. Never say you did something you did not do.';
 
-export const HOW_TO_WORK = [
-  'How to work:',
-  ...WORK_RULES,
-  PLAN_RULE,
-  LIMIT_RULE,
-].join('\n');
-// The same without planning (AIB_NO_PLAN=1, to compare, see docs/pipeline).
-export const HOW_TO_WORK_NO_PLAN = [
-  'How to work:',
-  ...WORK_RULES,
-  LIMIT_RULE,
-].join('\n');
+// The planning rule is added only while the plan tool is sent with the request (see howToWork), so
+// a request that cannot plan does not pay for it.
+export const PLAN_RULE =
+  '- Before you start a task that has about four or more separate pieces of work, state a plan with set_plan, alone, and wait for the user to approve it; then report your progress with it. A step is a piece of the task, never a single tool call.';
+
+export const HOW_TO_WORK = ['How to work:', ...WORK_RULES, LIMIT_RULE].join(
+  '\n',
+);
+
+// The rules for a request: the usual ones, and the planning rule when the plan tool is sent with it.
+export const howToWork = (withPlan: boolean): string =>
+  withPlan
+    ? ['How to work:', ...WORK_RULES, PLAN_RULE, LIMIT_RULE].join('\n')
+    : HOW_TO_WORK;
 
 // At most this many recent messages, and about this many characters, are sent.
 export const MAX_HISTORY_MESSAGES = 30;
@@ -131,27 +131,18 @@ export type TextMessage = {
   content: string;
 };
 
-export function buildMessages(options: {
-  systemPrompt: string | null;
-  // How to work when there are tools (HOW_TO_WORK), or null for a plain chat. Goes right after the
-  // system prompt, before anything that changes from turn to turn.
-  rules?: string | null;
-  // The list of linked Spaces and tabs (see chatLinks.ts), if any. It goes after
-  // the system prompt, in the same system message.
-  linkedContext?: string | null;
-  // The skills that are on (their names and when to use them), if any.
-  skillsContext?: string | null;
-  history: HistoryMessage[];
-  maxMessages?: number;
-  maxChars?: number;
-}): TextMessage[] {
-  const maxMessages = options.maxMessages ?? MAX_HISTORY_MESSAGES;
-  const maxChars = options.maxChars ?? MAX_HISTORY_CHARS;
-
+// Which messages of a chat are sent: the newest ones that fit the limits, starting with something
+// the user said. `usable` is everything that could be sent (no reply still being written, no failed or
+// empty one), `chosen` is what is sent, and the rest is left out.
+export function splitHistory<M extends HistoryMessage>(
+  history: M[],
+  maxMessages = MAX_HISTORY_MESSAGES,
+  maxChars = MAX_HISTORY_CHARS,
+): { usable: M[]; chosen: M[] } {
   // Leave out a reply still being written, a failed reply (it is incomplete and
   // would only confuse the model), and anything empty. A reply you stopped is
   // kept: it is a real, if short, answer.
-  const usable = options.history.filter(
+  const usable = history.filter(
     (m) =>
       m.status !== 'streaming' &&
       m.status !== 'error' &&
@@ -160,7 +151,7 @@ export function buildMessages(options: {
 
   // Take messages from the newest backwards until a limit is reached. The newest
   // one is always kept (cut down if it alone is too long).
-  const chosen: HistoryMessage[] = [];
+  const chosen: M[] = [];
   let chars = 0;
   for (let i = usable.length - 1; i >= 0; i--) {
     const message = usable[i];
@@ -173,6 +164,49 @@ export function buildMessages(options: {
 
   // Start with something you said, not with half a conversation.
   while (chosen.length > 1 && chosen[0].role === 'assistant') chosen.shift();
+  return { usable, chosen };
+}
+
+// The messages that are left out because the chat is longer than what is sent (oldest first).
+export function unsentMessages<M extends HistoryMessage>(history: M[]): M[] {
+  const { usable, chosen } = splitHistory(history);
+  return usable.slice(0, usable.length - chosen.length);
+}
+
+// Where, in the chat's own list of messages, what is sent begins; null when nothing is left out.
+// (The chat shows a line there: "Messages above are no longer sent to the assistant".)
+export function firstSentIndex<M extends HistoryMessage>(
+  history: M[],
+): number | null {
+  const { usable, chosen } = splitHistory(history);
+  if (usable.length === chosen.length || chosen.length === 0) return null;
+  return history.indexOf(chosen[0]);
+}
+
+export function buildMessages(options: {
+  systemPrompt: string | null;
+  // How to work when there are tools (HOW_TO_WORK), or null for a plain chat. Goes right after the
+  // system prompt, before anything that changes from turn to turn.
+  rules?: string | null;
+  // The list of linked Spaces and tabs (see chatLinks.ts), if any. It goes after
+  // the system prompt, in the same system message.
+  linkedContext?: string | null;
+  // The skills that are on (their names and when to use them), if any.
+  skillsContext?: string | null;
+  // The assistant has a tool to look up the messages that are left out (earlier_in_this_chat).
+  canLookUpStart?: boolean;
+  history: HistoryMessage[];
+  maxMessages?: number;
+  maxChars?: number;
+}): TextMessage[] {
+  const maxMessages = options.maxMessages ?? MAX_HISTORY_MESSAGES;
+  const maxChars = options.maxChars ?? MAX_HISTORY_CHARS;
+
+  const { usable, chosen } = splitHistory(
+    options.history,
+    maxMessages,
+    maxChars,
+  );
 
   const newest = chosen.length - 1;
   // How many of the first messages are not sent (the chat is longer than what fits): without being
@@ -188,7 +222,7 @@ export function buildMessages(options: {
     earlier,
     done,
     omitted > 0
-      ? `The start of this conversation is not shown to you: its first ${omitted} message${omitted === 1 ? ' is' : 's are'} left out because the conversation is long. If the user asks about something from the start, say plainly that you can no longer see the start of this conversation and ask them to say it again. Do not search their history or other chats for it. Your own earlier replies that you can see may have been based on those left-out messages, so do not say they were wrong or made up just because you cannot see where they came from.`
+      ? `The start of this conversation is not shown to you: its first ${omitted} message${omitted === 1 ? ' is' : 's are'} left out because the conversation is long. ${options.canLookUpStart ? 'If the user asks about something from the start, look it up with earlier_in_this_chat (search it with a query, or read from a message number); if it is not there, say so plainly and ask them to say it again.' : 'If the user asks about something from the start, say plainly that you can no longer see the start of this conversation and ask them to say it again.'} Do not search their history or other chats for it. Your own earlier replies that you can see may have been based on those left-out messages, so do not say they were wrong or made up just because you cannot see where they came from.`
       : null,
   ]
     .filter((part): part is string => !!part)

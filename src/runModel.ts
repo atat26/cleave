@@ -244,6 +244,7 @@ const OWN_DATA_TOOLS = new Set([
   'search_bookmarks',
   'search_chats',
   'read_chat',
+  'earlier_in_this_chat',
   'list_all_tabs',
 ]);
 export const isOwnDataTool = (toolName: string): boolean =>

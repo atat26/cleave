@@ -3623,3 +3623,19 @@ button {
 .ao-card .approval-card {
   margin: 0;
 }
+
+/* A thin line where what the assistant is sent begins, in a long chat. Information only. */
+.chat-cut {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: var(--s-3) 0;
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+.chat-cut::before,
+.chat-cut::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--c-border);
+}

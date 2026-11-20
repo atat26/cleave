@@ -441,6 +441,17 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     changesThings: false,
   },
   {
+    name: 'earlier_in_this_chat',
+    group: 'recall',
+    title: 'Look back in this chat',
+    summary:
+      'Find something from the start of a long chat, which is no longer sent to the assistant.',
+    defaultLevel: 'ask',
+    changesThings: false,
+    warning:
+      'In a long chat the assistant will be able to look up the first messages again. What it finds goes to your chosen model.',
+  },
+  {
     name: 'set_plan',
     group: 'chat',
     title: 'Plan a long task',
