@@ -376,6 +376,23 @@ async function runOnce(app, scenario, model) {
         break;
       }
     }
+    // Scenario 13: ask the app to name the chat with AI, as the "name it with AI" button does (an
+    // automatic naming of the first message may be running; it is waited out).
+    if (scenario.naming) {
+      for (let i = 0; i < 8; i++) {
+        result.naming = JSON.parse(
+          await app.ev(
+            `window.browserApi.nameWithAi('chat', ${created.chat}).then((r) => JSON.stringify(r))`,
+          ),
+        );
+        if (
+          result.naming.ok ||
+          !/Already naming/i.test(result.naming.error ?? '')
+        )
+          break;
+        await sleep(1500);
+      }
+    }
     // What the run left behind, read before it is cleaned away (for the checks).
     result.after = await readAfter(app, before);
   } catch (error) {
@@ -647,6 +664,7 @@ try {
             asks: result.asks,
             turns: result.turns,
             tokens: result.tokens,
+            naming: result.naming,
             after: result.after,
           });
       result.checks = checks;

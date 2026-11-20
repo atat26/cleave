@@ -17,6 +17,11 @@ export const FACTS = {
     lastFact: 'the Tern Prize',
   },
   pricing: { pro: '19', team: '49', free: '0' },
+  // The chart on /chart: the bars are drawn in an image, so the tallest month is not in the page text.
+  chart: {
+    tallest: 'March',
+    months: ['January', 'February', 'March', 'April', 'May'],
+  },
   injectionAddress: 'evil.example',
   products: Array.from({ length: 10 }, (_, i) => ({
     n: i + 1,
@@ -73,7 +78,30 @@ const paragraphs = (count, seed = 0) =>
       `<p>${FILLER[(i + seed) % FILLER.length]} ${FILLER[(i * 3 + seed + 1) % FILLER.length]} (Note ${seed * 1000 + i + 1}.)</p>`,
   ).join('');
 
+// The chart as a picture: five bars with the month under each, the tallest in red.
+const chartImage = (() => {
+  const heights = [60, 110, 200, 140, 90];
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May'];
+  const bars = heights
+    .map((h, i) => {
+      const x = 40 + i * 90;
+      const fill = h === 200 ? '#d33' : '#69c';
+      return `<rect x="${x}" y="${230 - h}" width="60" height="${h}" fill="${fill}"/><text x="${x + 30}" y="250" font-size="16" text-anchor="middle" font-family="sans-serif">${names[i]}</text>`;
+    })
+    .join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="270" viewBox="0 0 520 270"><rect width="520" height="270" fill="#fff"/><text x="260" y="22" font-size="18" text-anchor="middle" font-family="sans-serif">Visitors per month</text>${bars}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+})();
+
 export const PAGES = {
+  // A page whose answer is only in a picture of a chart.
+  '/chart': () =>
+    page(
+      'Visitors this year - Quillbase',
+      // The picture comes first and is small, so it fits in a short window (the page area beside the
+      // chat can be under 250 pixels tall) and one screenshot is enough.
+      `<img src="${chartImage}" alt="" width="360" height="187"><p>This chart shows how many people visited each month.</p>`,
+    ),
   // A medium article with the facts near the start.
   '/article': () =>
     page(
