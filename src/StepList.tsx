@@ -271,7 +271,6 @@ export function OwnDataBlock({
         <Icon name="lock" />
         <strong>Your own data</strong>
         <span className="owndata-what">sent to the model</span>
-        <Badge tone="ai">Private</Badge>
       </div>
       {steps.map((s) => (
         <StepRow
