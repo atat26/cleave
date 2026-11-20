@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <strong><a href="https://github.com/atat26/ai-browser/releases/latest/download/Cleave-Setup.exe">Download Cleave for Windows</a></strong><br>
-  <sub>Free · Windows 10 and 11, 64-bit · <a href="https://github.com/atat26/ai-browser/releases">All versions</a></sub>
+  <strong><a href="https://github.com/atat26/cleave/releases/latest/download/Cleave-Setup.exe">Download Cleave for Windows</a></strong><br>
+  <sub>Free · Windows 10 and 11, 64-bit · <a href="https://github.com/atat26/cleave/releases">All versions</a></sub>
 </p>
 
 ---

@@ -62,4 +62,4 @@ if ($DryRun) {
 Run "Publishing $tag" {
   gh release create $tag $setup $full $releases $sums --title "Cleave $version" --generate-notes --target main
 }
-Write-Host "`nDone. https://github.com/atat26/ai-browser/releases/tag/$tag"
+Write-Host "`nDone. https://github.com/atat26/cleave/releases/tag/$tag"

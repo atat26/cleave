@@ -21,3 +21,6 @@ Thumbs.db
 
 # Results of the AI prompt pipeline inspection runs (see docs/pipeline/)
 tests/pipeline/results/
+
+# Local tool folder (editor and Claude Code settings)
+.claude/
