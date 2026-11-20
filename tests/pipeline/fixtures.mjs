@@ -17,6 +17,14 @@ export const FACTS = {
     lastFact: 'the Tern Prize',
   },
   pricing: { pro: '19', team: '49', free: '0' },
+  // The catalogue on /catalog: 120 items, each with an "Add to list" button; the page shows a running total.
+  catalog: {
+    items: Array.from({ length: 120 }, (_, i) => ({
+      n: i + 1,
+      name: `Item ${i + 1}`,
+      price: 10 + ((i * 13) % 149),
+    })),
+  },
   // The chart on /chart: the bars are drawn in an image, so the tallest month is not in the page text.
   chart: {
     tallest: 'March',
@@ -94,6 +102,17 @@ const chartImage = (() => {
 })();
 
 export const PAGES = {
+  // A catalogue of 30 items, each with a button; the total of what was added is shown on the page.
+  '/catalog': () =>
+    page(
+      'Catalogue - Quillbase',
+      `<h1>Catalogue</h1><p id="total">List total: EUR 0</p><ul>${FACTS.catalog.items
+        .map(
+          (item) =>
+            `<li>${item.name}: EUR ${item.price} <button onclick="window.t=(window.t||0)+${item.price};document.getElementById('total').textContent='List total: EUR '+window.t">Add ${item.name} to list</button></li>`,
+        )
+        .join('')}</ul>`,
+    ),
   // A page whose answer is only in a picture of a chart.
   '/chart': () =>
     page(
