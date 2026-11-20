@@ -94,6 +94,9 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
   --focus-ring: 2px solid var(--c-focus);
+  /* Cleave brand colours: used only by the logo, nothing else in the app. */
+  --cleave-letters: #14142b;
+  --cleave-line: #2f5bff;
 }
 :root[data-theme='dark'] {
   /* Scroll bars, form controls and spell-check menus draw dark too. */
@@ -123,6 +126,8 @@
   --c-ok-tint: rgba(111, 211, 154, 0.14);
   --c-info: #8ea8ff;
   --c-info-tint: rgba(142, 168, 255, 0.16);
+  --cleave-letters: #f6f5f1;
+  --cleave-line: #5b7fff;
   --sp-blue: #6c97ff;
   --sp-teal: #3cc1b3;
   --sp-amber: #f0a93a;

@@ -1,3 +1,5 @@
+// Must come first: it picks the data folder (installed app or development copy).
+import './useDataFolder';
 import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
@@ -10,6 +12,7 @@ import {
   MIN_WINDOW_WIDTH,
   TOOLBAR_HEIGHT,
 } from './layout';
+import { registerAppInfo } from './appInfo';
 import { openSecretStore } from './electronSecrets';
 import { registerLlm } from './llm';
 import { registerSearch } from './search';
@@ -52,6 +55,15 @@ const createWindow = () => {
     },
   });
 
+  // The name Windows shows on the taskbar. A copy started from the project folder says so, to tell it
+  // apart from the installed app.
+  const windowTitle = app.isPackaged ? 'Cleave' : 'Cleave (development copy)';
+  mainWindow.setTitle(windowTitle);
+  mainWindow.on('page-title-updated', (event) => {
+    event.preventDefault();
+    mainWindow.setTitle(windowTitle);
+  });
+
   // Security: our own UI window never opens new windows or navigates away.
   // (Websites will live in their own tab views, added later in M1.)
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -91,6 +103,7 @@ const createWindow = () => {
 app.whenReady().then(() => {
   // No menu bar (our own right-click menus and shortcuts replace it).
   Menu.setApplicationMenu(null);
+  registerAppInfo();
   createWindow();
 
   // On OS X it's common to re-create a window in the app when the
