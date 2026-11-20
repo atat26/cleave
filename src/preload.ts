@@ -3,6 +3,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action';
 import type { ApprovalLevel } from './toolPolicy';
+import type { UpdateState } from './updateState';
 import type {
   BrowserApi,
   ChatMessage,
@@ -297,6 +298,15 @@ const browserApi: BrowserApi = {
   setSpaceAbout: (id, text) => ipcRenderer.send('space:about', id, text),
   showSpaceSwitcher: (x, y) => ipcRenderer.send('spaces:switcher', x, y),
   appInfo: () => ipcRenderer.invoke('app:info'),
+  updateGet: () => ipcRenderer.invoke('update:get'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  onUpdateChanged: (callback) => {
+    const listener = (_event: unknown, state: unknown) =>
+      callback(state as UpdateState);
+    ipcRenderer.on('update:changed', listener);
+    return () => ipcRenderer.removeListener('update:changed', listener);
+  },
   sleepSettingsGet: () => ipcRenderer.invoke('sleep-settings:get'),
   sleepSettingsSet: (changes) =>
     ipcRenderer.invoke('sleep-settings:set', changes),

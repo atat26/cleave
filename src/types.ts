@@ -41,6 +41,7 @@ import type { NewTabSettings } from './newTabSettings';
 import type { ExtensionRecord } from './extensionList';
 import type { ExtensionSettings } from './extensionSettings';
 import type { SleepSettings } from './sleep';
+import type { UpdateState } from './updateState';
 
 // What Settings > About shows about this copy of the app.
 export type AppInfo = {
@@ -781,6 +782,12 @@ export interface BrowserApi {
   spaceBulk: (id: number, action: 'close-all' | 'reopen-all' | 'sleep') => void;
   // Settings > About.
   appInfo: () => Promise<AppInfo>;
+  // Settings > About > Updates: the state, looking for an update (only when asked), restarting into
+  // a prepared one, and being told when the state changes.
+  updateGet: () => Promise<UpdateState>;
+  updateCheck: () => Promise<UpdateState>;
+  updateInstall: () => Promise<UpdateState>;
+  onUpdateChanged: (callback: (state: UpdateState) => void) => () => void;
   // Settings > Pages and memory.
   sleepSettingsGet: () => Promise<SleepSettings>;
   sleepSettingsSet: (changes: {

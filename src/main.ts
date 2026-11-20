@@ -13,6 +13,7 @@ import {
   TOOLBAR_HEIGHT,
 } from './layout';
 import { registerAppInfo } from './appInfo';
+import { registerUpdates } from './updater';
 import { openSecretStore } from './electronSecrets';
 import { registerLlm } from './llm';
 import { registerSearch } from './search';
@@ -73,6 +74,9 @@ const createWindow = () => {
 
   // Load the app's UI page (the toolbar).
   void loadUi(mainWindow.webContents);
+
+  // The update button in Settings > About (looks for an update only when pressed).
+  registerUpdates(mainWindow);
 
   // The AI provider connection (key storage, model choice, network calls).
   // One shared store of secrets (API keys) for the AI connection and web search.
