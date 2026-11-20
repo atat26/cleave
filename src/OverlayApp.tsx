@@ -8,7 +8,7 @@ import { cardSide } from './agentVisuals';
 import type { OverlayState } from './agentVisuals';
 import type { CursorView } from './cursor';
 import type { MarkerView } from './marker';
-import { RUN_WORDS } from './runModel';
+import { MADE_WORDS, RUN_WORDS } from './runModel';
 import type { StepState } from './runModel';
 import { ApprovalCardView, StatusIcon } from './StepList';
 import { Button, IconButton } from './ui/controls';
@@ -286,6 +286,16 @@ export function OverlayApp() {
                 </Button>
               )}
             </>
+          )}
+          {state.ended && state.word === 'finished' && state.made && (
+            <Button
+              size="sm"
+              className="btn-open"
+              title={MADE_WORDS[state.made.kind]}
+              onClick={() => window.browserApi.overlayOpenMade()}
+            >
+              Open
+            </Button>
           )}
           {state.ended && state.word === 'stopped' && (
             <Button

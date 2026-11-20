@@ -3,7 +3,7 @@
 // summary of the whole run (for the run bar). Pure code with no Electron and no React,
 // so it is easy to test. The look is in StepList.tsx and components.css.
 import { MAX_ACTIONS } from './agentActions.ts';
-import type { ChatMessage, LimitKind, MessagePart } from './chats.ts';
+import type { ChatMessage, LimitKind, MadeItem, MessagePart } from './chats.ts';
 import { TOOL_CATALOG } from './toolPolicy.ts';
 
 export type ToolPartView = Extract<MessagePart, { type: 'tool' }>;
@@ -338,7 +338,30 @@ export interface RunView {
   reading: boolean;
   // The limit the finished reply used up, if any (the chat offers to go on).
   limit?: LimitKind;
+  // The last thing the finished reply made (a document, a skill, a Space), for an Open button.
+  made?: MadeItem;
 }
+
+// What a finished reply made last, if anything: the thing its Open button opens.
+export function madeOf(message: ChatMessage | undefined): MadeItem | null {
+  if (!message || message.role !== 'assistant' || message.status !== 'done') {
+    return null;
+  }
+  for (let i = message.parts.length - 1; i >= 0; i--) {
+    const part = message.parts[i];
+    if (part.type === 'tool' && part.status === 'ok' && part.made) {
+      return part.made;
+    }
+  }
+  return null;
+}
+
+// The words on the tooltip of an Open button, by what it opens.
+export const MADE_WORDS: Record<MadeItem['kind'], string> = {
+  artifact: 'Open the document it made',
+  skill: 'Open your skills',
+  space: 'Go to the Space it made',
+};
 
 // The tab a step names in its arguments, or null.
 export function stepTabId(
@@ -426,5 +449,6 @@ export function runOf(message: ChatMessage | undefined): RunView | null {
     ...(message.status === 'done' && message.limit
       ? { limit: message.limit }
       : {}),
+    ...(madeOf(message) ? { made: madeOf(message)! } : {}),
   };
 }

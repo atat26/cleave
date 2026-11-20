@@ -807,6 +807,8 @@ export interface BrowserApi {
   overlayPeek: (on: boolean) => void;
   overlayStop: () => void;
   overlayContinue: () => void;
+  overlayOpenMade: () => void;
+  openMade: (kind: string, id: number) => void;
   overlayDismiss: () => void;
   // Shrink the popped-out card to its strip (true) or bring it back (false), and show the
   // tab its step is about.

@@ -531,6 +531,7 @@ export function createSaveTools(
     return {
       label: `Saved as an artifact: ${cleanLabel(saved.title, 60)}`,
       ok: true,
+      made: { kind: 'artifact', id: saved.artifactId },
       note: `Saved ${saved.chars.toLocaleString('en-US')} characters.`,
       result: `Saved ${what === 'selection' ? 'the selected text' : 'the page text'} (${saved.chars.toLocaleString('en-US')} characters) as artifact ${saved.artifactId}, "${cleanLabel(saved.title, 80)}", linked to this conversation. Its text is not shown here: use read_artifact if you need to read it.`,
     };

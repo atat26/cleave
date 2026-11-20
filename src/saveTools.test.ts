@@ -84,6 +84,7 @@ test('saving a page goes through the app, tells the model only the title and siz
   assert.match(out.result, /1,234 characters/);
   assert.match(out.result, /read_artifact/);
   assert.equal(out.label, 'Saved as an artifact: Goldfish care');
+  assert.deepEqual(out.made, { kind: 'artifact', id: 41 });
   assert.equal(tools.used(), 1);
 });
 
