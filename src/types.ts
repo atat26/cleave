@@ -42,6 +42,15 @@ import type { ExtensionRecord } from './extensionList';
 import type { ExtensionSettings } from './extensionSettings';
 import type { SleepSettings } from './sleep';
 
+// What Settings > About shows about this copy of the app.
+export type AppInfo = {
+  version: string;
+  // The installed app, or a copy started from the project folder.
+  installed: boolean;
+  // The folder this copy keeps its data in.
+  dataFolder: string;
+};
+
 // A button's box on the window.
 export interface ExtensionBox {
   x: number;
@@ -770,6 +779,8 @@ export interface BrowserApi {
   showNewArtifactMenu: (x: number, y: number) => void;
   // Close all of a Space's open pages, or reopen all its closed ones.
   spaceBulk: (id: number, action: 'close-all' | 'reopen-all' | 'sleep') => void;
+  // Settings > About.
+  appInfo: () => Promise<AppInfo>;
   // Settings > Pages and memory.
   sleepSettingsGet: () => Promise<SleepSettings>;
   sleepSettingsSet: (changes: {

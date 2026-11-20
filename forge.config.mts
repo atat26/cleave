@@ -10,10 +10,19 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    name: 'Cleave',
+    // The icon of Cleave.exe (Forge adds the .ico itself).
+    icon: './assets/icon',
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      name: 'Cleave',
+      authors: 'Alex Tracy',
+      description: 'Cleave: a browser with an assistant built in',
+      // The icon on the installer and in Windows' list of installed apps.
+      setupIcon: './assets/icon.ico',
+    }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),

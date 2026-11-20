@@ -296,6 +296,7 @@ const browserApi: BrowserApi = {
   artifactRead: (id) => ipcRenderer.invoke('artifact:read', id),
   setSpaceAbout: (id, text) => ipcRenderer.send('space:about', id, text),
   showSpaceSwitcher: (x, y) => ipcRenderer.send('spaces:switcher', x, y),
+  appInfo: () => ipcRenderer.invoke('app:info'),
   sleepSettingsGet: () => ipcRenderer.invoke('sleep-settings:get'),
   sleepSettingsSet: (changes) =>
     ipcRenderer.invoke('sleep-settings:set', changes),
