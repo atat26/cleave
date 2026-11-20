@@ -10,7 +10,13 @@ import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import { blocksOf, stepView } from './runModel';
-import { ApprovalCard, PoppedOutNote, StepGroup, StepRow } from './StepList';
+import {
+  ApprovalCard,
+  OwnDataBlock,
+  PoppedOutNote,
+  StepGroup,
+  StepRow,
+} from './StepList';
 import type {
   ArtifactInfo,
   ChatMessage,
@@ -587,6 +593,21 @@ function MessageView({
     >
       {/* Everything that happened, in the order it happened. */}
       {blocksOf(message.parts).map((block) => {
+        if (block.type === 'owndata') {
+          return (
+            <OwnDataBlock
+              key={`o${block.indexes[0]}`}
+              parts={block.indexes.map(
+                (index) => message.parts[index] as ToolPart,
+              )}
+              message={message}
+              chatId={chatId}
+              tabs={tabs}
+              isNewestReply={isLast}
+              busy={busy}
+            />
+          );
+        }
         if (block.type === 'group') {
           const groupParts = block.indexes.map(
             (index) => message.parts[index] as ToolPart,
