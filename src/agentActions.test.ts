@@ -127,6 +127,72 @@ test('typing shows exactly what will be typed, and never goes into sensitive fie
   );
 });
 
+test('filling several fields is one card listing every field and its text', () => {
+  const p = plan('fill_fields', {
+    tab: 1,
+    fields: [
+      { element: 2, text: 'me@example.com' },
+      { element: 8, text: 'Blue' },
+    ],
+  });
+  assert.deepEqual(p, {
+    kind: 'ask',
+    text: 'Fill in 2 fields on shop.example',
+    risky: false,
+    card: { list: ['Email: me@example.com', 'Color: Blue'] },
+    // The marker goes on the first field.
+    target: { tabId: 1, backendNodeId: 102, name: 'Email' },
+  });
+});
+
+test('fill_fields is all or nothing: a sensitive, missing, repeated, long or bad entry refuses the whole thing', () => {
+  const fields = (...f: unknown[]) =>
+    plan('fill_fields', { tab: 1, fields: f });
+  const ok = { element: 2, text: 'x' };
+  assert.equal(fields(ok, { element: 3, text: 'x' }).kind, 'refuse');
+  assert.equal(fields(ok, { element: 99, text: 'x' }).kind, 'refuse');
+  assert.equal(fields(ok, { element: 2, text: 'y' }).kind, 'refuse');
+  assert.equal(
+    fields(ok, { element: 8, text: 'x'.repeat(1001) }).kind,
+    'refuse',
+  );
+  assert.equal(fields(ok, { element: 8, text: 5 }).kind, 'refuse');
+  assert.equal(fields(ok, { element: 1.5, text: 'x' }).kind, 'refuse');
+  assert.equal(fields(ok, 'nope').kind, 'refuse');
+  assert.equal(fields().kind, 'refuse');
+  assert.equal(plan('fill_fields', { tab: 1 }).kind, 'refuse');
+  // More than ten entries.
+  const many = Array.from({ length: 11 }, () => ok);
+  assert.equal(fields(...many).kind, 'refuse');
+  // Needs a look first, like any action on a control.
+  assert.equal(
+    plan(
+      'fill_fields',
+      { tab: 1, fields: [ok] },
+      context({ controls: undefined }),
+    ).kind,
+    'refuse',
+  );
+});
+
+test('fill_fields cannot go over the action limit, counting each field', () => {
+  const two = {
+    tab: 1,
+    fields: [
+      { element: 2, text: 'a' },
+      { element: 8, text: 'b' },
+    ],
+  };
+  assert.equal(
+    plan('fill_fields', two, context({ done: MAX_ACTIONS - 1 })).kind,
+    'refuse',
+  );
+  assert.equal(
+    plan('fill_fields', two, context({ done: MAX_ACTIONS - 2 })).kind,
+    'ask',
+  );
+});
+
 test('Enter always asks as risky; other keys ask normally; unknown keys are refused', () => {
   const enter = plan('press_key', { tab: 1, key: 'Enter' });
   assert.equal(enter.kind === 'ask' && enter.risky, true);

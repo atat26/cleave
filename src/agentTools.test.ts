@@ -568,6 +568,78 @@ test('typing and scrolling keep the numbers; typing never goes into a sensitive 
   assert.deepEqual(done, ['type', 'scroll']);
 });
 
+test('fill_fields types every field after one approval, keeps the numbers, and counts each field', async () => {
+  const { tools, done } = setup();
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  const fill = call('fill_fields', {
+    tab: 1,
+    fields: [
+      { element: 2, text: 'one' },
+      { element: 2, text: 'two' },
+    ],
+  });
+  // The same field twice is refused as a whole.
+  assert.equal(tools.plan(fill).kind, 'refuse');
+  assert.deepEqual(done, []);
+
+  // A password field anywhere in the list: nothing is typed at all.
+  const withSecret = call('fill_fields', {
+    tab: 1,
+    fields: [
+      { element: 2, text: 'me@example.com' },
+      { element: 3, text: 'hunter2' },
+    ],
+  });
+  assert.equal(tools.plan(withSecret).kind, 'refuse');
+  assert.equal((await tools.run(withSecret, ABORT)).ok, false);
+  assert.deepEqual(done, []);
+
+  // A good list: one question, then every field is typed in order.
+  const good = call('fill_fields', {
+    tab: 1,
+    fields: [
+      { element: 2, text: 'me@example.com' },
+      { element: 1, text: 'Buy' },
+    ],
+  });
+  const planned = tools.plan(good);
+  assert.equal(planned.kind, 'ask');
+  assert.equal(planned.kind === 'ask' && planned.card?.list?.length, 2);
+  const outcome = await tools.run(good, ABORT);
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /2 fields were filled/);
+  assert.match(outcome.result, /Nothing was submitted/);
+  assert.deepEqual(done, ['type', 'type']);
+  // Typing does not change the page, so the numbers still work.
+  assert.equal(tools.plan(good).kind, 'ask');
+});
+
+test('each fill_fields field counts against the action limit, as one action each', async () => {
+  const { tools, done } = setup();
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  for (let i = 0; i < MAX_ACTIONS - 1; i++) {
+    await tools.run(call('scroll', { tab: 1, direction: 'down' }), ABORT);
+  }
+  // One action left: a two-field fill would go over, so nothing is typed.
+  const two = call('fill_fields', {
+    tab: 1,
+    fields: [
+      { element: 2, text: 'a' },
+      { element: 1, text: 'b' },
+    ],
+  });
+  assert.equal(tools.plan(two).kind, 'refuse');
+  assert.equal((await tools.run(two, ABORT)).ok, false);
+  assert.equal(done.filter((d) => d === 'type').length, 0);
+  // One field still fits.
+  const one = call('fill_fields', {
+    tab: 1,
+    fields: [{ element: 2, text: 'a' }],
+  });
+  assert.equal(tools.plan(one).kind, 'ask');
+  assert.equal((await tools.run(one, ABORT)).ok, true);
+});
+
 test('a reply can take only so many actions, and the tab shows as worked in until it ends', async () => {
   const { tools, done, working } = setup();
   for (let i = 0; i < MAX_ACTIONS; i++) {

@@ -28,6 +28,8 @@ export const MAX_ACTIONS = 25;
 // New tabs the assistant may open in one reply.
 export const MAX_NEW_TABS = 5;
 export const MAX_TYPED_CHARS = 1000;
+// Fields one fill_fields step may fill (each counts as one action).
+export const MAX_FILL_FIELDS = 10;
 const MAX_SHOWN_TEXT = 120;
 const MAX_URL_CHARS = 2000;
 
@@ -36,6 +38,7 @@ const MAX_URL_CHARS = 2000;
 export const ACTION_NAMES = [
   'click',
   'type_text',
+  'fill_fields',
   'press_key',
   'scroll',
   'select_option',
@@ -96,6 +99,30 @@ export const ACTION_DEFINITIONS: ToolDefinition[] = [
         text: { type: 'string', description: 'The text to type.' },
       },
       required: ['tab', 'element', 'text'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'fill_fields',
+    description: `Fill in several text fields of ONE form in a linked tab at once (up to ${MAX_FILL_FIELDS}), replacing what is in them. Use it instead of several type_text steps: the user then approves the whole form with one question. Use look_at_page first for the control numbers. You can never fill password, card or one-time-code fields: if the form has one, fill the others and ask the user to do that field themselves. It does not press Submit.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        tab: tabNumber,
+        fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              element: elementNumber,
+              text: { type: 'string', description: 'The text to type.' },
+            },
+            required: ['element', 'text'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['tab', 'fields'],
       additionalProperties: false,
     },
   },
@@ -302,6 +329,101 @@ export function parseWebAddress(raw: unknown): URL | null {
   return url;
 }
 
+// The fields of a fill_fields call: [{ element, text }], or null if the list is missing, empty,
+// longer than MAX_FILL_FIELDS, or has an entry that is not a whole element number with a text.
+export function fillList(
+  args: Record<string, unknown>,
+): { element: number; text: string }[] | null {
+  const raw = args.fields;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_FILL_FIELDS) {
+    return null;
+  }
+  const out: { element: number; text: string }[] = [];
+  for (const entry of raw as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) return null;
+    const { element, text } = entry as Record<string, unknown>;
+    if (typeof element !== 'number' || !Number.isInteger(element)) return null;
+    if (typeof text !== 'string') return null;
+    out.push({ element, text });
+  }
+  return out;
+}
+
+// Several fields of one form at once: one question for all of them. All or nothing: if any
+// field is missing, repeated, too long or sensitive, nothing is typed anywhere.
+function planFill(
+  args: Record<string, unknown>,
+  tabId: number,
+  site: string,
+  controls: OutlineElement[],
+  actionsDone: number,
+): Plan {
+  const fields = fillList(args);
+  if (fields === null) {
+    return refuse(
+      "Couldn't fill that (bad request)",
+      `The fields were missing, or there were more than ${MAX_FILL_FIELDS}.`,
+      `fields must be a list of 1 to ${MAX_FILL_FIELDS} entries, each with an element number and a text.`,
+    );
+  }
+  if (actionsDone + fields.length > MAX_ACTIONS) {
+    return refuse(
+      'Action limit reached',
+      `Filling ${fields.length} fields would go over the limit of ${MAX_ACTIONS} actions in this reply. Nothing was typed.`,
+      `Each field counts as one action, and ${actionsDone} of ${MAX_ACTIONS} are used. Fill fewer fields, or stop and tell the user where things stand.`,
+    );
+  }
+  const seen = new Set<number>();
+  const lines: string[] = [];
+  let first: OutlineElement | null = null;
+  for (const { element, text } of fields) {
+    const control = controls.find((c) => c.id === element);
+    if (!control) {
+      return refuse(
+        "Couldn't find that control",
+        `There is no control [${element}] in the last look. Nothing was typed.`,
+        `There is no control numbered ${element} in the latest look at tab ${tabId}. Nothing was typed. Use look_at_page again.`,
+      );
+    }
+    if (seen.has(element)) {
+      return refuse(
+        "Couldn't fill that (same field twice)",
+        `Field [${element}] was listed twice. Nothing was typed.`,
+        `Control ${element} is listed twice. List each field once. Nothing was typed.`,
+      );
+    }
+    seen.add(element);
+    if (text.length > MAX_TYPED_CHARS) {
+      return refuse(
+        "Couldn't type that",
+        `A text was longer than ${MAX_TYPED_CHARS} characters. Nothing was typed.`,
+        `Each text must be at most ${MAX_TYPED_CHARS} characters. Nothing was typed.`,
+      );
+    }
+    if (control.sensitive) {
+      return refuse(
+        'Not typing into a sensitive field',
+        'One of the fields looks like a password, card or code field. Nothing was typed.',
+        `Control ${element} is a password, card or code field. You must never type into it: ask the user to fill it in themselves. Nothing was typed, so fill the other fields again without it.`,
+      );
+    }
+    first ??= control;
+    const label = cleanLabel(control.name, 60) || describeControl(control);
+    lines.push(`${label}: ${cleanLabel(text, MAX_SHOWN_TEXT)}`);
+  }
+  return {
+    kind: 'ask',
+    text: `Fill in ${fields.length} field${fields.length === 1 ? '' : 's'} on ${site}`,
+    risky: false,
+    card: { list: lines },
+    target: {
+      tabId,
+      backendNodeId: first!.backendNodeId,
+      name: cleanLabel(first!.name, MAX_MARKER_NAME),
+    },
+  };
+}
+
 export function planAction(call: ToolCall, context: ActionContext): Plan {
   const name = call.name;
   if (!isActionName(name)) {
@@ -453,6 +575,9 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
       'The page has to be looked at before acting on it.',
       `Use look_at_page on tab ${tabId} first (and again after the page changes): the control numbers come from it.`,
     );
+  }
+  if (name === 'fill_fields') {
+    return planFill(args, tabId, site, controls, context.actionsDone());
   }
   const control = controls.find((c) => c.id === number);
   if (number === null || !control) {

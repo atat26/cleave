@@ -71,6 +71,7 @@ export function cleanCard(raw: unknown): CardDetails | undefined {
 const WHAT: Record<string, string> = {
   click: 'Changes a page',
   type_text: 'Changes a page',
+  fill_fields: 'Changes a page',
   press_key: 'Changes a page',
   select_option: 'Changes a page',
   go_to: 'Changes a page',
@@ -132,6 +133,7 @@ export function nextLine(toolName: string): string {
   switch (toolName) {
     case 'click':
     case 'type_text':
+    case 'fill_fields':
     case 'press_key':
     case 'select_option':
     case 'go_to':

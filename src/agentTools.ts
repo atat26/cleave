@@ -17,6 +17,7 @@ import type { WorkspaceTab } from './chatLinks.ts';
 import {
   ACTION_DEFINITIONS,
   CHANGES_PAGE,
+  fillList,
   isActionName,
   MAX_ACTIONS,
   planAction,
@@ -907,13 +908,31 @@ export function createAgentTools(
       touched.add(tabId);
       env.setWorking(tabId, true);
     }
-    actions++;
+    // Each field of a fill_fields step counts as one action.
+    const fillFields = name === 'fill_fields' ? (fillList(args) ?? []) : [];
+    actions += name === 'fill_fields' ? Math.max(1, fillFields.length) : 1;
+    let filled = 0;
 
     let result: ActionResult;
     switch (name) {
       case 'click':
         result = await env.click(tabId, control!, signal);
         break;
+      case 'fill_fields': {
+        // One field after another, in the order given. A failure stops the rest.
+        let last: ActionResult = { ok: false, reason: 'unavailable' };
+        for (const field of fillFields) {
+          const target = outlines
+            .get(tabId)
+            ?.find((c) => c.id === field.element);
+          if (!target) break;
+          last = await env.typeText(tabId, target, field.text, signal);
+          if (!last.ok) break;
+          filled++;
+        }
+        result = last;
+        break;
+      }
       case 'type_text':
         result = await env.typeText(
           tabId,
@@ -965,11 +984,27 @@ export function createAgentTools(
           result: `That did not work (${why}). Look at the page again before trying anything else.`,
         };
       }
+      if (name === 'fill_fields') {
+        return {
+          label: `Couldn't do it: ${text}`,
+          ok: false,
+          note: `Not done: ${why}. ${filled} of ${fillFields.length} fields were filled.`,
+          result: `That did not work (${why}). ${filled} of ${fillFields.length} fields were filled before it stopped. Look at the page again before trying anything else.`,
+        };
+      }
       return {
         label: `Couldn't do it: ${text}`,
         ok: false,
         note: `Not done: ${why}.`,
         result: `That did not work (${why}). Look at the page again before trying anything else.`,
+      };
+    }
+    if (name === 'fill_fields') {
+      return {
+        label: text,
+        ok: true,
+        note: `Done: ${filled} field${filled === 1 ? '' : 's'} filled.`,
+        result: `Done. ${filled} field${filled === 1 ? ' was' : 's were'} filled. Nothing was submitted.`,
       };
     }
     const changed = CHANGES_PAGE.has(name);

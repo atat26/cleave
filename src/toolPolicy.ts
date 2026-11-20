@@ -141,6 +141,15 @@ export const TOOL_CATALOG: readonly ToolInfo[] = [
     changesThings: true,
   },
   {
+    name: 'fill_fields',
+    group: 'act',
+    title: 'Fill in a form',
+    summary:
+      'Type into several fields of one form, with one question for all (never password or card fields).',
+    defaultLevel: 'ask',
+    changesThings: true,
+  },
+  {
     name: 'press_key',
     group: 'act',
     title: 'Press a key',

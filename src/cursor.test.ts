@@ -46,6 +46,15 @@ test('typing shows a text cursor at the start of the field', () => {
   assert.equal(narrow?.x, 15);
 });
 
+test('filling several fields shows the same text cursor, on the first field', () => {
+  const typing = cursorFor(input({ toolName: 'type_text' }));
+  const filling = cursorFor(input({ toolName: 'fill_fields' }));
+  assert.equal(filling?.kind, 'beam');
+  assert.equal(filling?.tag, 'Typing');
+  assert.equal(filling?.x, typing?.x);
+  assert.equal(filling?.y, typing?.y);
+});
+
 test('while it waits for you it rests above the element, amber, with no click', () => {
   const view = cursorFor(input({ state: 'waiting' }));
   assert.equal(view?.tone, 'waiting');

@@ -301,7 +301,7 @@ const MAKE_NOTE =
 // Told to the model when nothing is linked (but it has tools): it can still open
 // new tabs, which are then linked.
 export const NO_TABS_NOTE =
-  'No tabs are linked to this conversation. You can open a new tab with the open_tab tool (the user approves it); the new tab is then linked, and you can look at it with look_at_page, read it with read_page, and act in it (click, type_text, press_key, scroll, select_option, go_to, go_back). You cannot see or use any other tab. ' +
+  'No tabs are linked to this conversation. You can open a new tab with the open_tab tool (the user approves it); the new tab is then linked, and you can look at it with look_at_page, read it with read_page, and act in it (click, type_text, fill_fields, press_key, scroll, select_option, go_to, go_back). You cannot see or use any other tab. ' +
   SEARCH_NOTE +
   ' ' +
   ACTING_RULES +
@@ -414,7 +414,7 @@ export function buildLinkedContext(
 
   if (lines.length === 0) return canRead ? NO_TABS_NOTE : null;
   const intro = canRead
-    ? "The user has linked these tabs and Spaces to this conversation. You have their titles and addresses here, and you can read a page's text with the read_page tool, or see a page's buttons, links and fields with the look_at_page tool (give either the tab number) when that would help answer. Only use them when the question needs it. You can also open a new tab with open_tab, and act in these tabs (click, type_text, press_key, scroll, select_option, go_to, go_back): always use look_at_page first and use the control numbers it gives, and look again after anything that changes the page. " +
+    ? "The user has linked these tabs and Spaces to this conversation. You have their titles and addresses here, and you can read a page's text with the read_page tool, or see a page's buttons, links and fields with the look_at_page tool (give either the tab number) when that would help answer. Only use them when the question needs it. You can also open a new tab with open_tab, and act in these tabs (click, type_text, fill_fields, press_key, scroll, select_option, go_to, go_back): always use look_at_page first and use the control numbers it gives, and look again after anything that changes the page. " +
       SEARCH_NOTE +
       ' ' +
       ACTING_RULES +

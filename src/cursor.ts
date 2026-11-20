@@ -45,8 +45,13 @@ export const CURSOR_DONE_MS = 400;
 const TAGS: Record<string, string> = {
   click: 'Clicking',
   type_text: 'Typing',
+  fill_fields: 'Typing',
   select_option: 'Choosing',
 };
+
+// Typing steps show a text cursor at the start of the field (fill_fields: the first one).
+const typing = (toolName: string) =>
+  toolName === 'type_text' || toolName === 'fill_fields';
 
 const clamp = (n: number, low: number, high: number) =>
   Math.max(low, Math.min(high, n));
@@ -103,16 +108,15 @@ export function cursorFor(input: CursorInput): CursorView | null {
     y = page.height / 2;
   } else {
     if (rect === null) return null;
-    x =
-      toolName === 'type_text'
-        ? rect.x + Math.min(16, rect.width / 2)
-        : rect.x + rect.width / 2;
+    x = typing(toolName)
+      ? rect.x + Math.min(16, rect.width / 2)
+      : rect.x + rect.width / 2;
     y = tone === 'waiting' ? rect.y - 4 : rect.y + rect.height / 2;
   }
   return {
     x: Math.round(clamp(x, 4, Math.max(4, page.width - 4))),
     y: Math.round(clamp(y, 4, Math.max(4, page.height - 4))),
-    kind: toolName === 'type_text' ? 'beam' : 'arrow',
+    kind: typing(toolName) ? 'beam' : 'arrow',
     tone,
     tag,
     burst,
