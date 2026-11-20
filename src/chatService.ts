@@ -49,6 +49,8 @@ import type { Namer } from './aiNamer';
 import type { NameResult } from './naming';
 import type { LlmContext } from './llm';
 import { ChatError, streamChat } from './openrouter';
+import { scopedRecall, scopedTabs, testScope } from './testScope';
+import { groupsForMessage, groupsUsed } from './toolGroups';
 import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
 import { SearchError } from './webSearch';
@@ -331,6 +333,8 @@ export function createChatService(options: {
   // What to use for a chat, or why we cannot send yet.
   function contextFor(
     chatId: number,
+    // The message being sent right now (it is not in the chat yet when this is worked out).
+    pendingText?: string,
   ):
     | { ok: true; context: RunContext }
     | Extract<ChatSendResult, { ok: false }> {
@@ -367,6 +371,33 @@ export function createChatService(options: {
     // open a new tab (which is then linked to the chat).
     const canRead = llm.getModelInfo(model)?.supportsTools !== false;
     const seesImages = llm.getModelInfo(model)?.supportsImages !== false;
+    // Test runs only (AIB_TEST_SCOPE=1): the tools see just the test fixtures (see testScope.ts).
+    const recallStore = testScope
+      ? scopedRecall(options.recallStore)
+      : options.recallStore;
+    const tabStore = testScope
+      ? scopedTabs(testScope, options.tabStore)
+      : options.tabStore;
+    // Which tools to send: the core, the groups the latest message points to, and the groups
+    // already used in this chat (see toolGroups.ts). AIB_ALL_TOOLS=1 sends them all (to compare).
+    const conversation = chats.findConversation(options.getChats(), chatId);
+    const lastUser =
+      pendingText ??
+      [...(conversation?.messages ?? [])]
+        .reverse()
+        .find((message) => message.role === 'user')?.content ??
+      '';
+    const open = new Set([
+      ...groupsForMessage(lastUser),
+      ...groupsUsed(
+        (conversation?.messages ?? []).flatMap((message) =>
+          message.parts.flatMap((part) =>
+            part.type === 'tool' ? [part.name] : [],
+          ),
+        ),
+      ),
+    ]);
+    const routing = { open, everything: process.env.AIB_ALL_TOOLS === '1' };
     const tools = canRead
       ? createAgentTools(
           {
@@ -395,7 +426,11 @@ export function createChatService(options: {
             createArtifact: (input) =>
               options.artifactStore.create(chatId, input),
             updateArtifact: options.artifactStore.update,
-            createSpace: (input) => options.spaceStore.create(chatId, input),
+            createSpace: (input) => {
+              const made = options.spaceStore.create(chatId, input);
+              if (testScope && made.ok) testScope.created.add(made.id);
+              return made;
+            },
             readPage: options.readPage,
             outlinePage: options.outlinePage,
             listSkills: options.skillStore.listSkills,
@@ -414,19 +449,19 @@ export function createChatService(options: {
             bookmarkPage: options.saveStore.bookmarkPage,
             checkPreview: options.saveStore.checkPreview,
             currentChatId: () => chatId,
-            now: options.recallStore.now,
-            searchHistory: options.recallStore.searchHistory,
-            searchBookmarks: options.recallStore.searchBookmarks,
-            searchChats: options.recallStore.searchChats,
-            readChat: options.recallStore.readChat,
-            allTabs: options.tabStore.allTabs,
-            allSpaces: options.tabStore.allSpaces,
-            moveTab: options.tabStore.moveTab,
-            closeTab: options.tabStore.closeTab,
-            sleepTab: options.tabStore.sleepTab,
-            reopenTab: options.tabStore.reopenTab,
-            spaceNote: options.tabStore.spaceNote,
-            setSpaceNote: options.tabStore.setSpaceNote,
+            now: recallStore.now,
+            searchHistory: recallStore.searchHistory,
+            searchBookmarks: recallStore.searchBookmarks,
+            searchChats: recallStore.searchChats,
+            readChat: recallStore.readChat,
+            allTabs: tabStore.allTabs,
+            allSpaces: tabStore.allSpaces,
+            moveTab: tabStore.moveTab,
+            closeTab: tabStore.closeTab,
+            sleepTab: tabStore.sleepTab,
+            reopenTab: tabStore.reopenTab,
+            spaceNote: tabStore.spaceNote,
+            setSpaceNote: tabStore.setSpaceNote,
             screenshotPage: options.screenshotPage,
             findInPage: options.findInPage,
             readTables: options.readTables,
@@ -458,6 +493,7 @@ export function createChatService(options: {
             },
           },
           options.toolLevel,
+          routing,
         )
       : null;
     return {
@@ -580,7 +616,7 @@ export function createChatService(options: {
     mentions: unknown,
   ): ChatSendResult => {
     if (!isId(chatId) || typeof text !== 'string') return invalid;
-    const prepared = contextFor(chatId);
+    const prepared = contextFor(chatId, text);
     if (!prepared.ok) return prepared;
     const started = runner.send(
       chatId,

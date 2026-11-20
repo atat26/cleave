@@ -871,6 +871,8 @@ export interface BrowserApi {
   // Show the page alone (chat closed), both, or the chat alone (page hidden).
   setViewMode: (mode: ViewMode) => void;
   // The AI provider (OpenRouter). The key goes in but never comes back out.
+  // Test runs only: removes the Spaces a test made, without the confirmation (see testScope.ts).
+  devCleanupTestSpaces: () => Promise<number>;
   llmStatus: () => Promise<LlmStatus>;
   llmSaveKey: (key: string) => Promise<LlmResult>;
   llmRemoveKey: () => Promise<LlmStatus>;

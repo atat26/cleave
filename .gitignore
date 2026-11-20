@@ -18,3 +18,6 @@ npm-debug.log*
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Results of the AI prompt pipeline inspection runs (see docs/pipeline/)
+tests/pipeline/results/

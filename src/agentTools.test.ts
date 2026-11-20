@@ -12,6 +12,7 @@ import {
 import type { AgentEnv, OutlineRead, PageRead } from './agentTools.ts';
 import { defaultLevel } from './toolPolicy.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
+import type { ToolGroup } from './toolGroups.ts';
 import type { ArtifactKind } from './artifacts.ts';
 import type { FileReading } from './artifactTools.ts';
 import type { FindRead, ShotRead, TablesRead } from './pageEyes.ts';
@@ -46,6 +47,7 @@ function setup(
     linkFails?: 'blocked' | 'timeout' | 'unavailable';
     linkHref?: string | null;
     remembered?: string[];
+    routing?: { open: ToolGroup[] };
   } = {},
 ) {
   const tabs = [
@@ -329,7 +331,7 @@ function setup(
     },
   };
   return {
-    tools: createAgentTools(env, levelOf),
+    tools: createAgentTools(env, levelOf, options.routing),
     env,
     reads,
     looks,
@@ -1687,4 +1689,61 @@ test('an action approved after you closed its tab is skipped, but a refusal for 
   );
   assert.equal(stranger.ok, false);
   assert.equal(stranger.skipped, undefined);
+});
+
+test('a tool whose limit is used up is no longer offered, so it cannot be called again', async () => {
+  const { tools } = setup();
+  const offered = () => tools.definitions.map((d) => d.name);
+  assert.ok(offered().includes('read_page'));
+  assert.ok(offered().includes('read_link'));
+  let last = '';
+  for (let i = 0; i < MAX_READS; i++) {
+    const outcome = await tools.run(call('read_page', { tab: 1 }), ABORT);
+    assert.equal(outcome.ok, true);
+    last = outcome.result;
+  }
+  // The 8th read says it was the last, and from then on the reading tools are not offered.
+  assert.match(last, /last of the 8 pages/);
+  assert.equal(offered().includes('read_page'), false);
+  assert.equal(offered().includes('read_link'), false);
+  // Looking and other tools are still there.
+  assert.ok(offered().includes('look_at_page'));
+  assert.ok(offered().includes('list_linked_tabs'));
+  // A call that comes anyway is still refused in words.
+  const again = await tools.run(call('read_page', { tab: 1 }), ABORT);
+  assert.equal(again.ok, false);
+});
+
+test('before any limit is reached every tool is offered', () => {
+  const { tools } = setup();
+  assert.equal(tools.definitions.length >= 39 - 0, true);
+});
+
+test('with routing only the core is offered, more_tools adds a group, and a closed group stays closed', async () => {
+  const { tools } = setup(undefined, undefined, {
+    routing: { open: [] },
+  });
+  const names = () => tools.definitions.map((d) => d.name);
+  assert.ok(names().includes('read_page'));
+  assert.ok(names().includes('more_tools'));
+  assert.equal(names().includes('type_text'), false);
+  assert.equal(names().includes('create_artifact'), false);
+  // Asking for the acting group adds its tools.
+  const added = await tools.run(call('more_tools', { group: 'act' }), ABORT);
+  assert.equal(added.ok, true);
+  assert.match(added.result, /type_text/);
+  assert.ok(names().includes('type_text'));
+  assert.equal(names().includes('create_artifact'), false);
+  // A made-up group is refused in words.
+  const bad = await tools.run(
+    call('more_tools', { group: 'everything' }),
+    ABORT,
+  );
+  assert.equal(bad.ok, false);
+  assert.equal(tools.plan(call('more_tools', { group: 'docs' })).kind, 'auto');
+  // With a group already open from the start it is just there.
+  const started = setup(undefined, undefined, {
+    routing: { open: ['tabs'] },
+  });
+  assert.ok(started.tools.definitions.some((d) => d.name === 'move_tabs'));
 });

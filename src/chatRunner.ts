@@ -22,6 +22,22 @@ import type {
 // it is asked to answer with what it has.
 export const MAX_TOOL_ROUNDS = 30;
 
+// If this many rounds in a row get nothing but refusals (a limit reached, a safety rule), the model is
+// asked to answer without tools. Told "answer with what you have", a model can still keep calling the
+// refused tool (one did, up to five more times: docs/pipeline/baseline-1.md).
+export const MAX_STUCK_ROUNDS = 2;
+// ...and the same if one tool is refused this many times in a reply, even when other calls worked in
+// between (the model alternated a refused read with a harmless call and went on for 30 requests).
+export const MAX_REFUSALS_PER_TOOL = 2;
+// A tool that fails (a bad request, a page that will not load) this many times in a reply is not tried
+// any more either.
+export const MAX_FAILURES_PER_TOOL = 3;
+
+// Said to the model once, when its tools are taken away, so its last answer is honest about what was
+// and was not done (without it a model answered "based on all ten pages" after reading eight).
+export const NO_MORE_TOOLS_NOTE =
+  'No more tools can be used in this reply. Tell the user what you did and what is still not done. Do not say you did something you did not do.';
+
 export interface RunnerDeps {
   getState(): ChatsState;
   setState(next: ChatsState): void;
@@ -110,10 +126,31 @@ export function createChatRunner(deps: RunnerDeps) {
     // Set when you choose "Allow the rest of this reply": from then on, things
     // that are not marked risky go ahead without asking again.
     let allowRest = false;
+    // Rounds in a row in which every call was refused, and how often each tool was refused.
+    let stuckRounds = 0;
+    const refusedBy = new Map<string, number>();
+    const noteRefused = (name: string) =>
+      refusedBy.set(name, (refusedBy.get(name) ?? 0) + 1);
+    const failedBy = new Map<string, number>();
+    const noteFailed = (name: string) =>
+      failedBy.set(name, (failedBy.get(name) ?? 0) + 1);
+    const gaveUp = () =>
+      stuckRounds >= MAX_STUCK_ROUNDS ||
+      [...refusedBy.values()].some((n) => n >= MAX_REFUSALS_PER_TOOL) ||
+      [...failedBy.values()].some((n) => n >= MAX_FAILURES_PER_TOOL);
+    let toldNoMoreTools = false;
     try {
       for (let round = 0; ; round++) {
         // Once the tool rounds are used up the model is asked to just answer.
-        const useTools = tools !== null && round < MAX_TOOL_ROUNDS;
+        const useTools = tools !== null && round < MAX_TOOL_ROUNDS && !gaveUp();
+        // Its tools are taken away: say so once, so its answer says what was and was not done.
+        if (tools !== null && !useTools && round > 0 && !toldNoMoreTools) {
+          toldNoMoreTools = true;
+          conversation = [
+            ...conversation,
+            { role: 'user', content: NO_MORE_TOOLS_NOTE },
+          ];
+        }
         let calls: ToolCall[] = [];
         let roundText = '';
         for await (const event of deps.stream({
@@ -172,6 +209,7 @@ export function createChatRunner(deps: RunnerDeps) {
         ];
         // Pictures the tools of this round want the model to look at.
         const pictures: NonNullable<ToolOutcome['images']> = [];
+        let refused = 0;
         for (const call of calls) {
           if (controller.signal.aborted) break;
           const plan = tools.plan(call);
@@ -218,6 +256,8 @@ export function createChatRunner(deps: RunnerDeps) {
               );
               changed();
             }
+            refused++;
+            noteRefused(call.name);
             conversation.push({
               role: 'tool',
               toolCallId: call.id,
@@ -325,7 +365,14 @@ export function createChatRunner(deps: RunnerDeps) {
             content: outcome.result,
           });
           if (outcome.images) pictures.push(...outcome.images);
+          if (outcome.blocked) {
+            refused++;
+            noteRefused(call.name);
+          } else if (!outcome.ok && !outcome.skipped) {
+            noteFailed(call.name);
+          }
         }
+        stuckRounds = refused === calls.length ? stuckRounds + 1 : 0;
         // The pictures come after every tool result (the results must follow the
         // assistant's request straight away), as a message of the user's.
         if (pictures.length > 0) {

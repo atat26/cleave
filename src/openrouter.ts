@@ -11,6 +11,7 @@
 //   - Error messages are written here, in plain words. Raw text from the server
 //     is never shown to the user.
 import { createSseParser } from './sse.ts';
+import { tracing, traced } from './requestTrace.ts';
 
 export const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -355,7 +356,18 @@ function gatherToolCalls(
 // Send a conversation and get the reply back piece by piece. Stops quietly (an
 // "AbortError") if `signal` is aborted: that is how the Stop button works, and
 // OpenRouter stops generating when the connection closes.
-export async function* streamChat(options: {
+// (When the recorder is on, see requestTrace.ts, one line of sizes is written per call.)
+export function streamChat(
+  options: StreamChatOptions,
+): AsyncGenerator<StreamEvent> {
+  if (!tracing()) return streamChatRaw(options);
+  return traced(
+    { model: options.model, messages: options.messages, tools: options.tools },
+    () => streamChatRaw(options),
+  );
+}
+
+interface StreamChatOptions {
   apiKey: string;
   model: string;
   messages: ChatMessageInput[];
@@ -363,7 +375,11 @@ export async function* streamChat(options: {
   tools?: ToolDefinition[];
   signal?: AbortSignal;
   fetchImpl: FetchLike;
-}): AsyncGenerator<StreamEvent> {
+}
+
+async function* streamChatRaw(
+  options: StreamChatOptions,
+): AsyncGenerator<StreamEvent> {
   const { apiKey, model, messages, tools, signal, fetchImpl } = options;
 
   let response: Response;

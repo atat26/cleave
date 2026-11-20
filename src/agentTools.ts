@@ -27,6 +27,15 @@ import { parseChoices } from './agentChoices.ts';
 import type { Choices } from './agentChoices.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
 import {
+  definitionsFor,
+  GROUP_HELP,
+  groupOf,
+  GROUPS,
+  isGroup,
+  MORE_TOOLS,
+} from './toolGroups.ts';
+import type { ToolGroup } from './toolGroups.ts';
+import {
   cleanQuery,
   formatResultsForModel,
   resultsForDisplay,
@@ -209,7 +218,9 @@ export interface ToolOutcome {
 }
 
 export interface AgentTools {
-  definitions: ToolDefinition[];
+  // The tools to offer on the next request. A tool whose limit for this reply is used up (pages
+  // read, looks, searches, actions) is left out, so the model cannot keep calling it.
+  readonly definitions: ToolDefinition[];
   // The line shown while the tool runs ("Reading: Page title").
   describe(call: ToolCall): string;
   // Whether the call may just go ahead, needs the user's approval first, or is
@@ -394,7 +405,11 @@ export function createAgentTools(
   env: AgentEnv,
   levelOf: (tool: string) => ApprovalLevel = (tool) =>
     defaultLevel(tool) ?? 'ask',
+  // Which groups of tools to send (see toolGroups.ts). Left out: send every tool.
+  routing?: { open: Iterable<ToolGroup>; everything?: boolean },
 ): AgentTools {
+  const open = new Set<ToolGroup>(routing?.open ?? []);
+  const everything = routing === undefined || routing.everything === true;
   let reads = 0;
   let looks = 0;
   let actions = 0;
@@ -935,6 +950,7 @@ export function createAgentTools(
   }
 
   const describe = (call: ToolCall): string => {
+    if (call.name === MORE_TOOLS) return 'Getting more tools';
     if (isArtifactTool(call.name)) return artifactTools.describe(call);
     if (call.name === 'list_linked_tabs') return 'Checking the linked tabs';
     if (call.name === 'offer_choices') return 'Offering choices';
@@ -979,6 +995,7 @@ export function createAgentTools(
     call: ToolCall,
     signal: AbortSignal,
   ): Promise<ToolOutcome> {
+    if (call.name === MORE_TOOLS) return runMoreTools(call);
     if (call.name === 'list_linked_tabs') {
       const tabs = env.linkedTabs();
       const listing = tabs
@@ -1166,6 +1183,11 @@ export function createAgentTools(
         truncated
           ? `(The text was cut off after ${MAX_PAGE_CHARS} characters.)`
           : '',
+        // The last page it may read in this reply: say so, so what is done and what is left
+        // can be told.
+        reads >= MAX_READS
+          ? `(That was the last of the ${MAX_READS} pages you may read in this reply. Say what you read and what is left.)`
+          : '',
       ]
         .filter((line) => line !== '')
         .join('\n'),
@@ -1177,18 +1199,76 @@ export function createAgentTools(
     touched.clear();
   };
 
+  // Tools you turned off are not even offered to the assistant.
+  const offered = [
+    ...TOOL_DEFINITIONS,
+    ...EYES_DEFINITIONS,
+    ...TAB_DEFINITIONS,
+    ...RECALL_DEFINITIONS,
+    ...SAVE_DEFINITIONS,
+    ...SKILL_DEFINITIONS,
+    ...ACTION_DEFINITIONS,
+    ...ARTIFACT_DEFINITIONS,
+  ].filter((definition) => levelOf(definition.name) !== 'never');
+
+  // Tools whose limit for this reply is used up. Telling the model in words was not enough (it kept
+  // calling a tool it had been refused up to five more times), so they are not offered at all.
+  const spent = (): ReadonlySet<string> => {
+    const gone = new Set<string>();
+    if (reads >= MAX_READS) {
+      gone.add('read_page');
+      gone.add('read_link');
+    }
+    if (looks >= MAX_LOOKS) gone.add('look_at_page');
+    if (searches >= MAX_SEARCHES) gone.add('web_search');
+    if (actions >= MAX_ACTIONS) {
+      for (const definition of ACTION_DEFINITIONS) gone.add(definition.name);
+    }
+    return gone;
+  };
+
+  // The assistant asked for another group of tools.
+  const runMoreTools = (call: ToolCall): ToolOutcome => {
+    let group: unknown;
+    try {
+      group = (JSON.parse(call.arguments || '{}') as { group?: unknown }).group;
+    } catch {
+      group = undefined;
+    }
+    if (!isGroup(group)) {
+      return {
+        label: "Couldn't get those tools",
+        ok: false,
+        note: 'That is not a group of tools.',
+        result: `That is not a group. Choose one of: ${GROUPS.join(', ')}.`,
+      };
+    }
+    open.add(group);
+    const names = offered
+      .filter((definition) => groupOf(definition.name) === group)
+      .map((definition) => definition.name);
+    return {
+      label: `Got tools: ${GROUP_HELP[group]}`,
+      ok: true,
+      note:
+        names.length > 0
+          ? `Added ${names.join(', ')}.`
+          : 'None of that group is turned on.',
+      result:
+        names.length > 0
+          ? `Now available: ${names.join(', ')}. Use them on your next step.`
+          : 'No tools in that group are turned on, so you cannot do that. Tell the user.',
+    };
+  };
+
   return {
-    // Tools you turned off are not even offered to the assistant.
-    definitions: [
-      ...TOOL_DEFINITIONS,
-      ...EYES_DEFINITIONS,
-      ...TAB_DEFINITIONS,
-      ...RECALL_DEFINITIONS,
-      ...SAVE_DEFINITIONS,
-      ...SKILL_DEFINITIONS,
-      ...ACTION_DEFINITIONS,
-      ...ARTIFACT_DEFINITIONS,
-    ].filter((definition) => levelOf(definition.name) !== 'never'),
+    get definitions() {
+      const sent = definitionsFor(offered, open, everything);
+      const gone = spent();
+      return gone.size === 0
+        ? sent
+        : sent.filter((definition) => !gone.has(definition.name));
+    },
     describe,
     plan,
     run,

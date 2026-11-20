@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_SYSTEM_PROMPT } from './chatContext.ts';
-import { createChatRunner, MAX_TOOL_ROUNDS } from './chatRunner.ts';
+import {
+  createChatRunner,
+  MAX_FAILURES_PER_TOOL,
+  MAX_REFUSALS_PER_TOOL,
+  MAX_STUCK_ROUNDS,
+  MAX_TOOL_ROUNDS,
+  NO_MORE_TOOLS_NOTE,
+} from './chatRunner.ts';
 import type { RunContext } from './chatRunner.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
@@ -900,4 +907,133 @@ test('without pictures no extra message is added after the tool results', async 
   await started.done;
   const second = t.calls[1].messages;
   assert.equal(second[second.length - 1].role, 'tool');
+});
+
+test('rounds that get only refusals end the tool use, so the model has to answer', async () => {
+  const { tools, runs } = fakeTools(async () => ({
+    label: 'Read limit reached',
+    ok: false,
+    blocked: true,
+    note: 'Already read 8 pages in this reply.',
+    result:
+      'You have already read 8 pages in this reply. Answer with what you have.',
+  }));
+  const t = setup(scripted([call('again', 1)])); // keeps asking for the same page
+  const started = t.runner.send(t.chatId, 'Read them all', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(started.ok);
+  await started.done;
+  // Two refused rounds, then a request with no tools at all, and the reply still finishes.
+  assert.equal(runs.length, MAX_STUCK_ROUNDS);
+  assert.equal(t.calls.length, MAX_STUCK_ROUNDS + 1);
+  assert.notEqual(t.calls[MAX_STUCK_ROUNDS - 1].tools, undefined);
+  assert.equal(t.calls[MAX_STUCK_ROUNDS].tools, undefined);
+  assert.equal(t.chat.messages[1].status, 'done');
+});
+
+test('a refusal in a round where something else worked does not count as being stuck', async () => {
+  let n = 0;
+  const { tools, runs } = fakeTools(async () =>
+    ++n % 2 === 0
+      ? { label: 'Limit', ok: false, blocked: true, note: 'x', result: 'No.' }
+      : { label: 'Read', ok: true, note: 'ok', result: 'PAGE' },
+  );
+  const t = setup(
+    scripted([call('a', 1)], [call('b', 1)], [call('c', 1)], [text('Done.')]),
+  );
+  const started = t.runner.send(t.chatId, 'Go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(runs.length, 3);
+  assert.notEqual(t.calls[3].tools, undefined);
+});
+
+test('a tool refused twice ends the tool use, even if other calls worked in between', async () => {
+  // Each round asks for a page (refused) and for a harmless call (works), so no round is all refusals.
+  const mixed = (round: number): StreamEvent => ({
+    type: 'tool-calls',
+    calls: [
+      { id: `r${round}`, name: 'read_page', arguments: '{"tab":1}' },
+      { id: `l${round}`, name: 'list_linked_tabs', arguments: '{}' },
+    ],
+  });
+  const { tools, runs } = fakeTools(async () => ({
+    label: 'x',
+    ok: true,
+    note: 'ok',
+    result: 'fine',
+  }));
+  // Make read_page come back blocked, and the other call work.
+  const original = tools.run.bind(tools);
+  tools.run = async (c, signal) =>
+    c.name === 'read_page'
+      ? (await original(c, signal),
+        {
+          label: 'Read limit reached',
+          ok: false,
+          blocked: true,
+          note: 'limit',
+          result: 'Answer with what you have.',
+        })
+      : original(c, signal);
+  let i = 0;
+  const stream: StreamFn = async function* () {
+    yield mixed(i++);
+  };
+  const t = setup(stream);
+  const started = t.runner.send(t.chatId, 'Go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  // read_page was refused in rounds 1 and 2, so round 3 has no tools and the reply finishes.
+  assert.equal(runs.length, MAX_REFUSALS_PER_TOOL * 2);
+  assert.equal(t.calls[t.calls.length - 1].tools, undefined);
+  assert.equal(t.chat.messages[1].status, 'done');
+});
+
+test('a tool that keeps failing is not tried more than a few times, and the model is told it must answer plainly', async () => {
+  const { tools, runs } = fakeTools(async () => ({
+    label: 'Could not read',
+    ok: false,
+    note: 'The request did not name a tab.',
+    result: 'The request did not name a tab.',
+  }));
+  const t = setup(scripted([call('again', 1)])); // keeps asking, and it keeps failing
+  const started = t.runner.send(t.chatId, 'Read them', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(runs.length, MAX_FAILURES_PER_TOOL);
+  const last = t.calls[t.calls.length - 1];
+  assert.equal(last.tools, undefined);
+  // The last request carries the note, once.
+  const notes = last.messages.filter(
+    (m) => m.role === 'user' && m.content === NO_MORE_TOOLS_NOTE,
+  );
+  assert.equal(notes.length, 1);
+  assert.equal(t.chat.messages[1].status, 'done');
+});
+
+test('a failure caused by you closing the tab is not counted against the tool', async () => {
+  const { tools, runs } = fakeTools(async () => ({
+    label: 'Skipped',
+    ok: false,
+    skipped: true,
+    note: 'You closed this tab, so this step was skipped.',
+    result: 'The tab was closed.',
+  }));
+  const t = setup(
+    scripted(
+      [call('a', 1)],
+      [call('b', 1)],
+      [call('c', 1)],
+      [call('d', 1)],
+      [text('Done.')],
+    ),
+  );
+  const started = t.runner.send(t.chatId, 'Go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.equal(runs.length, 4);
+  assert.notEqual(t.calls[4].tools, undefined);
 });
