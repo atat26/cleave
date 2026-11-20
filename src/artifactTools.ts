@@ -708,6 +708,7 @@ export function createArtifactTools(
       return {
         label: `Made artifact: ${name}`,
         ok: true,
+        made: { kind: 'artifact', id: made.id },
         note: `Made artifact ${made.id}${space ? ` in the Space "${cleanLabel(space.name, 60)}"` : ''}.`,
         details: shorten(doc.content, 400),
         result: `Done. Artifact ${made.id} "${name}" was made${space ? ` in the Space "${cleanLabel(space.name, 60)}"` : ''} and is linked to this conversation. You can read or edit it by its number. The user can open it from the Artifacts panel.`,
@@ -733,6 +734,7 @@ export function createArtifactTools(
       return {
         label: `Made Space: ${name}`,
         ok: true,
+        made: { kind: 'space', id: made.id },
         note: `Made Space ${made.id}.`,
         result: `Done. Space ${made.id} "${name}" was made and is linked to this conversation. You can now make artifacts in it with create_artifact_in_space (space ${made.id}).`,
       };

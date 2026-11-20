@@ -14,7 +14,7 @@
 // Pure code: reading a page is passed in (see pageReader.ts), so this is testable.
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
-import type { LimitKind } from './chats.ts';
+import type { LimitKind, MadeItem } from './chats.ts';
 import {
   ACTION_DEFINITIONS,
   CHANGES_PAGE,
@@ -207,6 +207,8 @@ export interface ToolOutcome {
   blocked?: boolean;
   // Not done because you closed the tab it was about while it ran (not a failure either).
   skipped?: boolean;
+  // Something this step made (a document, a skill or a Space): the chat offers to open it.
+  made?: MadeItem;
   // A page it read was longer than the limit and was cut (the chat adds a note if the answer does
   // not say so; see cutOffNote.ts). For a step that read several pages: how many were cut.
   cutOff?: number;

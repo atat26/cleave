@@ -16,6 +16,7 @@ import {
   groupState,
   groupTitle,
   LIMIT_WORDS,
+  MADE_WORDS,
   RUN_WORDS,
   runningNote,
   STATE_WORDS,
@@ -400,11 +401,14 @@ export function RunBar({
   run,
   onDismiss,
   onContinue,
+  onOpen,
 }: {
   run: RunView;
   onDismiss: () => void;
   // After a Stop: start a new reply that carries on. (The one visible action of a stopped run.)
   onContinue?: () => void;
+  // After a run that made something: open it. (The one visible action of a finished run.)
+  onOpen?: () => void;
 }) {
   const active = run.word === 'working' || run.word === 'waiting';
   const icon: ReactNode = <StatusIcon state={RUN_ICON[run.word]} />;
@@ -437,6 +441,16 @@ export function RunBar({
           ? `Step ${run.stepNumber}`
           : `${run.ticks.length} step${run.ticks.length === 1 ? '' : 's'}`}
       </span>
+      {run.word === 'finished' && run.made && onOpen && (
+        <Button
+          size="sm"
+          className="btn-open"
+          title={MADE_WORDS[run.made.kind]}
+          onClick={onOpen}
+        >
+          Open
+        </Button>
+      )}
       {run.word === 'stopped' && onContinue && (
         <Button
           size="sm"

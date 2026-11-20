@@ -21,6 +21,8 @@ import {
 import {
   CONTINUE_TEXT,
   LIMIT_WORDS,
+  MADE_WORDS,
+  madeOf,
   RUN_WORDS,
   STATE_WORDS,
 } from './runModel.ts';
@@ -475,4 +477,28 @@ test('steps on your own data in a row become one block, however few; a waiting o
   ]);
   assert.equal(isOwnDataTool('read_chat'), true);
   assert.equal(isOwnDataTool('read_page'), false);
+});
+
+test('a finished reply offers to open what it made last; a stopped or failed one, or one that made nothing, does not', () => {
+  const made1 = { kind: 'artifact' as const, id: 3 };
+  const made2 = { kind: 'space' as const, id: 8 };
+  const steps = [
+    tool({ made: made1 }),
+    tool(),
+    tool({ made: made2 }),
+    tool({ status: 'error', made: { kind: 'skill' as const, id: 1 } }),
+  ];
+  // The last one that worked and made something.
+  assert.deepEqual(madeOf(message(steps)), made2);
+  assert.deepEqual(runOf(message(steps))?.made, made2);
+  assert.equal(madeOf(message([tool(), tool()])), null);
+  assert.equal(runOf(message([tool()]))?.made, undefined);
+  assert.equal(madeOf(message(steps, 'stopped')), null);
+  assert.equal(madeOf(message(steps, 'error')), null);
+  assert.equal(madeOf(message(steps, 'streaming')), null);
+  assert.equal(madeOf(undefined), null);
+  // A tooltip for each kind.
+  assert.match(MADE_WORDS.artifact, /document/);
+  assert.match(MADE_WORDS.skill, /skills/);
+  assert.match(MADE_WORDS.space, /Space/);
 });

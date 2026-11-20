@@ -3207,6 +3207,12 @@ button {
   border-color: var(--c-warn-edge);
   color: var(--c-surface);
 }
+/* "Open" on a finished run, for what it made. */
+.btn-open {
+  background: var(--c-ok);
+  border-color: var(--c-ok);
+  color: var(--c-surface);
+}
 
 /* Steps on your own data: a bordered block saying it goes to the model. */
 .owndata {
