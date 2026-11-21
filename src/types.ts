@@ -43,6 +43,7 @@ import type { ExtensionSettings } from './extensionSettings';
 import type { SleepSettings } from './sleep';
 import type { UpdateState } from './updateState';
 import type { BackupSummary } from './backupFormat';
+import type { SiteTrust, SiteTrustRow } from './siteTrust';
 
 // What Settings > About shows about this copy of the app.
 export type AppInfo = {
@@ -52,6 +53,11 @@ export type AppInfo = {
   // The folder this copy keeps its data in.
   dataFolder: string;
 };
+
+// The sites the assistant trusts or may not touch (see siteTrust.ts).
+export type SiteTrustResult =
+  | { ok: true; host: string; rows: SiteTrustRow[] }
+  | { ok: false; error: string };
 
 // Settings > Backup and restore.
 export type BackupInfo = {
@@ -810,6 +816,15 @@ export interface BrowserApi {
   spaceBulk: (id: number, action: 'close-all' | 'reopen-all' | 'sleep') => void;
   // Settings > About.
   appInfo: () => Promise<AppInfo>;
+  // Sites the assistant trusts or may not touch: the list, a change (a site name or address, and
+  // "trusted", "blocked" or "unknown" to remove it), and the site on screen with its level.
+  siteTrustList: () => Promise<SiteTrustRow[]>;
+  siteTrustSet: (site: string, level: SiteTrust) => Promise<SiteTrustResult>;
+  siteTrustCurrent: () => Promise<{ host: string; level: SiteTrust } | null>;
+  // "Trust this site" on a card in the chat or over the page: trusts the site the card names, and
+  // allows the step.
+  chatTrustSite: (chatId: number, messageId: number, partId: number) => void;
+  overlayTrust: () => void;
   backupInfo: () => Promise<BackupInfo>;
   // Asks where to save, then saves a backup there (the keys only if asked for).
   backupCreate: (includeKeys: boolean) => Promise<BackupMade>;

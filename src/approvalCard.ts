@@ -5,13 +5,15 @@
 // happens next, and the keys. Pure code with no Electron and no React, so it is easy to
 // test. The look is in StepList.tsx and components.css.
 
+import { normalizeSite } from './siteTrust.ts';
+
 // Extra details for one card. The app fills them in from values it has already checked
 // and cleaned, never from the model's raw words, so the card cannot show one thing and
 // do another. All of it is optional: a tool with none gets the question alone.
 export interface CardDetails {
   // The exact words that will be typed, searched for or written.
   text?: { label: string; value: string };
-  // A web address it will go to or read, cleaned (no query string or login).
+  // A web address it will go to or read, in full (up to the longest it may use).
   destination?: string;
   // One line for each tab, move or change in a batch.
   list?: string[];
@@ -22,10 +24,16 @@ export interface CardDetails {
   // It asks even though the tool is set to go ahead, because it read web pages in this
   // same reply.
   askAgain?: boolean;
+  // The site this is about, when you have not decided whether to trust it (the card offers a
+  // button to trust it). Only ever a site name, set by the app.
+  site?: string;
 }
 
 export const MAX_CARD_TEXT = 4000;
-export const MAX_CARD_LINE = 300;
+// A line of a list: a field's label and the whole text to type in it.
+export const MAX_CARD_LINE = 1100;
+// A web address: shown in full (the longest address the assistant may use).
+export const MAX_CARD_DESTINATION = 2100;
 export const MAX_CARD_LIST = 20;
 
 const short = (value: unknown, max: number): string =>
@@ -48,8 +56,12 @@ export function cleanCard(raw: unknown): CardDetails | undefined {
   if (text) out.text = text;
   const full = labelled(r.full);
   if (full) out.full = full;
-  const destination = short(r.destination, MAX_CARD_LINE);
+  const destination = short(r.destination, MAX_CARD_DESTINATION);
   if (destination !== '') out.destination = destination;
+  // Only a site name written the way the browser writes it (never free text).
+  if (typeof r.site === 'string' && normalizeSite(r.site) === r.site) {
+    out.site = r.site;
+  }
   if (Array.isArray(r.list)) {
     const list = r.list
       .filter((l): l is string => typeof l === 'string')

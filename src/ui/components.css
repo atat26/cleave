@@ -3160,6 +3160,9 @@ button {
 }
 .ac-mono {
   display: block;
+  /* The whole text is here; a long one scrolls. */
+  max-height: 160px;
+  overflow: auto;
   padding: 6px 8px;
   border-radius: var(--r-md);
   background: var(--c-surface-2);
@@ -3174,6 +3177,9 @@ button {
   display: grid;
   gap: 2px;
   overflow-wrap: anywhere;
+  /* Every field in full; a long form scrolls. */
+  max-height: 200px;
+  overflow-y: auto;
 }
 .ac-full {
   margin: 0;
@@ -3205,6 +3211,10 @@ button {
 .ac-wait {
   color: var(--c-text-2);
   font-size: var(--fs-xs);
+}
+/* "Trust this site": there when the pointer or the keyboard is on the card, quiet otherwise. */
+.ac-trust {
+  display: flex;
 }
 .btn-warn-allow {
   background: var(--c-warn-edge);

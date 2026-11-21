@@ -495,6 +495,15 @@ export function applyPolicy(
     plan.kind === 'ask' && plan.target
       ? { kind: 'auto', target: plan.target }
       : { kind: 'auto' };
+  // Sites (siteTrust.ts), for an action on a page that is not risky:
+  //  - a site you trust: it goes ahead, whatever the level (except "never", handled above);
+  //  - a site you have not decided about: "always" and "allow if safe" stop at "ask", because a
+  //    standing setting should not apply by itself to a site you have not judged. ("Allow the rest
+  //    of this reply" is your choice in the moment and still skips the card; see chatRunner.ts.)
+  if (plan.kind === 'ask' && !plan.risky) {
+    if (plan.trust === 'trusted') return going;
+    if (plan.trust === 'unknown') return plan;
+  }
   if (level === 'always') return going;
   if (level === 'if-safe') {
     return plan.kind === 'ask' && plan.risky ? plan : going;

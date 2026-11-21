@@ -42,9 +42,12 @@ function context(
     controls?: OutlineElement[] | undefined;
     done?: number;
     opened?: number;
+    // What is decided about some sites (the others are not decided).
+    sites?: Record<string, 'trusted' | 'blocked'>;
   } = {},
 ): ActionContext {
   return {
+    siteTrust: (host) => options.sites?.[host] ?? 'unknown',
     linkedTabs: () => [
       { id: 1, title: 'Shop', url: 'https://shop.example/a', spaceId: null },
     ],
@@ -70,6 +73,9 @@ test('an ordinary click asks first, in words written from the real control', () 
     risky: false,
     // The element it acts on, for the marker on the page.
     target: { tabId: 1, backendNodeId: 101, name: 'Search' },
+    // A site you have not decided about: the card can offer to trust it.
+    trust: 'unknown',
+    card: { site: 'shop.example' },
   });
 });
 
@@ -110,8 +116,12 @@ test('typing shows exactly what will be typed, and never goes into sensitive fie
     text: 'Type "me@example.com" into the text field "Email" on shop.example',
     risky: false,
     // The exact words are also shown apart from the question, in a box.
-    card: { text: { label: 'Text to type', value: 'me@example.com' } },
+    card: {
+      text: { label: 'Text to type', value: 'me@example.com' },
+      site: 'shop.example',
+    },
     target: { tabId: 1, backendNodeId: 102, name: 'Email' },
+    trust: 'unknown',
   });
   assert.equal(
     plan('type_text', { tab: 1, element: 3, text: 'x' }).kind,
@@ -139,9 +149,13 @@ test('filling several fields is one card listing every field and its text', () =
     kind: 'ask',
     text: 'Fill in 2 fields on shop.example',
     risky: false,
-    card: { list: ['Email: me@example.com', 'Color: Blue'] },
+    card: {
+      list: ['Email: me@example.com', 'Color: Blue'],
+      site: 'shop.example',
+    },
     // The marker goes on the first field.
     target: { tabId: 1, backendNodeId: 102, name: 'Email' },
+    trust: 'unknown',
   });
 });
 
@@ -296,7 +310,8 @@ test('opening a new tab: a site already linked asks normally, a new site is risk
     kind: 'ask',
     text: 'Open a new tab at https://shop.example/cart',
     risky: false,
-    card: { destination: 'https://shop.example/cart' },
+    card: { destination: 'https://shop.example/cart', site: 'shop.example' },
+    trust: 'unknown',
   });
   const fresh = plan('open_tab', { url: 'https://duckduckgo.com/?q=pandas' });
   assert.equal(fresh.kind === 'ask' && fresh.risky, true);
@@ -334,8 +349,12 @@ test('only plain web addresses open in a new tab, and only so many per reply', (
   );
 });
 
-test('an action keeps the element it is about even when the tool is set to go ahead', () => {
-  const asked = plan('click', { tab: 1, element: 1 });
+test('an action keeps the element it is about even when the tool is set to go ahead (on a trusted site)', () => {
+  const asked = plan(
+    'click',
+    { tab: 1, element: 1 },
+    context({ sites: { 'shop.example': 'trusted' } }),
+  );
   assert.ok(asked.kind === 'ask');
   const always = applyPolicy(asked, 'always', 'Click');
   assert.deepEqual(always, {
@@ -344,7 +363,11 @@ test('an action keeps the element it is about even when the tool is set to go ah
   });
   assert.deepEqual(applyPolicy(asked, 'if-safe', 'Click'), always);
   // A risky one still asks, and still names its element.
-  const risky = plan('click', { tab: 1, element: 6 });
+  const risky = plan(
+    'click',
+    { tab: 1, element: 6 },
+    context({ sites: { 'shop.example': 'trusted' } }),
+  );
   assert.ok(risky.kind === 'ask');
   assert.equal(applyPolicy(risky, 'if-safe', 'Click'), risky);
   assert.ok(risky.target);

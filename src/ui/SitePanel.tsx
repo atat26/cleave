@@ -93,7 +93,11 @@ export function SitePanel({
       ) : (
         <>
           {entries.some((e) => e.submenu) && (
-            <p className="sp-section">Permissions</p>
+            <p className="sp-section">
+              {entries.every((e) => !e.submenu || e.id === 'site.assistant')
+                ? 'Assistant'
+                : 'Permissions'}
+            </p>
           )}
           {entries.map((entry) => {
             if (entry.submenu) {

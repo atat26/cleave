@@ -31,6 +31,7 @@ export const DATA_FILES: readonly string[] = [
   'permissions.json',
   'search-engine.json',
   'search.json',
+  'site-trust.json',
   'skills.json',
   'sleep-settings.json',
   'spaces.json',

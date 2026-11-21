@@ -48,6 +48,8 @@ function setup(
     linkHref?: string | null;
     remembered?: string[];
     routing?: { open: ToolGroup[] };
+    // What is decided about some sites (the others are not decided).
+    sites?: Record<string, 'trusted' | 'blocked'>;
   } = {},
 ) {
   const tabs = [
@@ -216,6 +218,7 @@ function setup(
           };
     },
     tabUrl: (id) => (id === 1 ? 'https://shop.example/pricing' : null),
+    siteTrust: (host) => options.sites?.[host] ?? 'unknown',
     click: () => ok('click'),
     typeText: () => ok('type'),
     pressKey: () => ok('key'),
@@ -769,9 +772,36 @@ test('a tool turned off is not offered, and is refused and never run if called',
   assert.deepEqual(done, []);
 });
 
-test('Always allow skips the question, Allow if safe still asks for risky ones, Ask first asks about everything', async () => {
-  const run = async (level: ApprovalLevel) => {
+test('On a site not decided about, Always allow and Allow if safe stop at Ask, and a blocked site is refused', async () => {
+  for (const level of ['always', 'if-safe', 'ask'] as const) {
     const { tools } = setup(undefined, () => level);
+    await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+    const plan = tools.plan(call('click', { tab: 1, element: 2 }));
+    assert.equal(plan.kind, 'ask', level);
+    // Reading is not an action on the page: trust does not hold it back (only a level of "ask" does).
+    if (level !== 'ask') {
+      assert.equal(
+        tools.plan(call('read_page', { tab: 1 })).kind,
+        'auto',
+        level,
+      );
+    }
+  }
+  const { tools } = setup(undefined, () => 'always', {
+    sites: { 'shop.example': 'blocked' },
+  });
+  await tools.run(call('look_at_page', { tab: 1 }), ABORT);
+  assert.equal(
+    tools.plan(call('click', { tab: 1, element: 2 })).kind,
+    'refuse',
+  );
+});
+
+test('On a trusted site: Always allow skips the question, Allow if safe still asks for risky ones, Ask first asks about everything except what is safe', async () => {
+  const run = async (level: ApprovalLevel) => {
+    const { tools } = setup(undefined, () => level, {
+      sites: { 'shop.example': 'trusted' },
+    });
     await tools.run(call('look_at_page', { tab: 1 }), ABORT);
     return {
       safe: tools.plan(call('click', { tab: 1, element: 2 })), // the Email field
@@ -786,7 +816,8 @@ test('Always allow skips the question, Allow if safe still asks for risky ones, 
   assert.equal(ifSafe.safe.kind, 'auto');
   assert.equal(ifSafe.risky.kind, 'ask');
   const ask = await run('ask');
-  assert.equal(ask.safe.kind, 'ask');
+  // A trusted site is the point of trusting it: a safe action goes ahead even when the tool asks.
+  assert.equal(ask.safe.kind, 'auto');
   assert.equal(ask.risky.kind, 'ask');
   // A read tool set to ask gets a card that says what it is about to do.
   assert.equal(ask.read.kind, 'ask');

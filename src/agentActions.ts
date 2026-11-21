@@ -15,6 +15,12 @@
 //     Enter key (it may submit a form), links to another website, and going to
 //     another website.
 //   - At most MAX_ACTIONS actions per reply.
+//   - Sites (siteTrust.ts): on a site you trust, an action that is not risky goes ahead without a
+//     card, and going to a trusted site is not "a different website". On a site you have not
+//     decided about, your standing settings stop at "Ask" (applyPolicy), while "Allow the rest of
+//     this reply" still works. On a blocked site nothing is done, and nothing is opened.
+//   - The card shows the whole text that will be typed and the whole address it will go to, with
+//     nothing hidden in it.
 // Pure code with no Electron, so every rule can be tested.
 import type { CardDetails } from './approvalCard.ts';
 import { MAX_MARKER_NAME } from './marker.ts';
@@ -23,6 +29,8 @@ import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
 import type { OutlineElement } from './pageOutline.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
+import { visibleText } from './siteTrust.ts';
+import type { SiteTrust } from './siteTrust.ts';
 
 export const MAX_ACTIONS = 25;
 // New tabs the assistant may open in one reply.
@@ -229,6 +237,9 @@ export type Plan =
       always?: boolean;
       // What the model is told when the user says no, instead of the usual "try another way".
       declinedResult?: string;
+      // The site the action is on (or goes to) is one you trust, or one you have not decided about
+      // (set for actions on pages; see siteTrust.ts and applyPolicy).
+      trust?: 'trusted' | 'unknown';
     }
   // Not done at all, and the model is told why.
   | { kind: 'refuse'; label: string; note: string; result: string };
@@ -244,6 +255,8 @@ export interface ActionContext {
   // How many actions have been done in this reply, and how many tabs opened.
   actionsDone(): number;
   tabsOpened(): number;
+  // What the assistant may do on a site (the host as in an address): see siteTrust.ts.
+  siteTrust(host: string): SiteTrust;
 }
 
 // Buttons and links that do something that is hard to undo or that other people
@@ -349,7 +362,8 @@ export function fillList(
     const { element, text } = entry as Record<string, unknown>;
     if (typeof element !== 'number' || !Number.isInteger(element)) return null;
     if (typeof text !== 'string') return null;
-    out.push({ element, text });
+    // What is typed is what the card shows: nothing hidden in it.
+    out.push({ element, text: visibleText(text) });
   }
   return out;
 }
@@ -414,7 +428,7 @@ function planFill(
     }
     first ??= control;
     const label = cleanLabel(control.name, 60) || describeControl(control);
-    lines.push(`${label}: ${cleanLabel(text, MAX_SHOWN_TEXT)}`);
+    lines.push(`${label}: ${text.replace(/\n/g, ' ↵ ')}`);
   }
   return {
     kind: 'ask',
@@ -429,7 +443,7 @@ function planFill(
   };
 }
 
-export function planAction(call: ToolCall, context: ActionContext): Plan {
+function planActionCore(call: ToolCall, context: ActionContext): Plan {
   const name = call.name;
   if (!isActionName(name)) {
     return refuse(
@@ -471,9 +485,12 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
         'That is not an address that can be opened: it must be an http or https web address with no username or password.',
       );
     }
-    const shown = cleanLabel(url.href, 300);
-    // A site one of the linked tabs is already on is not a new place to go.
-    const known = context.linkedTabs().some((t) => hostOf(t.url) === url.host);
+    if (context.siteTrust(url.host) === 'blocked') return blockedSite(url.host);
+    const shown = cleanLabel(url.href, MAX_URL_CHARS);
+    // A site one of the linked tabs is already on, or one you trust, is not a new place to go.
+    const known =
+      context.linkedTabs().some((t) => hostOf(t.url) === url.host) ||
+      context.siteTrust(url.host) === 'trusted';
     const card = { destination: shown };
     return known
       ? { kind: 'ask', text: `Open a new tab at ${shown}`, risky: false, card }
@@ -503,6 +520,9 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
     );
   }
   const site = hostOf(address) || 'this page';
+  if (context.siteTrust(hostOf(address)) === 'blocked') {
+    return blockedSite(hostOf(address));
+  }
 
   if (context.actionsDone() >= MAX_ACTIONS) {
     return refuse(
@@ -557,11 +577,14 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
         'That is not an address that can be opened: it must be an http or https web address with no username or password.',
       );
     }
+    if (context.siteTrust(url.host) === 'blocked') return blockedSite(url.host);
     // The whole address is shown: an address can carry information in it, so you
     // see exactly where it would go.
-    const shown = cleanLabel(url.href, 300);
+    const shown = cleanLabel(url.href, MAX_URL_CHARS);
     const card = { destination: shown };
-    return url.host === hostOf(address)
+    // Staying on the site, or going to one you trust, is not a new place to go.
+    return url.host === hostOf(address) ||
+      context.siteTrust(url.host) === 'trusted'
       ? { kind: 'ask', text: `Go to ${shown}`, risky: false, card }
       : {
           kind: 'ask',
@@ -600,8 +623,8 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
   };
 
   if (name === 'type_text') {
-    const text = args.text;
-    if (typeof text !== 'string' || text.length > MAX_TYPED_CHARS) {
+    const text = typedText(args.text);
+    if (text === null || text.length > MAX_TYPED_CHARS) {
       return refuse(
         "Couldn't type that",
         `The text was missing or longer than ${MAX_TYPED_CHARS} characters.`,
@@ -620,7 +643,8 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
       kind: 'ask',
       text: `Type "${shown}" into the ${what} on ${site}`,
       risky: false,
-      card: { text: { label: 'Text to type', value: shown } },
+      // The whole text, exactly as it will be typed.
+      card: { text: { label: 'Text to type', value: text } },
       target,
     };
   }
@@ -656,15 +680,64 @@ export function planAction(call: ToolCall, context: ActionContext): Plan {
       'That looks like accepting terms, a policy or cookies. Never do that for the user: ask them to do it themselves.',
     );
   }
+  if (
+    control.role === 'link' &&
+    control.url !== null &&
+    context.siteTrust(hostOf(control.url)) === 'blocked'
+  ) {
+    return blockedSite(hostOf(control.url));
+  }
   const goesElsewhere =
     control.role === 'link' &&
     control.url !== null &&
-    hostOf(control.url) !== hostOf(address);
+    hostOf(control.url) !== hostOf(address) &&
+    context.siteTrust(hostOf(control.url)) !== 'trusted';
   const risky = RISKY_NAME.test(control.name) || goesElsewhere;
   const text = goesElsewhere
     ? `Click the ${what} on ${site}, which goes to a different website (${hostOf(control.url)})`
     : `Click the ${what} on ${site}`;
   return { kind: 'ask', text, risky, target };
+}
+
+// A site you have blocked: nothing is read, done or opened there.
+const blockedSite = (host: string): Plan =>
+  refuse(
+    'Not on a blocked site',
+    `${host} is a site you have blocked for the assistant. Nothing was done.`,
+    `The user has blocked ${host} for the assistant, so you cannot act on it or go to it. Do not try again. Tell them briefly, and suggest another way to go on.`,
+  );
+
+// The text as it will be typed (see visibleText), or null if it is not a text.
+export const typedText = (raw: unknown): string | null =>
+  typeof raw === 'string' ? visibleText(raw) : null;
+
+// The site an action is on: where it goes for opening a tab or an address, else the tab's site.
+function siteOfAction(call: ToolCall, context: ActionContext): string | null {
+  const args = parseArguments(call.arguments);
+  if (args === null) return null;
+  if (call.name === 'open_tab' || call.name === 'go_to') {
+    const url = parseWebAddress(args.url);
+    if (url) return url.host;
+  }
+  const tabId = whole(args, 'tab');
+  const host = tabId === null ? '' : hostOf(context.tabUrl(tabId));
+  return host === '' ? null : host;
+}
+
+// What the assistant may do: the plan from the rules above, marked with whether the site is one you
+// trust (so applyPolicy can let it go ahead) or not (so your standing settings stop at "Ask"), and
+// with the site, so the card can offer to trust it.
+export function planAction(call: ToolCall, context: ActionContext): Plan {
+  const plan = planActionCore(call, context);
+  if (plan.kind !== 'ask') return plan;
+  const host = siteOfAction(call, context);
+  if (host === null) return plan;
+  const trusted = context.siteTrust(host) === 'trusted';
+  return {
+    ...plan,
+    trust: trusted ? 'trusted' : 'unknown',
+    card: trusted ? plan.card : { ...plan.card, site: host },
+  };
 }
 
 // What makes the page change, so the numbered list of controls must be thrown away.

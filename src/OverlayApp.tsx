@@ -144,6 +144,9 @@ function PoppedOutCard({ state }: { state: OverlayState }) {
           site: card.site,
         }}
         onDecide={(decision) => window.browserApi.overlayDecide(decision)}
+        onTrust={
+          card.card?.site ? () => window.browserApi.overlayTrust() : undefined
+        }
         // Stop is on the pill; the card has its own only when the pill is not shown.
         onStop={state.pill ? undefined : () => window.browserApi.overlayStop()}
         onMinimize={() => window.browserApi.overlayMinimize(true)}

@@ -287,8 +287,17 @@ import {
   withLevel,
   withLevels,
 } from './toolSettings';
+import {
+  defaultSiteTrust,
+  normalizeSite,
+  parseSiteTrust,
+  siteTrustRows,
+  trustOf,
+  withSiteTrust,
+} from './siteTrust';
 import type {
   FrameLayout,
+  SiteTrustResult,
   LibraryList,
   NewTabInfo,
   ResizeKind,
@@ -476,6 +485,14 @@ export async function createTabs(
     defaultToolSettings,
   );
   const toolsSaver = createSaver(toolsFile, () => toolSettings);
+  // The sites the assistant may act on freely, and the ones it may never touch (see siteTrust.ts).
+  const siteTrustFile = path.join(app.getPath('userData'), 'site-trust.json');
+  let siteTrustState = await loadJson(
+    siteTrustFile,
+    parseSiteTrust,
+    defaultSiteTrust,
+  );
+  const siteTrustSaver = createSaver(siteTrustFile, () => siteTrustState);
   // How the assistant's work is shown on pages (see agentVisuals.ts).
   const agentVisualsFile = path.join(
     app.getPath('userData'),
@@ -3891,6 +3908,13 @@ export async function createTabs(
       },
     },
     toolLevel: (tool) => levelFor(toolSettings, tool),
+    siteTrust: (host) => trustOf(siteTrustState, host),
+    trustSite: (host) => {
+      const result = withSiteTrust(siteTrustState, host, 'trusted');
+      if (!result.ok) return;
+      siteTrustState = result.state;
+      siteTrustSaver.schedule();
+    },
     search: search.catch(() => null),
     linkTab: (chatId, tabId) => {
       const tab = model.findTab(state, tabId);
@@ -6276,6 +6300,11 @@ export async function createTabs(
           problem: certBypassed(address),
           canAsk: key !== null,
           answers: key === null ? {} : (permissions.sites[key] ?? {}),
+          // What the assistant may do on this site (only for a web address).
+          assistant:
+            normalizeSite(address) === null
+              ? undefined
+              : trustOf(siteTrustState, normalizeSite(address) ?? ''),
         });
       showMenu(
         build(),
@@ -6306,9 +6335,26 @@ export async function createTabs(
             }
             return;
           }
-          if (!parsed || parsed.action !== 'set' || key === null) return;
-          permissions = setAnswer(permissions, key, parsed.kind, parsed.answer);
-          permissionsChanged();
+          if (parsed?.action === 'assistant') {
+            const host = normalizeSite(address);
+            const changed =
+              host === null
+                ? null
+                : withSiteTrust(siteTrustState, host, parsed.level);
+            if (changed?.ok) {
+              siteTrustState = changed.state;
+              siteTrustSaver.schedule();
+            }
+          } else {
+            if (!parsed || parsed.action !== 'set' || key === null) return;
+            permissions = setAnswer(
+              permissions,
+              key,
+              parsed.kind,
+              parsed.answer,
+            );
+            permissionsChanged();
+          }
           // The card stays open, showing the new state.
           if (openMenu) {
             const items = build();
@@ -7518,6 +7564,40 @@ ${artifact.content.slice(0, 1500)}`;
     }
     return themeSettings.theme;
   });
+  // The sites the assistant trusts or may not touch. Only the app's own window can change them
+  // (nothing a page says, and nothing the assistant does, can).
+  ipcMain.handle('site-trust:list', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return siteTrustRows(siteTrustState);
+  });
+  ipcMain.handle(
+    'site-trust:set',
+    (event, site: unknown, level: unknown): SiteTrustResult => {
+      if (!fromWindow(event)) throw new Error('Not allowed.');
+      if (level !== 'trusted' && level !== 'blocked' && level !== 'unknown') {
+        return { ok: false, error: 'That is not a choice.' };
+      }
+      const result = withSiteTrust(siteTrustState, site, level);
+      if (!result.ok) return result;
+      siteTrustState = result.state;
+      siteTrustSaver.schedule();
+      return {
+        ok: true,
+        host: result.host,
+        rows: siteTrustRows(siteTrustState),
+      };
+    },
+  );
+  // What the assistant may do on the page on screen (for the site panel).
+  ipcMain.handle('site-trust:current', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    const id = activeTabId();
+    const tab = id === null ? undefined : model.findTab(state, id);
+    const host = tab ? normalizeSite(tab.url) : null;
+    return host === null
+      ? null
+      : { host, level: trustOf(siteTrustState, host) };
+  });
   ipcMain.handle('tools:list', (event) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
     return describeTools(toolSettings);
@@ -8098,6 +8178,18 @@ ${artifact.content.slice(0, 1500)}`;
       decision,
     );
   };
+  // "Trust this site" on the popped-out card: the site is the one the waiting card names (read from
+  // the card, never from what the overlay sent), and the step is allowed.
+  const onOverlayTrust = (event: Electron.IpcMainEvent) => {
+    if (!fromOverlay(event) || !overlayReply) return;
+    const waiting = popoutOf(overlayReply.message, state.tabs);
+    if (!waiting) return;
+    chatService?.trustSiteOfCard(
+      overlayReply.chatId,
+      waiting.messageId,
+      waiting.partId,
+    );
+  };
   // The overlay covers the page, so it passes the mouse wheel on to it: the page can still
   // be scrolled while the assistant works or waits.
   const onOverlayWheel = (
@@ -8131,6 +8223,7 @@ ${artifact.content.slice(0, 1500)}`;
     markerPageScrolled();
   };
   ipcMain.on('overlay:decide', onOverlayDecide);
+  ipcMain.on('overlay:trust', onOverlayTrust);
   ipcMain.on('overlay:wheel', onOverlayWheel);
   ipcMain.on('overlay:ready', onOverlayReady);
   ipcMain.on('overlay:peek', onOverlayPeek);
@@ -8262,6 +8355,7 @@ ${artifact.content.slice(0, 1500)}`;
     saver.flushSync();
     chatsSaver.flushSync();
     toolsSaver.flushSync();
+    siteTrustSaver.flushSync();
     agentVisualsSaver.flushSync();
     artifactsSaver.flushSync();
     namingSaver.flushSync();
@@ -8326,11 +8420,15 @@ ${artifact.content.slice(0, 1500)}`;
     ipcMain.removeHandler('naming:get');
     ipcMain.removeHandler('naming:set');
     ipcMain.removeHandler('name:ai');
+    ipcMain.removeHandler('site-trust:list');
+    ipcMain.removeHandler('site-trust:set');
+    ipcMain.removeHandler('site-trust:current');
     ipcMain.removeHandler('tools:list');
     ipcMain.removeHandler('tools:set');
     ipcMain.removeHandler('tools:reset');
     ipcMain.removeListener('overlay:ready', onOverlayReady);
     ipcMain.removeListener('overlay:decide', onOverlayDecide);
+    ipcMain.removeListener('overlay:trust', onOverlayTrust);
     ipcMain.removeListener('overlay:wheel', onOverlayWheel);
     ipcMain.removeListener('overlay:peek', onOverlayPeek);
     ipcMain.removeListener('overlay:stop', onOverlayStop);

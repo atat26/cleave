@@ -2254,6 +2254,8 @@ export function parsePermissionChoice(id: string): PermissionChoice | null {
 
 export type SiteChoice =
   | { action: 'set'; kind: AskKind; answer: Answer | null }
+  // What the assistant may do on this site (see siteTrust.ts).
+  | { action: 'assistant'; level: 'trusted' | 'unknown' | 'blocked' }
   | { action: 'rewarn' }
   | { action: 'settings' };
 
@@ -2275,7 +2277,34 @@ export function siteMenuItems(options: {
   canAsk: boolean;
   // What is remembered for the site, by kind (empty if nothing).
   answers: Partial<Record<AskKind, Answer>>;
+  // What the assistant may do on this site; left out for a page that is not a website.
+  assistant?: 'trusted' | 'unknown' | 'blocked';
 }): MenuItem[] {
+  // "Assistant: Ask first / Trusted / Blocked", a row like the permissions.
+  const assistant: MenuItem[] =
+    options.assistant === undefined
+      ? []
+      : [
+          {
+            type: 'item',
+            id: 'site.assistant',
+            label: 'Assistant',
+            icon: 'chat',
+            submenu: (['unknown', 'trusted', 'blocked'] as const).map(
+              (level): MenuItem => ({
+                type: 'item',
+                id: `site.assistant:${level}`,
+                label:
+                  level === 'unknown'
+                    ? 'Ask first'
+                    : level === 'trusted'
+                      ? 'Trusted'
+                      : 'Blocked',
+                checked: options.assistant === level,
+              }),
+            ),
+          },
+        ];
   // A site you went on to despite its certificate can have its warnings turned
   // back on.
   const warn: MenuItem[] = options.problem
@@ -2309,6 +2338,7 @@ export function siteMenuItems(options: {
   if (!options.canAsk) {
     return [
       header,
+      ...assistant,
       {
         type: 'item',
         id: 'site.insecure',
@@ -2325,6 +2355,7 @@ export function siteMenuItems(options: {
   if (changed.length === 0) {
     return [
       header,
+      ...assistant,
       {
         type: 'item',
         id: 'site.none',
@@ -2338,6 +2369,7 @@ export function siteMenuItems(options: {
   }
   return [
     header,
+    ...assistant,
     ...changed.map(
       ({ kind, label, icon }): MenuItem => ({
         type: 'item',
@@ -2363,6 +2395,13 @@ export function siteMenuItems(options: {
 export function parseSiteChoice(id: string): SiteChoice | null {
   if (id === 'site.rewarn') return { action: 'rewarn' };
   if (id === 'site.settings') return { action: 'settings' };
+  const level = /^site\.assistant:(unknown|trusted|blocked)$/.exec(id)?.[1];
+  if (level !== undefined) {
+    return {
+      action: 'assistant',
+      level: level as 'unknown' | 'trusted' | 'blocked',
+    };
+  }
   const m = /^site\.set:([a-z]+):(ask|allow|block)$/.exec(id);
   if (!m) return null;
   const kind = ASK_KINDS.find((k) => k === m[1]);
