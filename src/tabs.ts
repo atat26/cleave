@@ -8407,6 +8407,8 @@ ${artifact.content.slice(0, 1500)}`;
     sleepSettingsSaver.flushSync();
     extensionsSaver.flushSync();
     extensionSettingsSaver.flushSync();
+    skillsSaver.flushSync();
+    themeSaver.flushSync();
   });
   win.on('closed', () => {
     stopAnimation();
