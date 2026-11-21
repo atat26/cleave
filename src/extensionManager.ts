@@ -16,8 +16,9 @@
 //     and number of files are limited.
 //   - Extensions only run in the app's normal browsing session (never in the
 //     assistant's hidden reading window).
-import { app } from 'electron';
+import { app, ipcMain } from 'electron';
 import type { BrowserWindow, Session, WebContents } from 'electron';
+import { isExtensionId } from './extensionId';
 import { ElectronChromeExtensions } from 'electron-chrome-extensions';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -527,6 +528,8 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
     loadExtensions: false,
     autoUpdate: false,
     beforeInstall: async (details) => {
+      // Only a real extension id (32 letters, a to p) is ever installed.
+      if (!isExtensionId(details.id)) return { action: 'deny' };
       const parsed = parseManifest(details.manifest);
       if (!parsed) return { action: 'deny' };
       const yes = await deps.confirm({
@@ -537,9 +540,17 @@ export function registerExtensions(deps: ExtensionManagerDeps) {
       });
       return { action: yes ? 'allow' : 'deny' };
     },
-  }).catch((error: Error) => {
-    console.error(`[extensions] web store: ${error.message}`);
-  });
+  })
+    .then(() => {
+      // The library lets the Web Store page remove an extension by deleting a folder named by the
+      // page, without checking the name or asking you. Cleave removes extensions itself (Settings >
+      // Extensions, which asks first), so this one is switched off.
+      ipcMain.removeHandler('chrome.management.uninstall');
+      ipcMain.handle('chrome.management.uninstall', () => 'unknown_error');
+    })
+    .catch((error: Error) => {
+      console.error(`[extensions] web store: ${error.message}`);
+    });
 
   // Updates for extensions from the store: at start and every few hours, if the
   // setting is on. (Only extensions that are on are updated.)
