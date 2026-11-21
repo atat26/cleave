@@ -1246,3 +1246,103 @@ test('a plan still asks after "Allow the rest of this reply"', async () => {
   assert.equal(t.asked.length, 2);
   assert.equal(t.asked[1].text, 'Plan this task in 3 steps');
 });
+
+// ---- A reply that failed partway is not forgotten -------------------------------------
+
+const systemOf = (messages: ChatMessageInput[]) =>
+  messages[0].role === 'system' ? String(messages[0].content) : '';
+
+test('after a reply fails partway, a retry and a follow-up are told what it already did', async () => {
+  const { tools } = fakeTools();
+  const clickCall = (id: string): StreamEvent => ({
+    type: 'tool-calls',
+    calls: [{ id, name: 'click', arguments: '{}' }],
+  });
+  let round = 0;
+  const stream: StreamFn = async function* () {
+    round++;
+    if (round === 1) {
+      yield text('Clicking.');
+      yield clickCall('c1');
+      return;
+    }
+    if (round === 2) throw new ChatError('rate-limit'); // fails after the click
+    yield text('Carrying on.');
+    yield usage(5, 0);
+  };
+  const t = setup(stream);
+  const first = t.runner.send(t.chatId, 'Press Go', { ...CONTEXT, tools });
+  assert.ok(first.ok);
+  await first.done;
+  const failed = t.chat.messages[1];
+  assert.equal(failed.status, 'error');
+  assert.ok(toolParts(failed).some((p) => p.status === 'ok'));
+
+  // Retry removes the failed reply, but the new request still lists what was done.
+  const retried = t.runner.retry(t.chatId, { ...CONTEXT, tools });
+  assert.ok(retried.ok);
+  await retried.done;
+  const sent = systemOf(t.calls[t.calls.length - 1].messages);
+  assert.match(sent, /What you already did/);
+  assert.match(sent, /Done: Read: Example/);
+  assert.equal(t.chat.messages[1].status, 'done');
+});
+
+test('a follow-up after a failed reply is told what the failed reply already did', async () => {
+  const { tools } = fakeTools();
+  let round = 0;
+  const stream: StreamFn = async function* () {
+    round++;
+    if (round === 1) {
+      yield {
+        type: 'tool-calls',
+        calls: [{ id: 'c1', name: 'click', arguments: '{}' }],
+      } as StreamEvent;
+      return;
+    }
+    if (round === 2) throw new ChatError('rate-limit');
+    yield text('Fine.');
+  };
+  const t = setup(stream);
+  const first = t.runner.send(t.chatId, 'Press Go', { ...CONTEXT, tools });
+  assert.ok(first.ok);
+  await first.done;
+  assert.equal(t.chat.messages[1].status, 'error');
+  // The user just says something else (the failed reply stays in the chat).
+  const second = t.runner.send(t.chatId, 'What did you do?', {
+    ...CONTEXT,
+    tools,
+  });
+  assert.ok(second.ok);
+  await second.done;
+  const sent = systemOf(t.calls[t.calls.length - 1].messages);
+  assert.match(sent, /Done: Read: Example/);
+});
+
+test('a step that must be asked about is never run just because the reply has no room to show it', async () => {
+  const { tools, runs } = fakeTools();
+  // Fill the reply with parts (thinking and words, alternating), then ask for a click.
+  const filler: StreamEvent[] = [];
+  for (let i = 0; i < 400; i++) filler.push(thinks('t'), text('x'));
+  const t = setup(
+    scripted(
+      [
+        ...filler,
+        {
+          type: 'tool-calls',
+          calls: [{ id: 'c1', name: 'click', arguments: '{}' }],
+        },
+      ],
+      [text('Done.')],
+    ),
+  );
+  const started = t.runner.send(t.chatId, 'Press Go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(runs, [], 'the click must not have run');
+  assert.equal(t.asked.length, 0);
+  const second = t.calls[1].messages;
+  const answer = second[second.length - 1];
+  assert.equal(answer.role, 'tool');
+  assert.match(String(answer.content), /as many steps as it can hold/);
+});

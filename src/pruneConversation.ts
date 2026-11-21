@@ -16,6 +16,7 @@ import type { ActionName } from './agentActions.ts';
 import type { ChatMessageInput, ContentPart } from './openrouter.ts';
 
 interface CallInfo {
+  id: string;
   name: string;
   // The tab the call was about (from its arguments), or null.
   tab: number | null;
@@ -36,6 +37,9 @@ const tabOf = (raw: string): number | null => {
   }
 };
 
+// How the result of a successful page read begins (see agentTools.ts).
+const PAGE_TEXT_START = 'Untrusted web page text';
+
 export const STALE_LOOK = (tab: number | null): string =>
   `[An earlier look at ${tab === null ? 'a page' : `tab ${tab}`}. The page has changed or was looked at again since, so these control numbers no longer work. Use look_at_page again if you need them.]`;
 export const STALE_READ = (tab: number | null): string =>
@@ -53,6 +57,7 @@ export function pruneConversation(
     if (message.role !== 'assistant' || !message.toolCalls) continue;
     for (const call of message.toolCalls) {
       const info = {
+        id: call.id,
         name: call.name,
         tab: tabOf(call.arguments),
         order: all.length,
@@ -61,13 +66,29 @@ export function pruneConversation(
       all.push(info);
     }
   }
-  const laterOnTab = (call: CallInfo, wanted: (name: string) => boolean) =>
+  // What each call answered with.
+  const answers = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role === 'tool' && typeof message.content === 'string') {
+      answers.set(message.toolCallId, message.content);
+    }
+  }
+  // A later read counts only if it really brought the page's text: a read that was refused (a limit)
+  // or failed gave the model nothing, so the earlier text is all it has.
+  const gotPageText = (other: CallInfo) =>
+    (answers.get(other.id) ?? '').startsWith(PAGE_TEXT_START);
+  const laterOnTab = (
+    call: CallInfo,
+    wanted: (name: string) => boolean,
+    worked: (other: CallInfo) => boolean = () => true,
+  ) =>
     call.tab !== null &&
     all.some(
       (other) =>
         other.order > call.order &&
         other.tab === call.tab &&
-        wanted(other.name),
+        wanted(other.name) &&
+        worked(other),
     );
 
   // The newest message that holds a picture: the only one whose pictures are kept.
@@ -96,7 +117,7 @@ export function pruneConversation(
       }
       if (
         call.name === 'read_page' &&
-        laterOnTab(call, (name) => name === 'read_page')
+        laterOnTab(call, (name) => name === 'read_page', gotPageText)
       ) {
         return { ...message, content: STALE_READ(call.tab) };
       }

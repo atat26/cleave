@@ -358,6 +358,10 @@ const headers = (apiKey: string, json = false): Record<string, string> => ({
 const MAX_TOOL_CALLS = 8;
 const MAX_TOOL_ARGUMENTS = 10_000;
 
+// A call the provider gave no id gets one of ours, different from every other in the run of the app (the
+// same "call_0" in every round would make two calls look like one to the provider and to the app).
+let fallbackId = 0;
+
 // Join the streamed pieces of tool calls into whole calls.
 function gatherToolCalls(
   pieces: Map<number, { id: string; name: string; arguments: string }>,
@@ -366,8 +370,8 @@ function gatherToolCalls(
     .sort((a, b) => a[0] - b[0])
     .filter(([, call]) => call.name !== '')
     .slice(0, MAX_TOOL_CALLS)
-    .map(([index, call]) => ({
-      id: call.id || `call_${index}`,
+    .map(([, call]) => ({
+      id: call.id || `call_${++fallbackId}`,
       name: call.name,
       arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS),
     }));
@@ -398,13 +402,21 @@ interface StreamChatOptions {
   maxTokens?: number;
   signal?: AbortSignal;
   fetchImpl: FetchLike;
+  // How long the stream may be silent before the reply is given up on (a stalled provider). A test
+  // can shorten it.
+  stallMs?: number;
 }
+
+// A model that goes quiet for this long has stalled (a model that is only thinking still sends
+// keep-alive comments, which count).
+export const STALL_MS = 120_000;
 
 async function* streamChatRaw(
   options: StreamChatOptions,
 ): AsyncGenerator<StreamEvent> {
   const { apiKey, model, messages, tools, maxTokens, signal, fetchImpl } =
     options;
+  const stallMs = options.stallMs ?? STALL_MS;
 
   let response: Response;
   try {
@@ -446,14 +458,35 @@ async function* streamChatRaw(
     { id: string; name: string; arguments: string }
   >();
   let ended = false;
+  // Did the reply end properly (a finish reason, or the closing "[DONE]")? A stream that just stops
+  // was cut off, and must not be saved as a finished reply.
+  let finishedProperly = false;
+  // Which of our pieces each of the provider's call numbers is writing into. A provider that gives
+  // every parallel call the number 0 but a different id each is told apart by the id.
+  const slotOf = new Map<number, number>();
+  let nextSlot = 0;
+  const readOnce = () =>
+    new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new ChatError('timeout')), stallMs);
+      reader.read().then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
 
   try {
     while (!ended) {
       let read: ReadableStreamReadResult<Uint8Array>;
       try {
-        read = await reader.read();
+        read = await readOnce();
       } catch (error) {
-        if (isAbort(error)) throw error;
+        if (isAbort(error) || error instanceof ChatError) throw error;
         throw new ChatError('network'); // The connection dropped mid-reply.
       }
       const text = read.done
@@ -467,10 +500,22 @@ async function* streamChatRaw(
         const result = interpretData(event.data);
         for (const item of result.events) {
           if (item.type !== 'tool-call-delta') {
+            if (item.type === 'finish') finishedProperly = true;
             yield item;
             continue;
           }
-          const piece = pieces.get(item.index) ?? {
+          let slot = slotOf.get(item.index);
+          if (
+            slot === undefined ||
+            // A new id on a number already in use is a new call.
+            (item.id &&
+              pieces.get(slot)?.id &&
+              pieces.get(slot)?.id !== item.id)
+          ) {
+            slot = nextSlot++;
+            slotOf.set(item.index, slot);
+          }
+          const piece = pieces.get(slot) ?? {
             id: '',
             name: '',
             arguments: '',
@@ -482,16 +527,19 @@ async function* streamChatRaw(
             0,
             MAX_TOOL_ARGUMENTS + 1,
           );
-          pieces.set(item.index, piece);
+          pieces.set(slot, piece);
         }
         if (result.error) throw result.error;
         if (result.done) {
+          finishedProperly = true;
           ended = true;
           break;
         }
       }
       if (read.done) ended = true;
     }
+    // The connection closed with no finish and no "[DONE]": the reply was cut off.
+    if (!finishedProperly) throw new ChatError('network');
     const calls = gatherToolCalls(pieces);
     if (calls.length > 0) yield { type: 'tool-calls', calls };
   } finally {

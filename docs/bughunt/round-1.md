@@ -23,14 +23,14 @@ The first bug came from the owner: "Object has been destroyed" when the app is c
 
 | #   | What goes wrong                                                                                                                                                                              | How likely        | Status |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
-| C1  | **A reply that fails partway is forgotten**, so Retry or a follow-up repeats clicks and typing that already happened (rate limits mid-run are common on free models).                        | medium to high    | todo   |
-| C2  | **Delete a chat while it replies: a stuck "live" reply in Recently deleted** (spinner, dead Allow/Deny, Retry refused). Found by two reviewers.                                              | medium            | todo   |
-| C3  | **Branching a chat that is still replying** copies the unfinished reply the same way.                                                                                                        | medium            | todo   |
+| C1  | **A reply that fails partway is forgotten**, so Retry or a follow-up repeats clicks and typing that already happened (rate limits mid-run are common on free models).                        | medium to high    | fixed  |
+| C2  | **Delete a chat while it replies: a stuck "live" reply in Recently deleted** (spinner, dead Allow/Deny, Retry refused). Found by two reviewers.                                              | medium            | fixed  |
+| C3  | **Branching a chat that is still replying** copies the unfinished reply the same way.                                                                                                        | medium            | fixed  |
 | C4  | **Two chats at once share one pop-out card and "working" flag**: a click can answer the other chat's card.                                                                                   | medium            | later  |
-| C5  | Editing the newest message builds the run's tools and skills from the OLD text.                                                                                                              | medium            | todo   |
-| C6  | A later read that was refused or failed still marks the earlier good page text as stale, so the model has nothing. Fallback tool-call ids repeat (`call_0`).                                 | sometimes         | todo   |
-| C7  | Stream edge cases: a stream that ends with no finish is saved as done; no timeout when a provider stalls; parallel calls that all say index 0 get merged.                                    | rare to sometimes | todo   |
-| C8  | Linking silently fails at 20 links (the model is told "linked"). At 300 steps in a reply a risky step would run without asking (very unlikely, high damage).                                 | rare              | todo   |
+| C5  | Editing the newest message builds the run's tools and skills from the OLD text.                                                                                                              | medium            | fixed  |
+| C6  | A later read that was refused or failed still marks the earlier good page text as stale, so the model has nothing. Fallback tool-call ids repeat (`call_0`).                                 | sometimes         | fixed  |
+| C7  | Stream edge cases: a stream that ends with no finish is saved as done; no timeout when a provider stalls; parallel calls that all say index 0 get merged.                                    | rare to sometimes | fixed  |
+| C8  | Linking silently fails at 20 links (the model is told "linked"). At 300 steps in a reply a risky step would run without asking (very unlikely, high damage).                                 | rare              | part   |
 | C9  | No `tools` field once tool rounds run out while history still has tool calls (some providers reject it). Cuts can fall inside an emoji. Outlines stay valid after you navigate a linked tab. | rare              | later  |
 
 ## Shutdown, crashes and robustness
@@ -62,6 +62,8 @@ The first bug came from the owner: "Object has been destroyed" when the app is c
 | U7  | The chat does not re-pin to the bottom when content grows (step details opening, a thumbnail loading, resizing).                                                                                                                                                   | sometimes         | todo   |
 | U8  | Buttons stuck disabled if the main process throws (Send, Save, Settings buttons have no try/finally).                                                                                                                                                              | low               | later  |
 | U9  | Smaller: RunBar "Dismiss (Esc)" only works inside the bar; the collapsed strip clips extra tabs and chats; skill editor discards edits without asking; a collapsed Space can hide the selected tab; "@" in the one-row bar may toggle the chat repeatedly (guess). | low               | later  |
+
+**C8 is partly fixed:** a step that has to be asked about is now refused if the reply has no room to show its card, and the assistant is told when a tab it opened could not be linked. Documents and saved pages made by the assistant that cannot be linked at 20 links are still not reported.
 
 ## Not covered by this round
 

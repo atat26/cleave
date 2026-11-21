@@ -2026,3 +2026,25 @@ test('the text of a page is marked with a code a page cannot copy', async () => 
   assert.ok(lines.includes('----- end of page text -----'));
   assert.ok(out.result.indexOf(real[1]) > out.result.indexOf(forged));
 });
+
+test('a tab opened when the chat has no room for another link is reported as NOT linked', async () => {
+  const base = setup();
+  const env = {
+    ...base.env,
+    openTab: async () => ({
+      ok: true as const,
+      tabId: 78,
+      url: 'https://duckduckgo.com/',
+      title: 'DuckDuckGo',
+      linked: false,
+    }),
+  };
+  const tools = createAgentTools(env, () => 'always');
+  const outcome = await tools.run(
+    call('open_tab', { url: 'https://duckduckgo.com/' }),
+    ABORT,
+  );
+  assert.equal(outcome.ok, true);
+  assert.match(outcome.result, /could NOT be linked/);
+  assert.ok(!/it is linked to this conversation/.test(outcome.result));
+});

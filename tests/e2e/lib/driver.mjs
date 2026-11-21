@@ -77,6 +77,22 @@ export async function ask(
 ) {
   const sent = await app.api('chatSend', chatId, text, []);
   assert.ok(sent?.ok, `could not send: ${JSON.stringify(sent)}`);
+  return settle(app, chatId, { decide, timeout });
+}
+
+// Try again after a failed reply (the Retry button), and wait for the new reply to finish.
+export async function retry(
+  app,
+  chatId,
+  { decide = () => 'deny', timeout = 30000 } = {},
+) {
+  const sent = await app.api('chatRetry', chatId);
+  assert.ok(sent?.ok, `could not retry: ${JSON.stringify(sent)}`);
+  return settle(app, chatId, { decide, timeout });
+}
+
+// Answer the cards that wait, and wait for the newest reply to finish.
+async function settle(app, chatId, { decide, timeout }) {
   const cards = [];
   const answered = new Set();
   const reply = await waitFor(

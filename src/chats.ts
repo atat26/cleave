@@ -732,7 +732,11 @@ export function deleteConversation(
   // Not gone for good: it waits in the trash (the oldest go if it is full).
   const trash = [
     ...state.trash,
-    { ...state.conversations[index], deletedAt: now },
+    {
+      ...state.conversations[index],
+      messages: settleMessages(state.conversations[index].messages),
+      deletedAt: now,
+    },
   ].slice(-MAX_TRASH);
   if (remaining.length === 0) {
     const fresh = emptyConversation(state.nextId, now);
@@ -760,7 +764,11 @@ export function restoreConversation(state: ChatsState, id: number): ChatsState {
   const { deletedAt, ...chat } = found;
   return {
     ...state,
-    conversations: [...state.conversations, chat],
+    conversations: [
+      ...state.conversations,
+      // (A chat put away by an older version may hold a reply that was never settled.)
+      { ...chat, messages: settleMessages(chat.messages) },
+    ],
     trash: state.trash.filter((c) => c.id !== id),
   };
 }
@@ -855,12 +863,12 @@ export function branchConversation(
     createdAt: now,
     updatedAt: now,
     refs: chat.refs.map((r) => ({ ...r })),
-    messages: chat.messages
-      .slice(
+    messages: settleMessages(
+      chat.messages.slice(
         0,
         chat.messages[index + 1]?.role === 'assistant' ? index + 2 : index + 1,
-      )
-      .map((m) => ({ ...m })),
+      ),
+    ).map((m) => ({ ...m })),
   };
   return {
     id,
@@ -899,7 +907,9 @@ export function branchBeforeMessage(
     createdAt: now,
     updatedAt: now,
     refs: chat.refs.map((r) => ({ ...r })),
-    messages: chat.messages.slice(0, index).map((m) => ({ ...m })),
+    messages: settleMessages(chat.messages.slice(0, index)).map((m) => ({
+      ...m,
+    })),
   };
   return {
     id,
@@ -1137,6 +1147,33 @@ export function appendToMessage(
   }));
 }
 
+// The steps of a reply that was cut short: nothing is still running or waiting. It was cut short, not
+// a failure ("Not done").
+function stoppedParts(parts: MessagePart[]): MessagePart[] {
+  return parts.map((part) =>
+    part.type === 'tool' &&
+    (part.status === 'running' || part.status === 'waiting')
+      ? {
+          ...part,
+          status: 'error',
+          skipped: true,
+          outcome: part.outcome || 'You stopped this reply before it ran.',
+        }
+      : part,
+  );
+}
+
+// Messages that are copied or put away while a reply is still being written (its chat is deleted or
+// branched mid-run) can never be finished by the run that was writing it, so they are settled as
+// stopped: otherwise they come back with a spinner, buttons that do nothing, and no way to retry.
+function settleMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m) =>
+    m.status === 'streaming'
+      ? { ...m, status: 'stopped', parts: stoppedParts(m.parts) }
+      : m,
+  );
+}
+
 // Mark a reply as finished, stopped, or failed.
 export function finishMessage(
   state: ChatsState,
@@ -1165,21 +1202,15 @@ export function finishMessage(
       errorKind:
         result.status === 'error' ? (result.errorKind ?? 'unknown') : null,
       // Nothing is still running once the reply is over (for example Stop).
-      parts: m.parts.map((part) =>
-        part.type === 'tool' &&
-        (part.status === 'running' || part.status === 'waiting')
-          ? result.status === 'stopped'
-            ? // Stop: it was cut short, not a failure ("Not done").
-              {
-                ...part,
-                status: 'error',
-                skipped: true,
-                outcome:
-                  part.outcome || 'You stopped this reply before it ran.',
-              }
-            : { ...part, status: 'error' }
-          : part,
-      ),
+      parts:
+        result.status === 'stopped'
+          ? stoppedParts(m.parts)
+          : m.parts.map((part) =>
+              part.type === 'tool' &&
+              (part.status === 'running' || part.status === 'waiting')
+                ? { ...part, status: 'error' }
+                : part,
+            ),
     }),
     now,
   );

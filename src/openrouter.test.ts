@@ -385,10 +385,23 @@ test('an unfinished last event is still read when the connection ends', async ()
     streamResponse([
       `data: ${JSON.stringify({ choices: [{ delta: { content: 'tail' } }] })}`,
     ]);
-  const events = await collect(
-    streamChat({ apiKey: KEY, model: 'm', messages: [], fetchImpl }),
+  // The words are read (and so kept), and since the stream just stopped with no finish and no
+  // "[DONE]", it is reported as cut off rather than as a finished reply.
+  const seen: StreamEvent[] = [];
+  await assert.rejects(
+    (async () => {
+      for await (const event of streamChat({
+        apiKey: KEY,
+        model: 'm',
+        messages: [],
+        fetchImpl,
+      })) {
+        seen.push(event);
+      }
+    })(),
+    (error: unknown) => error instanceof ChatError && error.kind === 'network',
   );
-  assert.deepEqual(events, [{ type: 'text', text: 'tail' }]);
+  assert.deepEqual(seen, [{ type: 'text', text: 'tail' }]);
 });
 
 test('errors before streaming become plain messages, never the server text', async () => {

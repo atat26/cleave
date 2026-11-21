@@ -153,7 +153,8 @@ export function createChatService(options: {
   // Doing things in a tab (click, type, ...). Every one is approved by you first.
   actions: ActionEnv;
   // Link a tab to a chat (used for tabs the assistant opens).
-  linkTab(chatId: number, tabId: number): void;
+  // Link a tab to the chat; false if it could not be (the chat is at its limit of links).
+  linkTab(chatId: number, tabId: number): boolean;
   // The artifact store, for the assistant's artifact tools. Making one also links
   // it to the chat; changing one lets an open editor know.
   artifactStore: {
@@ -534,8 +535,11 @@ export function createChatService(options: {
             // A tab the assistant opens is linked to this chat, so it can use it.
             openTab: async (url, signal) => {
               const opened = await options.actions.openTab(url, signal);
-              if (opened.ok) options.linkTab(chatId, opened.tabId);
-              return opened;
+              if (!opened.ok) return opened;
+              return {
+                ...opened,
+                linked: options.linkTab(chatId, opened.tabId),
+              };
             },
           },
           options.toolLevel,
@@ -789,8 +793,9 @@ export function createChatService(options: {
               : 'That message is too long.',
         };
       }
-      // Cannot send (no key, no model)? Then change nothing.
-      const prepared = contextFor(chatId);
+      // Cannot send (no key, no model)? Then change nothing. (The edited text is what the run is
+      // about: a "/Skill" or tool words added in the edit must count.)
+      const prepared = contextFor(chatId, content);
       if (!prepared.ok) return prepared;
 
       const newest = [...chat.messages]
