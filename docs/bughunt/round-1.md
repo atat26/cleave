@@ -11,12 +11,12 @@ The first bug came from the owner: "Object has been destroyed" when the app is c
 
 | #   | What goes wrong                                                                                                                                                                                       | How likely      | Status |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ |
-| D1  | **Ungroup a Space: its documents are orphaned** and disappear from the Documents panel for good (only delete releases them). Repair on load too.                                                      | high            | todo   |
-| D2  | **A failed save is forgotten** (the save marks itself done before the write finishes; an EBUSY/EPERM is swallowed). At close, one failing save throws and skips all the later ones. Shared temp name. | low to medium   | todo   |
+| D1  | **Ungroup a Space: its documents are orphaned** and disappear from the Documents panel for good (only delete releases them). Repair on load too.                                                      | high            | fixed  |
+| D2  | **A failed save is forgotten** (the save marks itself done before the write finishes; an EBUSY/EPERM is swallowed). At close, one failing save throws and skips all the later ones. Shared temp name. | low to medium   | fixed  |
 | D3  | **Tabs past 1,000 or Spaces past 200 vanish on the next start** (the load cap; closed links in Spaces count forever; adding has no cap).                                                              | grows with use  | todo   |
 | D4  | **Deleting a big Space loses pages** despite "you can bring it back" (300-page and 2,000-character URL caps in the trash, only 50 trash items).                                                       | with big Spaces | todo   |
 | D5  | **Restoring a deleted Space does not reconnect the chats linked to it** (new id, chat links stay grey).                                                                                               | medium          | todo   |
-| D6  | **Artifact text typed in the last half second before closing is lost** (nothing flushes the editor on close).                                                                                         | sometimes       | todo   |
+| D6  | **Artifact text typed in the last half second before closing is lost** (nothing flushes the editor on close).                                                                                         | sometimes       | fixed  |
 | D7  | Recently closed drops the `#` part of a URL and URLs over 2,000 characters (single-page apps reopen at the wrong place).                                                                              | low             | later  |
 
 ## The assistant and chats
@@ -46,7 +46,7 @@ The first bug came from the owner: "Object has been destroyed" when the app is c
 | S7  | A crashed tab with reason "killed" or on a non-web address shows nothing; no "unresponsive" handling.                                                                                      | rare         | todo   |
 | S8  | Quitting during a link read can leave the process running for a second or more (a quick relaunch then does nothing).                                                                       | rare         | todo   |
 | S9  | The preview guard reads `contents.id` on a possibly destroyed page.                                                                                                                        | rare (guess) | todo   |
-| S10 | Windows shutdown or log-off: only the window's `close` flushes saves, no `session-end`.                                                                                                    | sometimes    | todo   |
+| S10 | Windows shutdown or log-off: only the window's `close` flushes saves, no `session-end`.                                                                                                    | sometimes    | fixed  |
 | S11 | Many handlers are not removed when the window closes (a second window, or macOS reopen, would throw). **Blocks multiple windows**; do it as the first step of that work.                   | n/a          | later  |
 
 ## Interface

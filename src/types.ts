@@ -932,6 +932,10 @@ export interface BrowserApi {
   // Called when the assistant changed an artifact's text (so an open editor can
   // show it). Returns an unsubscribe function.
   onArtifactChanged: (callback: (id: number) => void) => () => void;
+  // Called when the window is about to close, so a page can save what it is holding (the document
+  // editor's last typing). The window waits for what the callback returns (for a moment at most).
+  // Returns an unsubscribe function.
+  onBeforeClose: (callback: () => Promise<void> | void) => () => void;
   artifactRename: (id: number, title: string) => void;
   // Make another artifact with the same text, in a Space (or none).
   artifactCopy: (id: number, spaceId: number | null) => Promise<number | null>;

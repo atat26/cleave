@@ -11,6 +11,7 @@ import {
   MAX_ARTIFACT_CHARS,
   MAX_ARTIFACTS,
   parseArtifacts,
+  releaseMissingSpaces,
   releaseSpace,
   updateArtifact,
 } from './artifacts.ts';
@@ -392,4 +393,38 @@ test('uploaded files are called Image or PDF in lists, and sizes are said plainl
   assert.equal(byteWords(512), '512 bytes');
   assert.equal(byteWords(2048), '2 KB');
   assert.equal(byteWords(3 * 1024 * 1024 + 200_000), '3.2 MB');
+});
+
+test('artifacts in a Space that no longer exists are put outside every Space (and nothing else changes)', () => {
+  let state = defaultArtifacts();
+  state = make(state, {
+    kind: 'markdown',
+    title: 'In a live Space',
+    spaceId: 1,
+  }).state;
+  state = make(state, {
+    kind: 'markdown',
+    title: 'In a gone Space',
+    spaceId: 9,
+  }).state;
+  state = make(state, {
+    kind: 'markdown',
+    title: 'In no Space',
+    spaceId: null,
+  }).state;
+  const fixed = releaseMissingSpaces(state, [1, 2]);
+  assert.deepEqual(
+    fixed.artifacts.map((a) => [a.title, a.spaceId]),
+    [
+      ['In a live Space', 1],
+      ['In a gone Space', null],
+      ['In no Space', null],
+    ],
+  );
+  // Nothing wrong: the same object comes back (no needless save).
+  assert.equal(releaseMissingSpaces(fixed, [1, 2]), fixed);
+  assert.equal(
+    releaseMissingSpaces(defaultArtifacts(), []).artifacts.length,
+    0,
+  );
 });

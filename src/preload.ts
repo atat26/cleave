@@ -25,8 +25,24 @@ const PASTED_IMAGE_TYPES: Record<string, string> = {
   'image/bmp': 'bmp',
 };
 
+// Pages that hold something not yet saved (the document editor) register here. When the window is
+// about to close, the app asks, waits for all of them, and the answer goes back (at once when
+// nothing is registered).
+const beforeClose = new Set<() => Promise<void> | void>();
+ipcRenderer.on('app:before-close', () => {
+  void Promise.allSettled([...beforeClose].map((callback) => callback())).then(
+    () => ipcRenderer.send('app:before-close-done'),
+  );
+});
+
 const browserApi: BrowserApi = {
   platform: process.platform,
+  onBeforeClose: (callback) => {
+    beforeClose.add(callback);
+    return () => {
+      beforeClose.delete(callback);
+    };
+  },
 
   navigate: (input) => ipcRenderer.send('tab:navigate', input),
   goBack: () => ipcRenderer.send('tab:back'),
