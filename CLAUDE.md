@@ -7,7 +7,7 @@ Windows + PowerShell. I'm new to app development: explain plans in plain English
 ## Commands
 
 `npm start` | `npm run check` | `npm run test:e2e`
-(`check` = typecheck + oxlint/oxfmt. `test:e2e` is still to be added.)
+(`check` = typecheck + oxlint/oxfmt + unit tests. `test:e2e` starts the real app on a throwaway folder with a fake web site and a fake model: see `tests/e2e/README.md`. Close the dev copy first.)
 In PowerShell use `npm.cmd` instead of `npm` (script execution is disabled on this machine).
 If Electron's binary is missing after `npm install`, run `node node_modules\electron\install.js`.
 

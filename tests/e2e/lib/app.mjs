@@ -1,0 +1,256 @@
+// Starts the real app on a throwaway data folder and drives it through Chromium's debugging port.
+// It never touches your own data: the folder is new, and it is deleted afterwards.
+//
+// The app that runs is the development copy (`npm start`), because only that copy takes the AIB_
+// settings the tests need (the fake model's address). The installed app ignores them on purpose.
+import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export const ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+);
+
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Try again until `fn` gives something truthy (or throws nothing and returns it), or time runs out.
+export async function waitFor(
+  label,
+  fn,
+  { timeout = 15000, every = 150 } = {},
+) {
+  const end = Date.now() + timeout;
+  let last;
+  while (Date.now() < end) {
+    try {
+      last = await fn();
+      if (last) return last;
+    } catch (error) {
+      last = error;
+    }
+    await sleep(every);
+  }
+  const why = last instanceof Error ? ` (${last.message})` : '';
+  throw new Error(`Timed out waiting for ${label}${why}`);
+}
+
+const portFree = (port) =>
+  new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
+  });
+
+async function freePort() {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+// ---- a connection to one page of the app ------------------------------------------------
+async function connect(wsUrl) {
+  const ws = new WebSocket(wsUrl);
+  await new Promise((resolve, reject) => {
+    ws.onopen = resolve;
+    ws.onerror = () => reject(new Error('Could not connect to the app.'));
+  });
+  let id = 0;
+  const pending = new Map();
+  ws.onmessage = (message) => {
+    const data = JSON.parse(message.data);
+    if (data.id && pending.has(data.id)) {
+      pending.get(data.id)(data);
+      pending.delete(data.id);
+    }
+  };
+  const send = (method, params = {}) =>
+    new Promise((resolve) => {
+      const n = ++id;
+      pending.set(n, resolve);
+      ws.send(JSON.stringify({ id: n, method, params }));
+    });
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  return {
+    send,
+    // Run JavaScript in the page and bring back its (JSON-able) result.
+    async ev(expression) {
+      const r = await send('Runtime.evaluate', {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (r.result?.exceptionDetails) {
+        throw new Error(
+          r.result.exceptionDetails.exception?.description ??
+            r.result.exceptionDetails.text ??
+            'evaluation failed',
+        );
+      }
+      return r.result?.result?.value;
+    },
+    close: () => ws.close(),
+  };
+}
+
+// ---- the app ------------------------------------------------------------------------------
+// options: { profile (folder, made if missing), env (extra settings), keep (leave the folder) }
+export async function startApp({ profile, env = {}, log } = {}) {
+  if (!(await portFree(5173))) {
+    throw new Error(
+      'Port 5173 is in use: close the Cleave development copy (npm start) that is running, then try again.',
+    );
+  }
+  const folder =
+    profile ?? fs.mkdtempSync(path.join(os.tmpdir(), 'cleave-e2e-'));
+  fs.mkdirSync(folder, { recursive: true });
+  const port = await freePort();
+  const logFile = log ?? path.join(os.tmpdir(), 'cleave-e2e-app.log');
+  const out = fs.openSync(logFile, 'w');
+
+  const child = spawn(
+    'cmd.exe',
+    [
+      '/c',
+      'npm.cmd',
+      'start',
+      '--',
+      '--',
+      `--user-data-dir=${folder}`,
+      `--remote-debugging-port=${port}`,
+    ],
+    {
+      cwd: ROOT,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', out, out],
+      windowsHide: true,
+    },
+  );
+
+  const targets = async () =>
+    (await (
+      await fetch(`http://127.0.0.1:${port}/json/list`, {
+        signal: AbortSignal.timeout(3000),
+      })
+    ).json()) ?? [];
+  const connections = new Map();
+  const on = async (target) => {
+    if (!connections.has(target.id)) {
+      connections.set(target.id, await connect(target.webSocketDebuggerUrl));
+    }
+    return connections.get(target.id);
+  };
+
+  // The app's own window page (the interface), not a tab's page.
+  const uiTarget = async () => {
+    const found = (await targets()).find(
+      (t) => t.type === 'page' && /^http:\/\/localhost:\d+\/$/.test(t.url),
+    );
+    if (!found) throw new Error('the app window is not there yet');
+    return found;
+  };
+
+  const app = {
+    folder,
+    port,
+    logFile,
+    child,
+    targets,
+    // Run JavaScript in the app's own window.
+    async ev(expression) {
+      return (await on(await uiTarget())).ev(expression);
+    },
+    // Run JavaScript in a web page tab, found by (part of) its address.
+    async pageEv(urlPart, expression) {
+      const target = (await targets()).find(
+        (t) => t.type === 'page' && t.url.includes(urlPart),
+      );
+      if (!target) throw new Error(`no page with "${urlPart}" in its address`);
+      return (await on(target)).ev(expression);
+    },
+    // Call the app's own interface functions (the same ones its screens use).
+    api: (name, ...args) =>
+      app
+        .ev(
+          `Promise.resolve(window.browserApi.${name}(...${JSON.stringify(args)})).then((r) => JSON.stringify(r === undefined ? null : r))`,
+        )
+        .then((text) => (text === undefined ? null : JSON.parse(text))),
+    // The app's state: tabs, Spaces, chats, and so on.
+    async state() {
+      const text = await app.ev(`(async () => {
+        const api = window.browserApi;
+        const s = await new Promise((res) => { const off = api.onState((x) => { off && off(); res(x); }); api.uiReady(); });
+        return JSON.stringify(s);
+      })()`);
+      return JSON.parse(text);
+    },
+    // Close the app's window the way you do with the close button, so it saves everything and quits
+    // properly (stop() is a hard kill, like a crash). Then clear away what is left of the dev server.
+    async quit() {
+      // The app's main process is the one started with this throwaway folder that is not a helper.
+      const script = `$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'electron.exe' -and $_.CommandLine -like '*${folder.replace(/'/g, "''")}*' -and $_.CommandLine -notlike '*--type=*' } | Select-Object -First 1; if ($p) { [void](Get-Process -Id $p.ProcessId).CloseMainWindow() }`;
+      spawnSync('powershell', ['-NoProfile', '-Command', script], {
+        stdio: 'ignore',
+      });
+      await waitFor('the app to quit', async () => !(await isUp(port)), {
+        timeout: 20000,
+      }).catch(() => undefined);
+      await app.stop();
+    },
+    // Stop the app (and the dev server under it).
+    async stop() {
+      for (const c of connections.values()) c.close();
+      connections.clear();
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+      });
+      await waitFor('the app to close', async () => !(await isUp(port)), {
+        timeout: 20000,
+      }).catch(() => undefined);
+      await sleep(1500);
+      fs.closeSync(out);
+    },
+  };
+
+  try {
+    await waitFor(
+      'the app window',
+      async () => {
+        const t = await uiTarget();
+        const c = await on(t);
+        return c.ev('typeof window.browserApi === "object"');
+      },
+      { timeout: 120000, every: 1000 },
+    );
+  } catch (error) {
+    // Never leave a half-started app running.
+    await app.stop();
+    removeFolder(folder);
+    throw error;
+  }
+  return app;
+}
+
+async function isUp(port) {
+  try {
+    await fetch(`http://127.0.0.1:${port}/json/version`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function removeFolder(folder) {
+  fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5 });
+}

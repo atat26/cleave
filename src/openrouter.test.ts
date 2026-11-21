@@ -8,6 +8,7 @@ import {
   isValidModelId,
   listModels,
   OPENROUTER_BASE,
+  apiBase,
   parseModels,
   streamChat,
   toApiMessage,
@@ -857,4 +858,37 @@ test('a reply that ends because of the limit is reported as such', async () => {
     events.filter((e) => e.type === 'finish'),
     [{ type: 'finish', reason: 'length' }],
   );
+});
+
+test('the model address is OpenRouter, unless a development copy is pointed at this computer', () => {
+  const saved = process.env.AIB_API_BASE;
+  try {
+    delete process.env.AIB_API_BASE;
+    assert.equal(apiBase(), OPENROUTER_BASE);
+    for (const [wanted, expected] of [
+      ['http://127.0.0.1:8123/v1', 'http://127.0.0.1:8123/v1'],
+      ['http://localhost:9000/v1/', 'http://localhost:9000/v1'],
+      ['http://127.0.0.1:8123', 'http://127.0.0.1:8123'],
+    ]) {
+      process.env.AIB_API_BASE = wanted;
+      assert.equal(apiBase(), expected, wanted);
+    }
+    // Anything that is not this computer is ignored: the key can never be sent elsewhere.
+    for (const wanted of [
+      'https://evil.example/v1',
+      'http://evil.example:8123/v1',
+      'http://127.0.0.1.evil.example:8123/v1',
+      'http://127.0.0.1@evil.example:8123/v1',
+      'http://localhost:8123.evil.example/',
+      'https://127.0.0.1:8123/v1',
+      'ftp://127.0.0.1:8123/',
+      '',
+    ]) {
+      process.env.AIB_API_BASE = wanted;
+      assert.equal(apiBase(), OPENROUTER_BASE, wanted);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.AIB_API_BASE;
+    else process.env.AIB_API_BASE = saved;
+  }
 });

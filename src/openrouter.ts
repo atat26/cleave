@@ -5,15 +5,29 @@
 //
 // Three rules this file keeps:
 //   - The address is fixed (below). Nothing from outside can choose where we send
-//     the API key.
+//     the API key. (The one exception is for the tests: a copy started from the project
+//     folder, never the installed app, may be pointed at a fake model on this same computer.
+//     See apiBase.)
 //   - The API key is only ever used in the Authorization header. It is never put
 //     in an error, a log, or anything returned.
 //   - Error messages are written here, in plain words. Raw text from the server
 //     is never shown to the user.
 import { createSseParser } from './sse.ts';
 import { tracing, traced } from './requestTrace.ts';
+import { devEnv } from './devEnv.ts';
 
 export const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
+
+// Where the model is called. Always OpenRouter, except in a development copy started with
+// AIB_API_BASE=http://127.0.0.1:<port>/... (the tests' fake model, tests/e2e): only an address
+// on this computer is accepted, and the installed app ignores the setting (devEnv).
+export function apiBase(): string {
+  const wanted = devEnv('AIB_API_BASE');
+  return wanted !== undefined &&
+    /^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}(\/|$)/.test(wanted)
+    ? wanted.replace(/\/+$/, '')
+    : OPENROUTER_BASE;
+}
 
 // The network call, in the shape of the standard fetch().
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -394,7 +408,7 @@ async function* streamChatRaw(
 
   let response: Response;
   try {
-    response = await fetchImpl(`${OPENROUTER_BASE}/chat/completions`, {
+    response = await fetchImpl(`${apiBase()}/chat/completions`, {
       method: 'POST',
       headers: headers(apiKey, true),
       body: JSON.stringify({
@@ -506,7 +520,7 @@ export async function checkKey(
 ): Promise<KeyInfo> {
   let response: Response;
   try {
-    response = await fetchImpl(`${OPENROUTER_BASE}/key`, {
+    response = await fetchImpl(`${apiBase()}/key`, {
       headers: headers(apiKey),
       signal,
     });
@@ -607,7 +621,7 @@ export async function listModels(
 ): Promise<ModelInfo[]> {
   let response: Response;
   try {
-    response = await fetchImpl(`${OPENROUTER_BASE}/models`, {
+    response = await fetchImpl(`${apiBase()}/models`, {
       headers: apiKey === null ? {} : headers(apiKey),
       signal,
     });
