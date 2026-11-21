@@ -19,6 +19,12 @@
 import { app, ipcMain } from 'electron';
 import type { BrowserWindow, Session, WebContents } from 'electron';
 import { isExtensionId } from './extensionId';
+import { extensionGate } from './extensionGate';
+import { EXTENSION_GATE_GLOBAL } from './libraryPatches';
+
+// The extension library calls this for every request and event of an extension (hooks added at
+// build time, see libraryPatches.ts). Set before any extension is loaded.
+(globalThis as Record<string, unknown>)[EXTENSION_GATE_GLOBAL] = extensionGate;
 import { ElectronChromeExtensions } from 'electron-chrome-extensions';
 import fs from 'node:fs';
 import path from 'node:path';

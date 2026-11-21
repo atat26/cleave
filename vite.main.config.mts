@@ -3,7 +3,10 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
-import { patchWebStoreOriginCheck } from './src/libraryPatches.ts';
+import {
+  patchExtensionGate,
+  patchWebStoreOriginCheck,
+} from './src/libraryPatches.ts';
 
 // The two extension libraries each have a small helper script that is loaded into web pages. They look
 // for it next to the built main file. While developing, they find it in node_modules; the installed
@@ -27,27 +30,25 @@ const copyExtensionHelperScripts = (): Plugin => ({
   },
 });
 
-// Fix the Web Store library's origin check as it is bundled (see src/libraryPatches.ts). The build
-// stops if the library's code is not found or has changed.
-const patchWebStoreLibrary = (): Plugin => {
+// Fix a library as it is bundled (see src/libraryPatches.ts). The build stops if the library is not
+// part of it, or if its code has changed so the fix no longer fits.
+const patchLibrary = (
+  name: string,
+  file: RegExp,
+  patch: (code: string) => string,
+): Plugin => {
   let patched = false;
   return {
-    name: 'patch-web-store-origin-check',
+    name: `patch-${name}`,
     transform(code, id) {
-      if (
-        !/electron-chrome-web-store[\\/]dist[\\/](esm|cjs)[\\/]browser[\\/]index\.m?js$/.test(
-          id,
-        )
-      ) {
-        return null;
-      }
+      if (!file.test(id)) return null;
       patched = true;
-      return { code: patchWebStoreOriginCheck(code), map: null };
+      return { code: patch(code), map: null };
     },
     buildEnd() {
       if (!patched) {
         throw new Error(
-          'The Web Store library was not part of the build, so its origin check was not fixed (see src/libraryPatches.ts).',
+          `${name} was not part of the build, so it was not patched (see src/libraryPatches.ts).`,
         );
       }
     },
@@ -62,5 +63,17 @@ export default defineConfig({
   define: {
     'import.meta.dirname': '__dirname',
   },
-  plugins: [copyExtensionHelperScripts(), patchWebStoreLibrary()],
+  plugins: [
+    copyExtensionHelperScripts(),
+    patchLibrary(
+      'electron-chrome-web-store',
+      /electron-chrome-web-store[\\/]dist[\\/](esm|cjs)[\\/]browser[\\/]index\.m?js$/,
+      patchWebStoreOriginCheck,
+    ),
+    patchLibrary(
+      'electron-chrome-extensions',
+      /electron-chrome-extensions[\\/]dist[\\/](esm|cjs)[\\/]index\.m?js$/,
+      patchExtensionGate,
+    ),
+  ],
 });
