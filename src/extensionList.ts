@@ -84,9 +84,20 @@ export function parseManifest(raw: unknown): ParsedManifest | null {
   if (typeof m.name !== 'string' || m.name.trim() === '') return null;
   const all = strings(m.permissions);
   // In version 2, sites are listed among the permissions.
+  // The sites its page scripts run on count too: a script there can read and change the page,
+  // whatever "permissions" says. (The extension gate reads the manifest itself, so this list
+  // is only what is shown and compared.)
+  const scripts = Array.isArray(m.content_scripts)
+    ? m.content_scripts.flatMap((c: unknown) =>
+        typeof c === 'object' && c !== null
+          ? strings((c as { matches?: unknown }).matches).filter(isHostPattern)
+          : [],
+      )
+    : [];
   const hosts = [
     ...strings(m.host_permissions),
     ...all.filter((p) => isHostPattern(p)),
+    ...scripts,
   ];
   return {
     name: m.name.slice(0, MAX_TEXT),
@@ -173,7 +184,47 @@ const WORDS: Record<string, string> = {
   topSites: 'See the sites you visit most',
   identity: 'Sign in with your accounts',
   debugger: 'Control other pages (a very powerful permission)',
+  scripting: 'Run code in the pages you visit',
+  webNavigation: 'See the pages you open and where you go',
+  tabCapture: 'Record what is shown in a tab',
+  desktopCapture: 'Record your screen',
+  pageCapture: 'Save copies of the pages you visit',
+  browsingData: 'Clear your browsing data',
+  sessions: 'See your recently closed tabs',
+  readingList: 'Read and change your reading list',
+  activeTab: 'Use the page you are on when you click its button',
+  'system.cpu': 'See details of your computer',
+  'system.memory': 'See details of your computer',
+  'system.storage': 'See details of your computer',
+  contentSettings: 'Change what sites may do (cameras, scripts, pop-ups)',
+  webAuthenticationProxy: 'Take part in sign-ins with security keys',
+  enterprise: 'Use enterprise device features',
+  offscreen: 'Open hidden pages in the background',
+  sidePanel: 'Show a side panel',
+  userScripts: 'Run its own code in the pages you visit',
+  gcm: 'Receive messages from the internet in the background',
 };
+
+// Permissions that matter little: nothing is said about them (they cannot reach your data).
+const QUIET = new Set([
+  'storage',
+  'unlimitedStorage',
+  'alarms',
+  'idle',
+  'power',
+  'fontSettings',
+  'background',
+  'tts',
+  'ttsEngine',
+  'search',
+  'favicon',
+  'declarativeContent',
+  'declarativeNetRequestFeedback',
+  'declarativeNetRequestWithHostAccess',
+  'printerProvider',
+  'wallpaper',
+  'theme',
+]);
 
 const isAllSites = (host: string): boolean =>
   host === '<all_urls>' ||
@@ -203,8 +254,11 @@ export function describePermissions(
     );
   }
   for (const permission of record.permissions) {
-    const words = WORDS[permission];
-    if (words && !lines.includes(words)) lines.push(words);
+    if (QUIET.has(permission)) continue;
+    // One it has no words for is shown by its own name, never left out.
+    const words =
+      WORDS[permission] ?? `Also asks for "${permission.slice(0, 40)}"`;
+    if (!lines.includes(words)) lines.push(words);
   }
   return lines;
 }

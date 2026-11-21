@@ -176,6 +176,38 @@ test('opening a new tab at a trusted site is not a new place to go', () => {
   assert.equal(fresh.card?.site, 'news.example');
 });
 
+test('an address on your own computer or network is named as such, and still asks unless you trust it', () => {
+  for (const address of [
+    'http://localhost:8080/admin',
+    'http://192.168.1.1/',
+    'http://[::1]:8443/',
+    'http://printer.local/',
+    'http://intranet/',
+  ]) {
+    const go = asked(plan('go_to', { tab: 1, url: address }));
+    assert.equal(go.risky, true, address);
+    assert.match(go.text, /your own computer or network/, address);
+    const open = asked(plan('open_tab', { url: address }));
+    assert.equal(open.risky, true, address);
+    assert.match(open.text, /your own computer or network/, address);
+  }
+  // A public site keeps the usual words, and trusting a local address is the user's own choice.
+  assert.match(
+    asked(plan('go_to', { tab: 1, url: 'https://news.example/' })).text,
+    /different website/,
+  );
+  const trusted = asked(
+    plan(
+      'go_to',
+      { tab: 1, url: 'http://localhost:8080/' },
+      {
+        'localhost:8080': 'trusted',
+      },
+    ),
+  );
+  assert.equal(trusted.risky, false);
+});
+
 test('a link to a trusted site is not "a different website"; a link to an unknown one is', () => {
   const link = (element: number, sites: Sites = {}) =>
     asked(plan('click', { tab: 1, element }, sites));

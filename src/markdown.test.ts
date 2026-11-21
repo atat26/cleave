@@ -86,6 +86,32 @@ test('only plain web links are links; other kinds show just their words', () => 
   );
 });
 
+test('a link whose words look like another site says where it really goes', () => {
+  assert.equal(
+    show(parseInline('[https://bank.example/login](https://evil.example/x)')),
+    '<a https://evil.example/x>https://bank.example/login (goes to evil.example)</a>',
+  );
+  assert.equal(
+    show(parseInline('[bank.example](https://evil.example/)')),
+    '<a https://evil.example/>bank.example (goes to evil.example)</a>',
+  );
+  // A link is never nested inside another.
+  assert.equal(
+    show(parseInline('[**https://a.example/**](https://b.example/)')),
+    '<a https://b.example/><b>https://a.example/</b> (goes to b.example)</a>',
+  );
+  // Honest links, and ordinary words, are left alone.
+  for (const honest of [
+    '[https://bank.example/login](https://bank.example/other)',
+    '[www.bank.example](https://bank.example/)',
+    '[bank.example/login](https://www.bank.example/x)',
+    '[Read the docs](https://evil.example/)',
+    '[version 1.2.3 notes](https://a.example/)',
+  ]) {
+    assert.ok(!show(parseInline(honest)).includes('goes to'), honest);
+  }
+});
+
 test('images are never loaded: they show as words', () => {
   assert.equal(
     show(parseInline('![a cat](https://tracker.example/cat.png)')),

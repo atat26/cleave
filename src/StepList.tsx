@@ -9,6 +9,7 @@ import {
   answerFor,
   badgesFor,
   cardMayTakeFocus,
+  keyMayAnswer,
   nextLine,
 } from './approvalCard';
 import {
@@ -644,6 +645,7 @@ export function ApprovalCardView({
   takeKeyboard: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const shownAt = useRef(Date.now());
   const [focused, setFocused] = useState(false);
   const { card, risky, site } = view;
   const badges = badgesFor(view.toolName, risky, card ?? undefined);
@@ -681,6 +683,8 @@ export function ApprovalCardView({
         if (answer === null) return;
         event.preventDefault();
         event.stopPropagation();
+        // Not for a card that has only just appeared (see keyMayAnswer).
+        if (!keyMayAnswer(answer, Date.now() - shownAt.current)) return;
         onDecide(answer);
       }}
     >

@@ -109,6 +109,40 @@ test('what an extension asks for is told in plain words', () => {
   );
 });
 
+test('the sites its page scripts run on are counted, and unknown permissions are shown by name', () => {
+  const parsed = parseManifest({
+    manifest_version: 3,
+    name: 'Scripts',
+    permissions: ['storage', 'scripting', 'someNewThing'],
+    content_scripts: [
+      { matches: ['https://a.com/*', 'not a pattern'] },
+      { matches: ['<all_urls>'] },
+      'junk',
+      { matches: 5 },
+    ],
+  })!;
+  assert.deepEqual(parsed.hostPermissions, ['https://a.com/*', '<all_urls>']);
+  assert.deepEqual(describePermissions(parsed), [
+    'Read and change your data on all websites',
+    'Run code in the pages you visit',
+    'Also asks for "someNewThing"',
+  ]);
+  // A long made-up name cannot fill the screen.
+  const long = describePermissions({
+    permissions: ['x'.repeat(150)],
+    hostPermissions: [],
+  });
+  assert.ok(long[0].length < 70);
+  // Quiet ones stay quiet; the clicked-page one is told.
+  assert.deepEqual(
+    describePermissions({
+      permissions: ['alarms', 'idle', 'activeTab'],
+      hostPermissions: [],
+    }),
+    ['Use the page you are on when you click its button'],
+  );
+});
+
 test('adding, switching off and removing an extension', () => {
   let state = defaultExtensions();
   assert.equal(nextFolderKey(state), 'ext-1');

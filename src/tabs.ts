@@ -289,6 +289,8 @@ import {
   withLevel,
   withLevels,
 } from './toolSettings';
+import { devEnv } from './devEnv';
+import { isAllowedNavigation } from './navigationRules';
 import {
   defaultSiteTrust,
   normalizeSite,
@@ -460,7 +462,7 @@ export async function createTabs(
 ): Promise<void> {
   // For the AI prompt pipeline inspection only: with AIB_TRACE=1 one line of sizes (never what
   // was said, read or typed) is written per model call (see requestTrace.ts).
-  if (process.env.AIB_TRACE === '1') {
+  if (devEnv('AIB_TRACE') === '1') {
     const traceFile = path.join(
       app.getPath('userData'),
       'pipeline-trace.jsonl',
@@ -2140,7 +2142,8 @@ export async function createTabs(
     if (existing) return existing;
 
     const view = new WebContentsView({
-      // Web content is untrusted: no Node.js, no preload bridge, fully sandboxed.
+      // Web content is untrusted: no Node.js, no bridge of ours, fully sandboxed. (The extension
+      // library adds a small helper script to every page; it does nothing outside extension addresses.)
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -2353,6 +2356,14 @@ export async function createTabs(
       } else if (failed) {
         failedPages.delete(tab.id);
       }
+    });
+    // A page may only send its own tab to a web address (or a blank page, or an extension's own
+    // page): not to a file or any other kind of address, by a link, a script or a redirect.
+    contents.on('will-navigate', (event, url) => {
+      if (!isAllowedNavigation(url)) event.preventDefault();
+    });
+    contents.on('will-redirect', (event, url) => {
+      if (!isAllowedNavigation(url)) event.preventDefault();
     });
     // The warning page's two links.
     contents.on('will-navigate', (event, url) => {

@@ -105,12 +105,20 @@ export function registerUpdates(win: BrowserWindow): void {
   for (const channel of ['update:get', 'update:check', 'update:install']) {
     ipcMain.removeHandler(channel);
   }
-  ipcMain.handle('update:get', () => state);
-  ipcMain.handle('update:check', () => {
+  // Only the app's own window may ask (a page in a tab has no way to reach these, and nothing else of ours should).
+  const fromWindow = (event: Electron.IpcMainInvokeEvent) =>
+    event.sender === win.webContents;
+  ipcMain.handle('update:get', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
+    return state;
+  });
+  ipcMain.handle('update:check', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
     check();
     return state;
   });
-  ipcMain.handle('update:install', () => {
+  ipcMain.handle('update:install', (event) => {
+    if (!fromWindow(event)) throw new Error('Not allowed.');
     // Restarts Cleave into the version that was prepared.
     if (state.kind === 'ready') {
       snapshotBeforeUpdate();
