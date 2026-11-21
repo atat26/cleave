@@ -114,7 +114,17 @@ try {
     const started = Date.now();
     model.reset();
     try {
-      await journey.run(ctx);
+      // A journey that wedges the app must fail, not hang the whole run.
+      let timer;
+      await Promise.race([
+        journey.run(ctx),
+        new Promise((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('The journey took longer than 3 minutes.')),
+            180_000,
+          );
+        }),
+      ]).finally(() => clearTimeout(timer));
       results.push({ name: journey.name, ok: true, ms: Date.now() - started });
       console.log(
         `  PASS  ${journey.name} (${((Date.now() - started) / 1000).toFixed(1)}s)`,

@@ -61,8 +61,19 @@ async function freePort() {
 async function connect(wsUrl) {
   const ws = new WebSocket(wsUrl);
   await new Promise((resolve, reject) => {
-    ws.onopen = resolve;
-    ws.onerror = () => reject(new Error('Could not connect to the app.'));
+    // A page that has died accepts the connection request and never answers it.
+    const timer = setTimeout(
+      () => reject(new Error('The page did not answer (it may have crashed).')),
+      5000,
+    );
+    ws.onopen = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error('Could not connect to the app.'));
+    };
   });
   let id = 0;
   const pending = new Map();
@@ -176,6 +187,20 @@ export async function startApp({ profile, env = {}, log } = {}) {
       );
       if (!target) throw new Error(`no page with "${urlPart}" in its address`);
       return (await on(target)).ev(expression);
+    },
+    // Send a debugging command to a page (found by part of its address), for example Page.crash.
+    // The connection to a page that dies cannot be used again, so all of them are dropped afterwards.
+    async pageSend(urlPart, method, params = {}) {
+      const target = (await targets()).find(
+        (t) => t.type === 'page' && t.url.includes(urlPart),
+      );
+      if (!target) throw new Error(`no page with "${urlPart}" in its address`);
+      const connection = await on(target);
+      connection.send(method, params);
+    },
+    dropConnections() {
+      for (const c of connections.values()) c.close();
+      connections.clear();
     },
     // Call the app's own interface functions (the same ones its screens use).
     api: (name, ...args) =>

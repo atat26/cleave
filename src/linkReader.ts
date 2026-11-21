@@ -250,8 +250,19 @@ async function readOnce(
     if (loaded === 'timeout') return { ok: false, reason: 'timeout' };
     if (loaded !== 'done') return { ok: false, reason: 'unavailable' };
 
-    // Give a page that builds itself with JavaScript a moment to do so.
-    await new Promise((resolve) => setTimeout(resolve, options.settleMs));
+    // Give a page that builds itself with JavaScript a moment to do so. (Stopping, or the app closing,
+    // ends the wait at once: the hidden window counts as a window, and the app does not quit while
+    // it is open.)
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(done, options.settleMs);
+      function done() {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', done);
+        resolve();
+      }
+      signal.addEventListener('abort', done);
+    });
+    if (signal.aborted) return { ok: false, reason: 'unavailable' };
     if (state.blocked || state.leaked) return { ok: false, reason: 'blocked' };
 
     const page: PageText = await readPageTextVia({

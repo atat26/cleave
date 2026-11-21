@@ -1,5 +1,6 @@
 // Must come first: it picks the data folder (installed app or development copy).
 import './useDataFolder';
+import { installErrorGuard } from './errorGuard';
 import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
@@ -22,6 +23,9 @@ import { registerSearch } from './search';
 import { createTabs } from './tabs';
 import { guardPreviewFrames } from './previewGuard';
 import { loadUi } from './ui';
+
+// An error nobody caught goes in errors.log (installed app) instead of an error dialog.
+installErrorGuard();
 
 // Only one copy of Cleave may use a data folder at a time. Two copies would each keep their own
 // version of your chats and Spaces in memory and save over each other's changes. Opening Cleave

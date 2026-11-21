@@ -97,3 +97,14 @@ test('the setting offers fixed choices, starts as never, and ignores anything el
   assert.equal(sleepAfterWords(60), '1 hour');
   assert.equal(sleepAfterWords(240), '4 hours');
 });
+
+test('a page that is downloading or saving is never put to sleep (closing it would cancel that)', () => {
+  const tabs = [tab(1, { busy: true }), tab(2), tab(3, { busy: false })];
+  assert.deepEqual(spaceSleepers(tabs, 1, null), [2, 3]);
+  const lastUsed = new Map([
+    [1, 0],
+    [2, 0],
+    [3, 0],
+  ]);
+  assert.deepEqual(idleSleepers(tabs, lastUsed, 60 * 60_000, 15, null), [2, 3]);
+});

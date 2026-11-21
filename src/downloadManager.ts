@@ -66,6 +66,11 @@ function downloadFolder(settings: DownloadSettings): string {
 export function registerDownloads(deps: DownloadManagerDeps) {
   // The downloads going on now, by their number in the list.
   const live = new Map<number, ElectronItem>();
+  // Which page (its web contents number) each download going on now belongs to, and the pages being
+  // saved as a whole ("Save page as…"). A page in this list must not be put to sleep: closing its
+  // web page would cancel the download or the save.
+  const pageOf = new Map<number, number>();
+  const savingPages = new Map<number, number>();
   // When each page started its recent downloads (see floodCheck).
   const starts = new Map<number, number[]>();
   // Addresses you asked to "Save … as…": their downloads always show the save window.
@@ -144,6 +149,7 @@ export function registerDownloads(deps: DownloadManagerDeps) {
     deps.setList(added.state);
     const id = added.id;
     live.set(id, item);
+    pageOf.set(id, contents.id);
 
     let lastUpdate = 0;
     item.on('updated', (_event, state) => {
@@ -164,6 +170,7 @@ export function registerDownloads(deps: DownloadManagerDeps) {
     });
     item.once('done', (_event, state) => {
       live.delete(id);
+      pageOf.delete(id);
       change(id, {
         state:
           state === 'completed'
@@ -226,6 +233,8 @@ export function registerDownloads(deps: DownloadManagerDeps) {
         Date.now(),
       );
       deps.setList(added.state);
+      const savingId = contents.id;
+      savingPages.set(savingId, (savingPages.get(savingId) ?? 0) + 1);
       try {
         await contents.savePage(picked, 'HTMLComplete');
         const size = fs.statSync(picked).size;
@@ -236,8 +245,15 @@ export function registerDownloads(deps: DownloadManagerDeps) {
         });
       } catch {
         change(added.id, { state: 'failed' });
+      } finally {
+        const left = (savingPages.get(savingId) ?? 1) - 1;
+        if (left <= 0) savingPages.delete(savingId);
+        else savingPages.set(savingId, left);
       }
     },
+    // Is this page (its web contents number) in the middle of a download or a "Save page as…"?
+    isBusy: (contentsId: number): boolean =>
+      [...pageOf.values()].includes(contentsId) || savingPages.has(contentsId),
     pause: (id: number) => live.get(id)?.pause(),
     resume: (id: number) => {
       const item = live.get(id);

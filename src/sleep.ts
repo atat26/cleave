@@ -13,6 +13,9 @@ export interface SleepTab {
   audible: boolean;
   // The assistant is working in it.
   working: boolean;
+  // A download or "Save page as…" is going on in it (closing its web page would cancel it).
+  // Left out means no.
+  busy?: boolean;
 }
 
 // "After how long" choices, in minutes (0 is never).
@@ -76,6 +79,7 @@ export function spaceSleepers(
         !t.closed &&
         t.id !== activeId &&
         !t.audible &&
+        !t.busy &&
         !t.working,
     )
     .map((t) => t.id);
@@ -99,6 +103,7 @@ export function idleSleepers(
         !t.closed &&
         t.id !== activeId &&
         !t.audible &&
+        !t.busy &&
         !t.working &&
         now - (lastUsed.get(t.id) ?? now) >= limit,
     )
