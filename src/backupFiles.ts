@@ -124,6 +124,12 @@ function readChecked(folder: string, entry: BackupEntry): Buffer {
   if (!isPlainFile(file)) {
     throw new Error(`The backup is incomplete: ${entry.name} is missing.`);
   }
+  // The size on disk is checked before anything is read, so a huge file is never loaded.
+  if (fs.lstatSync(file).size !== entry.size) {
+    throw new Error(
+      `The backup is damaged: ${entry.name} does not match its checksum.`,
+    );
+  }
   const data = fs.readFileSync(file);
   if (data.length !== entry.size || sha256(data) !== entry.sha256) {
     throw new Error(

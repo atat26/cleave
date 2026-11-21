@@ -5,6 +5,8 @@
 // file with its size and a checksum (SHA-256). A restore only accepts files named on the lists below,
 // whatever the folder holds, so a folder with odd names or paths in it cannot write anywhere else.
 
+import { isViewableExtension } from './uploadTypes.ts';
+
 export const BACKUP_APP = 'Cleave';
 export const BACKUP_FORMAT = 1;
 export const MANIFEST_FILE = 'backup.json';
@@ -43,9 +45,19 @@ export const DATA_FILES: readonly string[] = [
 // The saved API keys: encrypted for this Windows account. Only in a backup when asked for.
 export const KEYS_FILE = 'secrets.json';
 
-// An uploaded file is saved as "<artifact number>.<extension>".
-export const isUploadName = (name: string): boolean =>
-  /^\d{1,12}\.[A-Za-z0-9]{1,12}$/.test(name);
+// An uploaded file is saved as "<artifact number>.<extension>", and only an image or a PDF is kept
+// from an upload (see uploadTypes.ts): a backup with a file of any other kind in "uploads" is refused,
+// so it cannot bring in a program that "Open" would then run.
+export const isUploadName = (name: string): boolean => {
+  const m = /^\d{1,12}\.([a-z0-9]{1,12})$/.exec(name);
+  return m !== null && isViewableExtension(m[1]);
+};
+
+// The most one file of a backup may hold (the biggest upload is 25 MB; a data file is a few MB), and
+// the most a whole backup may hold. A backup is read into memory file by file, so a folder with a
+// huge file in it is refused before anything is read.
+export const MAX_BACKUP_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_BACKUP_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 
 export type BackupEntry = { name: string; size: number; sha256: string };
 
@@ -124,6 +136,14 @@ export function parseManifest(raw: unknown): ManifestResult {
     }
     seen.add(entry.name);
     files.push({ name: entry.name, size: entry.size, sha256: entry.sha256 });
+  }
+  if (
+    files.some((f) => f.size > MAX_BACKUP_FILE_BYTES) ||
+    files.reduce((sum, f) => sum + f.size, 0) > MAX_BACKUP_TOTAL_BYTES
+  ) {
+    return bad(
+      'This backup is much bigger than a Cleave backup can be, so it was not used.',
+    );
   }
   return {
     ok: true,
