@@ -268,6 +268,7 @@ import {
   loadChats,
   loadJson,
   loadState,
+  sweepTempFiles,
 } from './storage';
 import { defaultNamingSettings, parseNamingSettings } from './namingSettings';
 import {
@@ -471,6 +472,7 @@ export async function createTabs(
       fs.appendFile(traceFile, JSON.stringify(entry) + '\n', () => undefined);
     });
   }
+  await sweepTempFiles(app.getPath('userData'));
   const file = path.join(app.getPath('userData'), 'spaces.json');
   const chatsFile = path.join(app.getPath('userData'), 'chats.json');
   let state: SavedState = await loadState(file);
