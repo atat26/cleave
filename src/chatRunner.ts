@@ -6,7 +6,7 @@
 // At most one reply is generated per chat at a time. Other chats are unaffected
 // (a chat keeps generating while you look at another one).
 import type { StepTarget } from './marker.ts';
-import { buildMessages } from './chatContext.ts';
+import { buildMessages, stepLines } from './chatContext.ts';
 import { devEnv } from './devEnv.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
@@ -136,6 +136,8 @@ export function createChatRunner(deps: RunnerDeps) {
     chatId: number,
     replyId: number,
     context: RunContext,
+    // What a reply that was taken out of the chat (by Retry) had already done.
+    carriedSteps: string[] = [],
   ): Promise<void> {
     const controller = new AbortController();
     running.set(chatId, controller);
@@ -149,6 +151,7 @@ export function createChatRunner(deps: RunnerDeps) {
       linkedContext: context.linked ?? null,
       skillsContext: context.skills ?? null,
       canLookUpStart: context.canLookUpStart ?? false,
+      carriedSteps,
       history,
     });
     const tools = context.tools ?? null;
@@ -340,6 +343,20 @@ export function createChatRunner(deps: RunnerDeps) {
               role: 'tool',
               toolCallId: call.id,
               content: plan.result,
+            });
+            continue;
+          }
+
+          // A step that has to be asked about, but cannot be shown (the reply already holds as many
+          // steps as it can): it must not run without the question. It is refused, not skipped.
+          if (mustAsk && plan.kind === 'ask' && !added) {
+            refused++;
+            noteRefused(call.name);
+            conversation.push({
+              role: 'tool',
+              toolCallId: call.id,
+              content:
+                'This reply already has as many steps as it can hold, so this one could not be shown to the user for approval and was not done. Tell the user where things stand and let them continue in a new message.',
             });
             continue;
           }
@@ -597,16 +614,23 @@ export function createChatRunner(deps: RunnerDeps) {
       if (!chat) return { ok: false, reason: 'unknown-chat' };
       const last = chat.messages[chat.messages.length - 1];
       let state = deps.getState();
+      // Whatever the removed replies already did (typed, clicked, moved tabs) is still done: the new
+      // reply is told, so it does not do it all again.
+      let carried: string[] = [];
       if (fromMessageId !== undefined) {
         const from = chat.messages.find((m) => m.id === fromMessageId);
         if (!from || from.role !== 'user') {
           return { ok: false, reason: 'nothing-to-retry' };
         }
+        carried = stepLines(
+          chat.messages.slice(chat.messages.indexOf(from) + 1),
+        );
         state = chats.truncateAfter(state, chatId, fromMessageId);
       } else if (
         last?.role === 'assistant' &&
         (last.status === 'error' || last.status === 'stopped')
       ) {
+        carried = stepLines([last]);
         state = chats.removeMessage(state, chatId, last.id);
       }
       const remaining = chats.findConversation(state, chatId)?.messages;
@@ -625,7 +649,7 @@ export function createChatRunner(deps: RunnerDeps) {
       return {
         ok: true,
         replyId: reply.id,
-        done: generate(chatId, reply.id, context),
+        done: generate(chatId, reply.id, context, carried),
       };
     },
 

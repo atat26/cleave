@@ -139,7 +139,14 @@ export type ActionResult =
 
 // How opening a new tab went.
 export type OpenTabResult =
-  | { ok: true; tabId: number; url: string; title: string }
+  | {
+      ok: true;
+      tabId: number;
+      url: string;
+      title: string;
+      // False when the chat is already at its limit of links, so the new tab could not be linked.
+      linked?: boolean;
+    }
   | { ok: false; reason: 'timeout' | 'unavailable' | 'blocked' };
 
 // Doing things in a page. Each is told which tab; the app checks and does it.
@@ -1005,7 +1012,10 @@ export function createAgentTools(
         label: text,
         ok: true,
         note: `Opened tab ${opened.tabId}.`,
-        result: `Done. The new tab is tab ${opened.tabId}, at ${where} titled "${cleanLabel(opened.title) || 'untitled'}", and it is linked to this conversation. Use look_at_page on it before acting.`,
+        result:
+          opened.linked === false
+            ? `The new tab was opened (at ${where} titled "${cleanLabel(opened.title) || 'untitled'}") but it could NOT be linked to this conversation, because the conversation already has as many links as it can hold. You cannot look at it or act in it. Tell the user, and suggest they remove a link they no longer need.`
+            : `Done. The new tab is tab ${opened.tabId}, at ${where} titled "${cleanLabel(opened.title) || 'untitled'}", and it is linked to this conversation. Use look_at_page on it before acting.`,
       };
     }
 

@@ -3942,7 +3942,7 @@ export async function createTabs(
     search: search.catch(() => null),
     linkTab: (chatId, tabId) => {
       const tab = model.findTab(state, tabId);
-      if (!tab || tab.closed) return;
+      if (!tab || tab.closed) return false;
       commitChats(
         chatsModel.addRef(chats, chatId, {
           kind: 'tab',
@@ -3950,6 +3950,12 @@ export async function createTabs(
           title: tab.title,
           url: tab.url,
         }),
+      );
+      // Linked now? (Not when the chat already has as many links as it can hold.)
+      return (
+        chatsModel
+          .findConversation(chats, chatId)
+          ?.refs.some((ref) => ref.kind === 'tab' && ref.id === tabId) ?? false
       );
     },
     // Every piece of a streaming reply lands here: save soon, but do not rebuild
