@@ -134,11 +134,49 @@ export const siteTrustRows = (state: SiteTrustState): SiteTrustRow[] =>
 // ---- Text the assistant types --------------------------------------------------------------
 
 // Characters that show nothing (or reorder what is shown): format marks, tag characters, variation
-// selectors, fillers, private-use and control characters (a new line and a tab are kept).
-const HIDDEN =
-  /[\p{Cf}\p{Variation_Selector}\p{Co}ᅟᅠㅤﾠ᠎͏⠀]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu;
+// selectors, fillers, private-use and control characters. A new line and a tab are kept, and so are
+// the two joiners that real writing needs (see `kept` below).
+const EXTRA_HIDDEN = [0x115f, 0x1160, 0x3164, 0xffa0, 0x180e, 0x034f, 0x2800];
+const extraClass = EXTRA_HIDDEN.map((c) => `\\u{${c.toString(16)}}`).join('');
+const HIDDEN = new RegExp(
+  `^(?:[\\p{Cf}\\p{Variation_Selector}\\p{Co}${extraClass}]|[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f])$`,
+  'u',
+);
+const LETTERISH = /[\p{L}\p{M}\p{Extended_Pictographic}]/u;
+const EMOJI_BASE = /[\p{Extended_Pictographic}#*0-9\u{20e3}]/u;
+
+// A hidden character that is part of real writing, so it stays:
+//  - the zero-width joiner and non-joiner (U+200D, U+200C) between two letters or emoji: Persian and
+//    other scripts need the non-joiner, and family and flag emoji are made with the joiner;
+//  - the emoji presentation mark (U+FE0F) right after an emoji (or a digit or # or * for a keycap).
+// Anywhere else (next to another one, at the start or end, after a space) they carry nothing but a
+// hidden message, so they go.
+function kept(chars: string[], i: number): boolean {
+  const ch = chars[i];
+  if (ch === '\u200c' || ch === '\u200d') {
+    const before = chars[i - 1];
+    const after = chars[i + 1];
+    return (
+      before !== undefined &&
+      after !== undefined &&
+      LETTERISH.test(before) &&
+      LETTERISH.test(after)
+    );
+  }
+  if (ch === '\ufe0f') {
+    const before = chars[i - 1];
+    return before !== undefined && EMOJI_BASE.test(before);
+  }
+  return false;
+}
 
 // The text as it will be typed: without anything you could not see on a card. (The card shows this
 // same text, so what you approve is what is typed.)
-export const visibleText = (text: string): string =>
-  text.replace(/\r\n?/g, '\n').replace(HIDDEN, '');
+export function visibleText(text: string): string {
+  const chars = Array.from(text.replace(/\r\n?/g, '\n'));
+  let out = '';
+  for (let i = 0; i < chars.length; i++) {
+    if (!HIDDEN.test(chars[i]) || kept(chars, i)) out += chars[i];
+  }
+  return out;
+}

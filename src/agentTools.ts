@@ -49,7 +49,12 @@ import {
 import type { SearchFailure, SearchResult } from './webSearch.ts';
 import type { OutlineElement } from './pageOutline.ts';
 import { addKnown, checkReadLink, emptyKnown } from './addressSafety.ts';
-import { applyPolicy, defaultLevel, toolInfo } from './toolPolicy.ts';
+import {
+  applyPolicy,
+  defaultLevel,
+  stricterLevel,
+  toolInfo,
+} from './toolPolicy.ts';
 import {
   ARTIFACT_DEFINITIONS,
   createArtifactTools,
@@ -507,6 +512,17 @@ export function createAgentTools(
   routing?: { open: Iterable<ToolGroup>; everything?: boolean },
 ): AgentTools {
   const env = withoutBlockedSites(rawEnv);
+  // A tool that does several of what another does at once may not do more than that tool is allowed:
+  // "Read several pages" follows "Read a page" if that is stricter, and "Fill in a form" follows
+  // "Type text". (Otherwise setting the single tool to Ask or Never would not hold.)
+  const SINGLE_TOOL: Record<string, string> = {
+    read_pages: 'read_page',
+    fill_fields: 'type_text',
+  };
+  const levelFor = (name: string): ApprovalLevel =>
+    SINGLE_TOOL[name] === undefined
+      ? levelOf(name)
+      : stricterLevel(levelOf(name), levelOf(SINGLE_TOOL[name]));
   const open = new Set<ToolGroup>(routing?.open ?? []);
   const everything = routing === undefined || routing.everything === true;
   let reads = 0;
@@ -770,7 +786,7 @@ export function createAgentTools(
           ? planReadLink(call)
           : { kind: 'auto' };
     return toolInfo(call.name)
-      ? applyPolicy(own, levelOf(call.name), describe(call))
+      ? applyPolicy(own, levelFor(call.name), describe(call))
       : own;
   };
 
@@ -928,7 +944,7 @@ export function createAgentTools(
     signal: AbortSignal,
   ): Promise<ToolOutcome> {
     // Defence in depth: a tool turned off is never run, whoever asks.
-    if (levelOf(call.name) === 'never') {
+    if (levelFor(call.name) === 'never') {
       return {
         label: 'Turned off in Tools',
         ok: false,
@@ -1431,7 +1447,7 @@ export function createAgentTools(
     ...ARTIFACT_DEFINITIONS,
     ...(planningEnabled() ? [PLAN_DEFINITION] : []),
     EARLIER_DEFINITION,
-  ].filter((definition) => levelOf(definition.name) !== 'never');
+  ].filter((definition) => levelFor(definition.name) !== 'never');
 
   // Tools whose limit for this reply is used up. Telling the model in words was not enough (it kept
   // calling a tool it had been refused up to five more times), so they are not offered at all.

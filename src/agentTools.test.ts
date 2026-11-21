@@ -772,6 +772,45 @@ test('a tool turned off is not offered, and is refused and never run if called',
   assert.deepEqual(done, []);
 });
 
+test('"Read several pages" and "Fill in a form" cannot do more than the single tools allow', async () => {
+  const levels = (own: Record<string, ApprovalLevel>) => (tool: string) =>
+    own[tool] ?? 'always';
+  const names = (t: ReturnType<typeof setup>['tools']) =>
+    t.definitions.map((d) => d.name);
+  const several = { tabs: [1, 2] };
+
+  // One page may not be read: several may not either, and neither is offered.
+  const noRead = setup(undefined, levels({ read_page: 'never' })).tools;
+  assert.equal(noRead.plan(call('read_pages', several)).kind, 'refuse');
+  assert.ok(!names(noRead).includes('read_pages'));
+  assert.ok(!names(noRead).includes('read_page'));
+  // One page asks: several ask too, though their own setting is "always".
+  assert.equal(
+    setup(undefined, levels({ read_page: 'ask' })).tools.plan(
+      call('read_pages', several),
+    ).kind,
+    'ask',
+  );
+  // Both loose: it goes ahead, as before. The batch tool may still be stricter than the single one.
+  assert.equal(
+    setup(undefined, levels({})).tools.plan(call('read_pages', several)).kind,
+    'auto',
+  );
+  const noBatch = setup(undefined, levels({ read_pages: 'never' })).tools;
+  assert.equal(noBatch.plan(call('read_pages', several)).kind, 'refuse');
+  assert.ok(names(noBatch).includes('read_page'));
+
+  // The same for a form and typing.
+  const noTyping = setup(undefined, levels({ type_text: 'never' })).tools;
+  assert.ok(!names(noTyping).includes('fill_fields'));
+  assert.ok(!names(noTyping).includes('type_text'));
+  assert.ok(
+    names(setup(undefined, levels({ fill_fields: 'never' })).tools).includes(
+      'type_text',
+    ),
+  );
+});
+
 test('On a site not decided about, Always allow and Allow if safe stop at Ask, and a blocked site is refused', async () => {
   for (const level of ['always', 'if-safe', 'ask'] as const) {
     const { tools } = setup(undefined, () => level);
