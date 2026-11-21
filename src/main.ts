@@ -14,6 +14,8 @@ import {
 } from './layout';
 import { registerAppInfo } from './appInfo';
 import { registerUpdates } from './updater';
+import { applyPendingRestore } from './backupFiles';
+import { registerBackup } from './backupService';
 import { openSecretStore } from './electronSecrets';
 import { registerLlm } from './llm';
 import { registerSearch } from './search';
@@ -92,6 +94,9 @@ const createWindow = () => {
   // The update button in Settings > About (looks for an update only when pressed).
   registerUpdates(mainWindow);
 
+  // Settings > Backup and restore.
+  registerBackup(mainWindow);
+
   // The AI provider connection (key storage, model choice, network calls).
   // One shared store of secrets (API keys) for the AI connection and web search.
   const secrets = openSecretStore();
@@ -119,6 +124,17 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 if (runsHere) {
+  // A restore chosen in Settings waits until now, before anything reads the data files: swap them in
+  // (your current data is kept in a before-restore folder first).
+  try {
+    const restored = applyPendingRestore(app.getPath('userData'), new Date());
+    if (restored !== null && !restored.applied) {
+      console.error('The restore was not applied:', restored.error);
+    }
+  } catch (error) {
+    console.error('The restore failed:', error);
+  }
+
   // Someone opened Cleave again: show the window that is already open.
   app.on('second-instance', () => {
     if (theWindow === null || theWindow.isDestroyed()) return;

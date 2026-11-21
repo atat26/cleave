@@ -42,6 +42,7 @@ import type { ExtensionRecord } from './extensionList';
 import type { ExtensionSettings } from './extensionSettings';
 import type { SleepSettings } from './sleep';
 import type { UpdateState } from './updateState';
+import type { BackupSummary } from './backupFormat';
 
 // What Settings > About shows about this copy of the app.
 export type AppInfo = {
@@ -51,6 +52,33 @@ export type AppInfo = {
   // The folder this copy keeps its data in.
   dataFolder: string;
 };
+
+// Settings > Backup and restore.
+export type BackupInfo = {
+  dataFolder: string;
+  // Where Cleave keeps the copies it makes by itself before an update, and their names (newest first).
+  autoCopiesFolder: string;
+  autoCopies: string[];
+  // What the last restore did, if there was one.
+  lastRestore:
+    | {
+        ok: true;
+        at: string;
+        madeAt: string;
+        safetyFolder: string;
+        files: number;
+      }
+    | { ok: false; at: string; error: string }
+    | null;
+};
+export type BackupMade =
+  | { kind: 'cancelled' }
+  | { kind: 'ok'; folder: string; summary: BackupSummary }
+  | { kind: 'error'; message: string };
+export type RestoreChoice =
+  | { kind: 'cancelled' }
+  | { kind: 'ok'; folder: string; summary: BackupSummary }
+  | { kind: 'error'; message: string };
 
 // A button's box on the window.
 export interface ExtensionBox {
@@ -782,6 +810,13 @@ export interface BrowserApi {
   spaceBulk: (id: number, action: 'close-all' | 'reopen-all' | 'sleep') => void;
   // Settings > About.
   appInfo: () => Promise<AppInfo>;
+  backupInfo: () => Promise<BackupInfo>;
+  // Asks where to save, then saves a backup there (the keys only if asked for).
+  backupCreate: (includeKeys: boolean) => Promise<BackupMade>;
+  // Asks which backup folder, and checks it.
+  backupChooseRestore: () => Promise<RestoreChoice>;
+  // Restores the folder that was chosen: Cleave restarts to do it.
+  backupRestore: () => Promise<{ ok: boolean; message: string }>;
   // Settings > About > Updates: the state, looking for an update (only when asked), restarting into
   // a prepared one, and being told when the state changes.
   updateGet: () => Promise<UpdateState>;

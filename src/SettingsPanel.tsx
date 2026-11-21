@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { onSectionRequested, takeRequestedSection } from './settingsNav';
 import { AboutSection } from './AboutSection';
 import { AppearanceSettings } from './AppearanceSettings';
+import { BackupSection } from './BackupSection';
 import { DownloadsSection } from './DownloadsSection';
 import { PrivacySection } from './PrivacySection';
 import { NewTabSection } from './NewTabSection';
@@ -137,6 +138,11 @@ const SECTIONS = [
     id: 'web-search',
     label: 'Web search',
     about: 'Search provider and key for the assistant',
+  },
+  {
+    id: 'backup',
+    label: 'Backup and restore',
+    about: 'Save a copy of your data, or put one back',
   },
   {
     id: 'about',
@@ -646,6 +652,7 @@ export function SettingsPanel() {
       {section === 'web-search' && <WebSearchSettings />}
       {section === 'appearance' && <AppearanceSettings />}
       {section === 'about' && <AboutSection />}
+      {section === 'backup' && <BackupSection />}
       {section === 'naming' && <NamingSection />}
       {section === 'extensions' && <ExtensionsSection />}
       {section === 'sleep' && <SleepSection />}
