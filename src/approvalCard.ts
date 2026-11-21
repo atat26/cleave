@@ -185,6 +185,20 @@ export function nextLine(toolName: string): string {
 
 export type Answer = 'allow' | 'allow-rest' | 'deny';
 
+// Is this (the target of a key press) a control that handles Enter itself?
+const isControl = (target: unknown): boolean => {
+  const tag =
+    typeof target === 'object' && target !== null
+      ? (target as { tagName?: unknown }).tagName
+      : undefined;
+  return (
+    typeof tag === 'string' &&
+    ['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'].includes(
+      tag.toUpperCase(),
+    )
+  );
+};
+
 // What a key means on a card, or null for none. Enter allows and Shift+Enter allows the
 // rest of the reply; Esc does not allow. A risky card cannot be allowed by Enter alone
 // (a stray Enter must never do something that cannot be undone): it needs Ctrl+Enter, and
@@ -196,12 +210,17 @@ export function answerFor(
     metaKey?: boolean;
     shiftKey?: boolean;
     altKey?: boolean;
+    // What the key was pressed on (the event's target).
+    target?: unknown;
   },
   risky: boolean,
 ): Answer | null {
   if (key.altKey) return null;
   if (key.key === 'Escape') return 'deny';
   if (key.key !== 'Enter') return null;
+  // Enter on a button or a field inside the card belongs to that control ("Don't allow" must not
+  // be answered "allow" by the Enter that presses it).
+  if (isControl(key.target)) return null;
   if (key.ctrlKey || key.metaKey) return 'allow';
   if (risky) return null;
   return key.shiftKey ? 'allow-rest' : 'allow';
