@@ -21,10 +21,19 @@ import { createTabs } from './tabs';
 import { guardPreviewFrames } from './previewGuard';
 import { loadUi } from './ui';
 
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
+// Only one copy of Cleave may use a data folder at a time. Two copies would each keep their own
+// version of your chats and Spaces in memory and save over each other's changes. Opening Cleave
+// again (the Start menu, a shortcut) brings the window that is already open to the front instead.
+// (The installed app and a development copy use different folders, so both can run.)
+// A Windows install, update or uninstall also starts the app with a special argument; it must only
+// do its small job and quit.
+const runsHere = !started && app.requestSingleInstanceLock();
+if (!runsHere) {
   app.quit();
 }
+
+// The window that is open, so a second launch can bring it to the front.
+let theWindow: BrowserWindow | null = null;
 
 const createWindow = () => {
   // Create the browser window.
@@ -54,6 +63,11 @@ const createWindow = () => {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+
+  theWindow = mainWindow;
+  mainWindow.on('closed', () => {
+    theWindow = null;
   });
 
   // The name Windows shows on the taskbar. A copy started from the project folder says so, to tell it
@@ -104,20 +118,30 @@ const createWindow = () => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
-  // No menu bar (our own right-click menus and shortcuts replace it).
-  Menu.setApplicationMenu(null);
-  registerAppInfo();
-  createWindow();
-
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+if (runsHere) {
+  // Someone opened Cleave again: show the window that is already open.
+  app.on('second-instance', () => {
+    if (theWindow === null || theWindow.isDestroyed()) return;
+    if (theWindow.isMinimized()) theWindow.restore();
+    theWindow.show();
+    theWindow.focus();
   });
-});
+
+  app.whenReady().then(() => {
+    // No menu bar (our own right-click menus and shortcuts replace it).
+    Menu.setApplicationMenu(null);
+    registerAppInfo();
+    createWindow();
+
+    // On OS X it's common to re-create a window in the app when the
+    // dock icon is clicked and there are no other windows open.
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+}
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
