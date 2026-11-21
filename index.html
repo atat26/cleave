@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <title>Cleave</title>
+    <!-- The parts of a page policy that cannot get in the way of anything the app does: no plug-ins,
+         no <base> tag, no form that posts anywhere. (A stricter one would also apply to the sandboxed
+         frame that previews an HTML artifact, which runs its own scripts.) -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
   </head>
   <body>
     <div id="root"></div>

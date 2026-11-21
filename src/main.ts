@@ -81,6 +81,11 @@ const createWindow = () => {
     mainWindow.setTitle(windowTitle);
   });
 
+  // This window also shows an HTML artifact's preview (a sandboxed frame): WebRTC could carry data out
+  // through a STUN or TURN server whatever the preview's content policy says, so it may only use TCP
+  // through a proxy, which means not at all here. (Web tabs are not affected: calls on web pages work.)
+  mainWindow.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+
   // Security: our own UI window never opens new windows or navigates away.
   // (Websites will live in their own tab views, added later in M1.)
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -96,6 +101,9 @@ const createWindow = () => {
 
   // Settings > Backup and restore.
   registerBackup(mainWindow);
+
+  // Settings > About (version and data folder).
+  registerAppInfo(mainWindow);
 
   // The AI provider connection (key storage, model choice, network calls).
   // One shared store of secrets (API keys) for the AI connection and web search.
@@ -146,7 +154,6 @@ if (runsHere) {
   app.whenReady().then(() => {
     // No menu bar (our own right-click menus and shortcuts replace it).
     Menu.setApplicationMenu(null);
-    registerAppInfo();
     createWindow();
 
     // On OS X it's common to re-create a window in the app when the

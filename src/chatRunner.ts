@@ -7,6 +7,7 @@
 // (a chat keeps generating while you look at another one).
 import type { StepTarget } from './marker.ts';
 import { buildMessages } from './chatContext.ts';
+import { devEnv } from './devEnv.ts';
 import * as chats from './chats.ts';
 import type { ChatsState } from './chats.ts';
 import { MAX_PAGE_CHARS } from './agentTools.ts';
@@ -48,10 +49,7 @@ export const MAX_REPLY_TOKENS = 16_000;
 // The limit in use: MAX_REPLY_TOKENS, or (for testing the limit, docs/pipeline) the number in the
 // environment variable AIB_MAX_REPLY_TOKENS.
 const replyLimit = (): number => {
-  const set =
-    typeof process !== 'undefined'
-      ? Number(process.env?.AIB_MAX_REPLY_TOKENS)
-      : NaN;
+  const set = Number(devEnv('AIB_MAX_REPLY_TOKENS'));
   return Number.isInteger(set) && set > 0 ? set : MAX_REPLY_TOKENS;
 };
 
@@ -202,7 +200,7 @@ export function createChatRunner(deps: RunnerDeps) {
           // What is sent leaves out what no longer helps (old page looks, repeated reads, old
           // pictures). AIB_NO_PRUNE=1 sends everything (to compare, see docs/pipeline).
           messages:
-            typeof process !== 'undefined' && process.env?.AIB_NO_PRUNE === '1'
+            devEnv('AIB_NO_PRUNE') === '1'
               ? conversation
               : pruneConversation(conversation),
           tools: useTools ? tools.definitions : undefined,

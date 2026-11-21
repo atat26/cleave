@@ -25,6 +25,7 @@
 import type { CardDetails } from './approvalCard.ts';
 import { MAX_MARKER_NAME } from './marker.ts';
 import type { StepTarget } from './marker.ts';
+import { isPublicHostname } from './addressSafety.ts';
 import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { WorkspaceTab } from './chatLinks.ts';
 import type { OutlineElement } from './pageOutline.ts';
@@ -443,6 +444,14 @@ function planFill(
   };
 }
 
+// What to call a place the assistant has not been before. An address on your own computer or network
+// (a router, a development server, a company system) is said plainly: it is not "a website" like
+// the others, and these are the places a web page would most like to send the assistant to.
+const newPlace = (url: URL): string =>
+  isPublicHostname(url.hostname)
+    ? 'a different website'
+    : 'an address on your own computer or network';
+
 function planActionCore(call: ToolCall, context: ActionContext): Plan {
   const name = call.name;
   if (!isActionName(name)) {
@@ -496,7 +505,7 @@ function planActionCore(call: ToolCall, context: ActionContext): Plan {
       ? { kind: 'ask', text: `Open a new tab at ${shown}`, risky: false, card }
       : {
           kind: 'ask',
-          text: `Open a new tab at a different website: ${shown}`,
+          text: `Open a new tab at ${newPlace(url)}: ${shown}`,
           risky: true,
           card,
         };
@@ -588,7 +597,7 @@ function planActionCore(call: ToolCall, context: ActionContext): Plan {
       ? { kind: 'ask', text: `Go to ${shown}`, risky: false, card }
       : {
           kind: 'ask',
-          text: `Go to a different website: ${shown}`,
+          text: `Go to ${newPlace(url)}: ${shown}`,
           risky: true,
           card,
         };

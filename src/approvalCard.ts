@@ -207,6 +207,13 @@ export function answerFor(
   return key.shiftKey ? 'allow-rest' : 'allow';
 }
 
+// A card that has only just appeared ignores the keys that allow it (Escape still says no): an Enter
+// you were pressing for something else, in a page or another box, must not answer it. Clicking is
+// never held back.
+export const KEY_GRACE_MS = 600;
+export const keyMayAnswer = (answer: Answer, shownForMs: number): boolean =>
+  answer === 'deny' || shownForMs >= KEY_GRACE_MS;
+
 // Should a new card take the keyboard? Only when you are not typing: if the focus is in
 // a text box (your message, say), an Enter you are about to press for something else must
 // not answer the card.

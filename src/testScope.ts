@@ -8,6 +8,7 @@
 import type { SpaceRow, TabChange, TabRow, TabsEnv } from './tabTools.ts';
 import type { RecallEnv } from './recallTools.ts';
 import { looseSearch } from './looseSearch.ts';
+import { devEnv } from './devEnv.ts';
 
 export const TEST_ORIGIN = 'http://127.0.0.1:5290/';
 export const TEST_SPACE_PREFIX = 'Test Space';
@@ -33,9 +34,7 @@ export function createTestScope(): TestScope {
 
 // The scope for this run of the app: null unless AIB_TEST_SCOPE=1.
 export const testScope: TestScope | null =
-  typeof process !== 'undefined' && process.env?.AIB_TEST_SCOPE === '1'
-    ? createTestScope()
-    : null;
+  devEnv('AIB_TEST_SCOPE') === '1' ? createTestScope() : null;
 
 const NO_TAB: TabChange = { ok: false, reason: 'no-tab' };
 const NO_SPACE: TabChange = { ok: false, reason: 'no-space' };

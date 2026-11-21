@@ -55,6 +55,7 @@ import { howToWork, unsentMessages } from './chatContext';
 import { planningEnabled } from './taskPlan';
 import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
+import { devEnv } from './devEnv';
 import { normalizeSite } from './siteTrust';
 import type { SiteTrust } from './siteTrust';
 import { SearchError } from './webSearch';
@@ -418,7 +419,7 @@ export function createChatService(options: {
         ),
       ),
     ]);
-    const routing = { open, everything: process.env.AIB_ALL_TOOLS === '1' };
+    const routing = { open, everything: devEnv('AIB_ALL_TOOLS') === '1' };
     const tools = canRead
       ? createAgentTools(
           {

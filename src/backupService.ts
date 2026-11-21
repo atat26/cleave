@@ -31,7 +31,8 @@ export function registerBackup(win: BrowserWindow): void {
     ipcMain.removeHandler(channel);
   }
 
-  ipcMain.handle('backup:info', (): BackupInfo => {
+  ipcMain.handle('backup:info', (event): BackupInfo => {
+    if (event.sender !== win.webContents) throw new Error('Not allowed.');
     const last = readRestoreResult(dataDir());
     return {
       dataFolder: dataDir(),
@@ -43,7 +44,8 @@ export function registerBackup(win: BrowserWindow): void {
 
   ipcMain.handle(
     'backup:create',
-    async (_event, includeKeys: unknown): Promise<BackupMade> => {
+    async (event, includeKeys: unknown): Promise<BackupMade> => {
+      if (event.sender !== win.webContents) throw new Error('Not allowed.');
       const picked = await dialog.showOpenDialog(win, {
         title: 'Choose where to save the backup',
         buttonLabel: 'Save backup here',
@@ -74,40 +76,48 @@ export function registerBackup(win: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle('backup:choose-restore', async (): Promise<RestoreChoice> => {
-    chosen = null;
-    const autoFolder = path.join(dataDir(), AUTO_BACKUPS_DIR);
-    const picked = await dialog.showOpenDialog(win, {
-      title: 'Choose the backup folder to restore',
-      buttonLabel: 'Use this backup',
-      defaultPath: fs.existsSync(autoFolder) ? autoFolder : undefined,
-      properties: ['openDirectory'],
-    });
-    if (picked.canceled || picked.filePaths.length === 0) {
-      return { kind: 'cancelled' };
-    }
-    const checked = verifyBackup(picked.filePaths[0]);
-    if (!checked.ok) return { kind: 'error', message: checked.error };
-    chosen = picked.filePaths[0];
-    return {
-      kind: 'ok',
-      folder: picked.filePaths[0],
-      summary: summarizeBackup(checked.manifest),
-    };
-  });
+  ipcMain.handle(
+    'backup:choose-restore',
+    async (event): Promise<RestoreChoice> => {
+      if (event.sender !== win.webContents) throw new Error('Not allowed.');
+      chosen = null;
+      const autoFolder = path.join(dataDir(), AUTO_BACKUPS_DIR);
+      const picked = await dialog.showOpenDialog(win, {
+        title: 'Choose the backup folder to restore',
+        buttonLabel: 'Use this backup',
+        defaultPath: fs.existsSync(autoFolder) ? autoFolder : undefined,
+        properties: ['openDirectory'],
+      });
+      if (picked.canceled || picked.filePaths.length === 0) {
+        return { kind: 'cancelled' };
+      }
+      const checked = verifyBackup(picked.filePaths[0]);
+      if (!checked.ok) return { kind: 'error', message: checked.error };
+      chosen = picked.filePaths[0];
+      return {
+        kind: 'ok',
+        folder: picked.filePaths[0],
+        summary: summarizeBackup(checked.manifest),
+      };
+    },
+  );
 
-  ipcMain.handle('backup:restore', (): { ok: boolean; message: string } => {
-    if (chosen === null) {
-      return { ok: false, message: 'Choose a backup first.' };
-    }
-    // Check it again and copy it into the data folder; it is swapped in when Cleave starts again.
-    const staged = stageRestore(chosen, dataDir());
-    chosen = null;
-    if (!staged.ok) return { ok: false, message: staged.error };
-    // Let the new copy of Cleave start (it would otherwise find this one still holding the lock).
-    app.releaseSingleInstanceLock();
-    app.relaunch();
-    setTimeout(() => app.quit(), 300);
-    return { ok: true, message: 'Restarting Cleave to restore your backup…' };
-  });
+  ipcMain.handle(
+    'backup:restore',
+    (event): { ok: boolean; message: string } => {
+      if (event.sender !== win.webContents) throw new Error('Not allowed.');
+      if (chosen === null) {
+        return { ok: false, message: 'Choose a backup first.' };
+      }
+      // Check it again and copy it into the data folder; it is swapped in when Cleave starts again.
+      const staged = stageRestore(chosen, dataDir());
+      chosen = null;
+      if (!staged.ok) return { ok: false, message: staged.error };
+      // Let the new copy of Cleave start (it would otherwise find this one still holding the lock).
+      app.releaseSingleInstanceLock();
+      app.relaunch();
+      setTimeout(() => app.quit(), 300);
+      return { ok: true, message: 'Restarting Cleave to restore your backup…' };
+    },
+  );
 }

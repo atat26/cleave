@@ -16,6 +16,7 @@
 //   - The steps are the model's words, so they are shown as plain text, cleaned and cut.
 // Pure code with no Electron, so every rule can be tested.
 import { cleanLabel } from './chatLinks.ts';
+import { devEnv } from './devEnv.ts';
 import type { Plan } from './agentActions.ts';
 import type { TaskPlan } from './chats.ts';
 import { MAX_PLAN_STEP_CHARS, MAX_PLAN_STEPS } from './chats.ts';
@@ -33,8 +34,7 @@ export const MAX_PLAN_CALLS = 12;
 
 // AIB_NO_PLAN=1 turns planning off (no tool, no rule), to compare results with and without it
 // (docs/pipeline). Anything else leaves it on.
-export const planningEnabled = (): boolean =>
-  typeof process === 'undefined' || process.env?.AIB_NO_PLAN !== '1';
+export const planningEnabled = (): boolean => devEnv('AIB_NO_PLAN') !== '1';
 
 export const PLAN_DEFINITION: ToolDefinition = {
   name: SET_PLAN,

@@ -70,6 +70,40 @@ test('a name that is taken gets a number before its type', () => {
   assert.equal(uniqueName('noext', isTaken), 'noext (2)');
 });
 
+test('Windows shortcut, search, settings, install and script types are risky too', () => {
+  for (const name of [
+    'a.settingcontent-ms',
+    'a.scf',
+    'a.library-ms',
+    'a.search-ms',
+    'a.appref-ms',
+    'a.appinstaller',
+    'a.appxbundle',
+    'a.msixbundle',
+    'a.xnk',
+    'a.website',
+    'a.rdp',
+    'a.theme',
+    'a.xll',
+    'a.wsc',
+    'a.sct',
+    'a.ps1xml',
+    'a.msh',
+    'a.py',
+    'a.pyw',
+    'a.cab',
+    'a.diagcab',
+    'a.vhdx',
+    'report.pdf.search-ms',
+  ]) {
+    assert.equal(isRiskyFile(name), true, name);
+  }
+  // Ordinary files are still not.
+  for (const name of ['a.pdf', 'a.png', 'a.docx', 'a.zip', 'a.mp4', 'a.csv']) {
+    assert.equal(isRiskyFile(name), false, name);
+  }
+});
+
 test('programs and scripts are risky to open, judged by every extension', () => {
   for (const name of [
     'setup.exe',
