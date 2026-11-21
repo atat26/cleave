@@ -205,6 +205,20 @@ export async function startApp({ profile, env = {}, log } = {}) {
         timeout: 20000,
       }).catch(() => undefined);
       await app.stop();
+      // Closing must be clean: no error dialog in the main process ("Object has been destroyed" once
+      // appeared when the app was closed).
+      const text = fs.readFileSync(logFile, 'utf8');
+      const bad =
+        /Uncaught Exception|Object has been destroyed|UnhandledPromiseRejection/.exec(
+          text,
+        );
+      if (bad) {
+        const at = text.indexOf(bad[0]);
+        throw new Error(
+          `The app reported an error while closing:
+${text.slice(Math.max(0, at - 200), at + 600)}`,
+        );
+      }
     },
     // Stop the app (and the dev server under it).
     async stop() {

@@ -148,7 +148,15 @@ try {
   console.error(`The app's log is at ${app?.logFile ?? '(not started)'}`);
   results.push({ name: '(setup)', ok: false, error });
 } finally {
-  if (app) await app.stop().catch(() => undefined);
+  // End the run the way a person ends it, and check that closing was clean.
+  if (app) {
+    await app.quit().catch((error) => {
+      console.log(
+        `  FAIL  closing the app\n        ${String(error.message).split('\n').join('\n        ')}`,
+      );
+      results.push({ name: 'closing the app', ok: false, error });
+    });
+  }
   await model.close();
   await site.close();
   await sleep(300);

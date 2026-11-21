@@ -1079,6 +1079,9 @@ export async function createTabs(
     });
   };
 
+  // The window, or the page that draws it, is already gone (the app is closing).
+  const windowGone = () => win.isDestroyed() || win.webContents.isDestroyed();
+
   const sendToUi = (channel: string, ...args: unknown[]) => {
     for (const contents of [win.webContents, sidebar]) {
       if (ready.has(contents) && !contents.isDestroyed()) {
@@ -2197,6 +2200,10 @@ export async function createTabs(
     // A page can close its own window (window.close()). Its page is then gone, so
     // the tab closes with it (and is kept in Recently closed, like any closed tab).
     contents.once('destroyed', () => {
+      // The window itself is closing and is taking its pages with it: there is nothing to tidy
+      // (the tab must stay as it was saved, and the window can no longer be touched). Without this
+      // an uncaught "Object has been destroyed" error could appear when the app was closed.
+      if (windowGone()) return;
       if (htmlFullscreen === tab.id) leaveHtmlFullscreen();
       if (views.get(tab.id) !== view) return; // we closed it ourselves
       views.delete(tab.id);
@@ -2663,6 +2670,7 @@ export async function createTabs(
   // views. A Lead tab has no web page: the toolbar window draws it instead.
   let lastOnNewTabPage = false;
   const showActive = () => {
+    if (windowGone()) return;
     exitFullscreenIfAway();
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
