@@ -130,8 +130,10 @@ test('moving tabs is one card listing the moves, and the moves happen when it ru
   ];
   const plan = tools.plan(call('move_tabs', { moves }));
   assert.equal(plan.kind, 'ask');
-  assert.equal(plan.kind === 'ask' && plan.risky, false);
   assert.ok(plan.kind === 'ask');
+  // One move goes into Fish, a Space this chat is linked to: the assistant could then read that tab,
+  // so the card always asks and says so.
+  assert.equal(plan.risky, true);
   // Each move is also a line of the card's list.
   assert.deepEqual(plan.card?.list, [
     '"Loose page" → Fish',
@@ -145,13 +147,28 @@ test('moving tabs is one card listing the moves, and the moves happen when it ru
       'Move 3 tabs:',
       '• "Loose page" → Fish',
       '• "Goldfish food" → Travel',
-      '• "Pet shop" → no Space',
+      '• "Pet shop" → no Space (it would then be readable by the assistant, because the chat is linked to that Space)',
     ].join('\n'),
   );
   const out = await tools.run(call('move_tabs', { moves }));
   assert.equal(out.ok, true);
   assert.deepEqual(log, ['move 5 -> 10', 'move 1 -> 20', 'move 2 -> null']);
   assert.equal(out.label, 'Moved 3 tabs');
+});
+
+test('moves that do not reach a Space the chat is linked to are an ordinary question', () => {
+  const { tools } = world(() => 'ask');
+  const plan = tools.plan(
+    call('move_tabs', {
+      moves: [
+        { tab: 1, space: 20 },
+        { tab: 2, space: null },
+      ],
+    }),
+  );
+  assert.ok(plan.kind === 'ask');
+  assert.equal(plan.risky, false);
+  assert.ok(!plan.text.includes('readable by the assistant'));
 });
 
 test('a long list of moves on the card is cut to a few lines and counted', () => {
@@ -163,7 +180,11 @@ test('a long list of moves on the card is cut to a few lines and counted', () =>
   const plan = tools.plan(call('move_tabs', { moves }));
   assert.ok(plan.kind === 'ask');
   assert.match(plan.text, /^Move 12 tabs:/);
-  assert.match(plan.text, /…and 4 more$/);
+  assert.match(
+    plan.text,
+    /…and 4 more \(they would then be readable by the assistant/,
+  );
+  assert.equal(plan.risky, true);
   assert.equal(plan.text.split('\n').length, 1 + 8 + 1);
 });
 
@@ -324,7 +345,7 @@ test('a note that would be too long, empty text and too many writes are refused'
 });
 
 test('note text is tidied and joined to the old note within the limit', () => {
-  assert.equal(cleanNoteText('  a\u0000b \r\n\n  c​  '), 'a b\nc');
+  assert.equal(cleanNoteText('  a\u0000b \r\n\n  c​  '), 'ab\nc');
   assert.equal(cleanNoteText(42), '');
   assert.equal(nextNote('', 'one', 'append'), 'one');
   assert.equal(nextNote('old', 'new', 'append'), 'old\nnew');

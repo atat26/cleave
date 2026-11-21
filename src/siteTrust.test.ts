@@ -162,19 +162,70 @@ test('junk in the saved file is dropped and good entries survive', () => {
   });
 });
 
+// Invisible characters, written by number so they can be read here.
+const ch = (code: number) => String.fromCodePoint(code);
+const ZWSP = ch(0x200b);
+const ZWNJ = ch(0x200c);
+const ZWJ = ch(0x200d);
+const WORD_JOINER = ch(0x2060);
+const RLO = ch(0x202e);
+const LRI = ch(0x2066);
+const BOM = ch(0xfeff);
+const SOFT_HYPHEN = ch(0xad);
+const VS15 = ch(0xfe0e);
+const VS16 = ch(0xfe0f);
+const VS_SUPPLEMENT = ch(0xe0100);
+const KEYCAP = ch(0x20e3);
+const TAG_H = ch(0xe0068);
+const TAG_I = ch(0xe0069);
+const HANGUL_FILLER = ch(0x3164);
+const HANGUL_CHOSEONG_FILLER = ch(0x115f);
+const BELL = ch(7);
+const NUL = ch(0);
+
 test('typed text loses what you could not see, and keeps new lines and tabs', () => {
   assert.equal(visibleText('hello'), 'hello');
   assert.equal(visibleText('a\nb\tc'), 'a\nb\tc');
   assert.equal(visibleText('a\r\nb\rc'), 'a\nb\nc');
   // Zero-width characters, direction marks and soft hyphens.
   assert.equal(
-    visibleText('a\u200bb\u200dc\u202ed\u2066e\ufeff\u00adf'),
+    visibleText(`a${ZWSP}b${WORD_JOINER}c${RLO}d${LRI}e${BOM}${SOFT_HYPHEN}f`),
     'abcdef',
   );
   // Invisible "tag" characters that can carry a hidden message.
-  assert.equal(visibleText('hi\u{e0068}\u{e0069}'), 'hi');
+  assert.equal(visibleText(`hi${TAG_H}${TAG_I}`), 'hi');
   // Variation selectors, fillers and control characters.
-  assert.equal(visibleText('x\ufe0f\u3164\u115f\u0007y\u0000z'), 'xyz');
+  assert.equal(
+    visibleText(
+      `x${VS15}${HANGUL_FILLER}${HANGUL_CHOSEONG_FILLER}${BELL}y${NUL}z`,
+    ),
+    'xyz',
+  );
+  assert.equal(visibleText(`x${VS_SUPPLEMENT}y${VS16}z`), 'xyz');
   // Ordinary text in other scripts is untouched.
   assert.equal(visibleText('héllo wörld 你好 😀'), 'héllo wörld 你好 😀');
+});
+
+test('the joiners that real writing needs stay, and the same marks used to hide a message go', () => {
+  // Persian uses the zero-width non-joiner inside words.
+  const persian = `می${ZWNJ}خواهم`;
+  assert.equal(visibleText(persian), persian);
+  // Emoji made with the joiner and the presentation mark: a family, a heart, a keycap, a flag.
+  for (const emoji of [
+    `👨${ZWJ}👩${ZWJ}👧`,
+    `❤${VS16}`,
+    `1${VS16}${KEYCAP}`,
+    `🏳${VS16}${ZWJ}🌈`,
+  ]) {
+    assert.equal(visibleText(emoji), emoji, emoji);
+  }
+  // On their own, doubled, or at the edges they carry nothing but a hidden message.
+  assert.equal(visibleText(`a${ZWNJ}${ZWJ}b`), 'ab');
+  assert.equal(visibleText(`${ZWJ}ab`), 'ab');
+  assert.equal(visibleText(`ab${ZWNJ}`), 'ab');
+  assert.equal(visibleText(`a ${ZWJ} b`), 'a  b');
+  assert.equal(visibleText(`a${ZWNJ}${ZWNJ}${ZWNJ}b`), 'ab');
+  assert.equal(visibleText(`x${VS16}y`), 'xy');
+  // A joiner next to a hidden mark is not between two letters.
+  assert.equal(visibleText(`a${ZWNJ}${ZWSP}b`), 'ab');
 });

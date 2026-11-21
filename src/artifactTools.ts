@@ -26,6 +26,24 @@ import { cleanLabel } from './chatLinks.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
 import type { ToolOutcome } from './agentTools.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
+import { MAX_CARD_TEXT } from './approvalCard.ts';
+import type { CardDetails } from './approvalCard.ts';
+
+// The text an artifact step will write, shown on its card in full, so you read what is written and
+// not only a title and a count. A card holds at most MAX_CARD_TEXT characters: for more, it says how
+// much of the text it shows, so nothing is hidden quietly.
+export function contentCard(label: string, text: string): CardDetails {
+  const shown = text.slice(0, MAX_CARD_TEXT);
+  return {
+    full: {
+      label:
+        text.length > shown.length
+          ? `${label}: the first ${formatCount(shown.length)} of ${formatCount(text.length)} characters`
+          : label,
+      value: shown,
+    },
+  };
+}
 
 export const ARTIFACT_TOOL_NAMES = [
   'read_artifact',
@@ -436,6 +454,7 @@ export function createArtifactTools(
         kind: 'ask',
         text: `Make a ${KIND_WORDS[made.kind]} artifact "${cleanLabel(made.title, 80)}" (${formatCount(made.content.length)} characters)`,
         risky: false,
+        card: contentCard('Text of the artifact', made.content),
       };
     }
 
@@ -460,6 +479,7 @@ export function createArtifactTools(
         kind: 'ask',
         text: `Make a ${KIND_WORDS[made.kind]} artifact "${cleanLabel(made.title, 80)}" in the Space "${cleanLabel(space.name, 60)}" (${formatCount(made.content.length)} characters)`,
         risky: false,
+        card: contentCard('Text of the artifact', made.content),
       };
     }
 
@@ -537,10 +557,21 @@ export function createArtifactTools(
     if (typeof args.emoji === 'string') {
       parts.push(`give it the emoji ${cleanEmoji(args.emoji)}`);
     }
+    // What will be written, in full (the new text, or what is found and what replaces it).
+    const card: CardDetails | undefined =
+      typeof args.content === 'string'
+        ? contentCard('New text of the artifact', args.content)
+        : typeof args.find === 'string' && typeof args.replace === 'string'
+          ? contentCard(
+              'The change',
+              `Find:\n${args.find}\n\nReplace with:\n${args.replace}`,
+            )
+          : undefined;
     return {
       kind: 'ask',
       text: `Edit the artifact "${name}": ${parts.join(' and ')}`,
       risky: false,
+      ...(card ? { card } : {}),
     };
   };
 

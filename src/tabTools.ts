@@ -18,6 +18,7 @@ import { cleanLabel, sanitizeUrl } from './chatLinks.ts';
 import type { Plan } from './agentActions.ts';
 import type { ToolOutcome } from './agentTools.ts';
 import { MAX_ABOUT_CHARS } from './model.ts';
+import { visibleText } from './siteTrust.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
 import { applyPolicy } from './toolPolicy.ts';
 import type { ApprovalLevel } from './toolPolicy.ts';
@@ -233,8 +234,8 @@ const tabLabel = (tab: TabRow) =>
 // newline each), tidied and cut to the limit.
 export function cleanNoteText(raw: unknown): string {
   if (typeof raw !== 'string') return '';
-  return raw
-    .replace(/\r\n?/g, '\n')
+  // Nothing hidden in it: the card shows this same text, and it is kept as background for later chats.
+  return visibleText(raw)
     .split('\n')
     .map((line) => cleanLabel(line, MAX_ABOUT_CHARS))
     .filter((line) => line !== '')
@@ -502,10 +503,24 @@ export function createTabTools(
             `Only ${MAX_TAB_CHANGES - changes} more tab changes are allowed in this reply.`,
           );
         }
+        // A tab moved into a Space this chat is linked to becomes one the assistant can read and act
+        // on (a linked Space links all its tabs). That is more than "changes your tabs", so it always
+        // asks, and says so.
+        const linked = new Set(env.linkedSpaces().map((s) => s.id));
+        const gives = parsed.moves.filter(
+          (m) =>
+            m.spaceId !== null &&
+            linked.has(m.spaceId) &&
+            m.tab.spaceId !== m.spaceId,
+        );
         return {
           kind: 'ask',
-          text: movesText(parsed.moves),
-          risky: false,
+          text:
+            movesText(parsed.moves) +
+            (gives.length > 0
+              ? ` (${gives.length === 1 ? 'it' : 'they'} would then be readable by the assistant, because the chat is linked to that Space)`
+              : ''),
+          risky: gives.length > 0,
           card: {
             list: parsed.moves
               .slice(0, CARD_LINES)
@@ -606,9 +621,10 @@ export function createTabTools(
           // A note is background for later chats: after web content, it always asks.
           risky: readWebContent(),
           card: {
+            // The whole text that will be written, not just the start of it.
             text: {
               label: note.mode === 'replace' ? 'New note' : 'Text to add',
-              value: shown,
+              value: note.text,
             },
           },
         };

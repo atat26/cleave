@@ -125,6 +125,7 @@ const WHY: Record<string, string> = {
   web_search: 'Might include private details',
   screenshot_page: 'Looks like a sign-in or payment page',
   close_tab: 'Closes something you have open',
+  move_tabs: 'Lets the assistant read a tab',
 };
 
 // The badges for a card, most important first: why it is risky, what kind of thing it

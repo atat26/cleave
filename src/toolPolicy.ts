@@ -470,6 +470,21 @@ export const toolInfo = (name: string): ToolInfo | undefined =>
 export const defaultLevel = (name: string): ApprovalLevel | undefined =>
   BY_NAME.get(name)?.defaultLevel;
 
+// How strict a level is: "never" is the strictest, "always" the loosest.
+const STRICTNESS: Record<ApprovalLevel, number> = {
+  never: 0,
+  ask: 1,
+  'if-safe': 2,
+  always: 3,
+};
+
+// The stricter of two levels. A batch tool (read several pages, fill several fields) does what its
+// single tool does, so it may not do more than that tool's level allows.
+export const stricterLevel = (
+  a: ApprovalLevel,
+  b: ApprovalLevel,
+): ApprovalLevel => (STRICTNESS[a] <= STRICTNESS[b] ? a : b);
+
 // Combine what a call would do on its own (`plan`, which already includes the
 // safety refusals) with your level for that tool. `describe` is the line shown
 // on an approval card when a tool that normally just goes ahead is set to ask.
