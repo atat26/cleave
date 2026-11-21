@@ -3,6 +3,7 @@ import { onSectionRequested, takeRequestedSection } from './settingsNav';
 import { AboutSection } from './AboutSection';
 import { AppearanceSettings } from './AppearanceSettings';
 import { BackupSection } from './BackupSection';
+import { SiteTrustSection } from './SiteTrustSection';
 import { DownloadsSection } from './DownloadsSection';
 import { PrivacySection } from './PrivacySection';
 import { NewTabSection } from './NewTabSection';
@@ -103,6 +104,11 @@ const SECTIONS = [
     id: 'privacy',
     label: 'Privacy and security',
     about: 'Site permissions and clearing data',
+  },
+  {
+    id: 'sites',
+    label: 'Assistant and sites',
+    about: 'Sites it may act on freely, or never touch',
   },
   {
     id: 'sleep',
@@ -652,6 +658,7 @@ export function SettingsPanel() {
       {section === 'web-search' && <WebSearchSettings />}
       {section === 'appearance' && <AppearanceSettings />}
       {section === 'about' && <AboutSection />}
+      {section === 'sites' && <SiteTrustSection />}
       {section === 'backup' && <BackupSection />}
       {section === 'naming' && <NamingSection />}
       {section === 'extensions' && <ExtensionsSection />}

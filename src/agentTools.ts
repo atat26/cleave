@@ -23,8 +23,10 @@ import {
   MAX_ACTIONS,
   planAction,
   shownAddress,
+  typedText,
 } from './agentActions.ts';
 import type { ActionName, Plan } from './agentActions.ts';
+import type { SiteTrust } from './siteTrust.ts';
 import { parseChoices } from './agentChoices.ts';
 import type { Choices } from './agentChoices.ts';
 import type { ToolCall, ToolDefinition } from './openrouter.ts';
@@ -138,6 +140,9 @@ export type OpenTabResult =
 export interface ActionEnv {
   // The address of a tab right now, or null if it is closed.
   tabUrl(tabId: number): string | null;
+  // What the assistant may do on a site (the host as in an address); a stand-in without it treats
+  // every site as one you have not decided about. See siteTrust.ts.
+  siteTrust?(host: string): SiteTrust;
   click(
     tabId: number,
     control: OutlineElement,
@@ -467,13 +472,41 @@ const failureWords: Record<
 
 // `levelOf` says how much each tool may do without asking (your choices in the
 // Tools panel); by default every tool has its own default level.
+// The environment without anything on a site you have blocked (see siteTrust.ts): its tabs are not
+// linked tabs, not in the list of all tabs, and its pages are not in history or bookmark results.
+// (Looked up again at each use, so a tab that goes to a blocked site disappears at once.)
+export function withoutBlockedSites(env: AgentEnv): AgentEnv {
+  const siteTrust = env.siteTrust;
+  if (siteTrust === undefined) return env;
+  const blocked = (address: string | null): boolean => {
+    try {
+      return (
+        address !== null &&
+        siteTrust.call(env, new URL(address).host) === 'blocked'
+      );
+    } catch {
+      return false;
+    }
+  };
+  // A live view of the environment (anything not replaced below is read from the original).
+  const view: AgentEnv = Object.create(env) as AgentEnv;
+  view.linkedTabs = () => env.linkedTabs().filter((tab) => !blocked(tab.url));
+  view.allTabs = () => env.allTabs().filter((tab) => !blocked(tab.url));
+  view.searchHistory = (...args) =>
+    env.searchHistory(...args).filter((hit) => !blocked(hit.url));
+  view.searchBookmarks = (...args) =>
+    env.searchBookmarks(...args).filter((hit) => !blocked(hit.url));
+  return view;
+}
+
 export function createAgentTools(
-  env: AgentEnv,
+  rawEnv: AgentEnv,
   levelOf: (tool: string) => ApprovalLevel = (tool) =>
     defaultLevel(tool) ?? 'ask',
   // Which groups of tools to send (see toolGroups.ts). Left out: send every tool.
   routing?: { open: Iterable<ToolGroup>; everything?: boolean },
 ): AgentTools {
+  const env = withoutBlockedSites(rawEnv);
   const open = new Set<ToolGroup>(routing?.open ?? []);
   const everything = routing === undefined || routing.everything === true;
   let reads = 0;
@@ -499,6 +532,7 @@ export function createAgentTools(
     controls: (tabId: number) => outlines.get(tabId),
     actionsDone: () => actions,
     tabsOpened: () => tabsOpened,
+    siteTrust: (host: string) => env.siteTrust?.(host) ?? 'unknown',
   };
 
   // What the call would do on its own (safety refusals included), then your
@@ -586,6 +620,23 @@ export function createAgentTools(
     result,
   });
 
+  // A page on a site you have blocked is not read.
+  const blockedAddress = (address: string | null): boolean => {
+    try {
+      return (
+        address !== null && env.siteTrust?.(new URL(address).host) === 'blocked'
+      );
+    } catch {
+      return false;
+    }
+  };
+  const blockedLink = (): Plan =>
+    linkRefusal(
+      'Not on a blocked site',
+      'That page is on a site you have blocked for the assistant. Nothing was read.',
+      'That address is on a site the user has blocked for the assistant, so it cannot be read. Do not try again. Tell them briefly, and suggest another way to go on.',
+    );
+
   const planReadLink = (call: ToolCall): Plan => {
     const asked = linkArguments(call);
     if (asked === null) {
@@ -624,6 +675,7 @@ export function createAgentTools(
           `Control ${asked.element} is not a link in the latest look at tab ${asked.tab}. Use look_at_page again and give the number of a link.`,
         );
       }
+      if (blockedAddress(control.url)) return blockedLink();
       return {
         kind: 'ask',
         text: `Read the page that the link "${cleanLabel(control.name, 100) || 'no name'}" on ${tabName(tab)} goes to`,
@@ -633,6 +685,7 @@ export function createAgentTools(
 
     // An address written out: it must be a public address, and one that was seen from
     // a real source, or it is risky (it could carry something private) and asks.
+    if (blockedAddress(asked.url)) return blockedLink();
     const checked = checkReadLink(asked.url, known);
     if (!checked.ok) {
       return linkRefusal(
@@ -972,7 +1025,8 @@ export function createAgentTools(
         result = await env.typeText(
           tabId,
           control!,
-          args.text as string,
+          // The same text the card showed (nothing hidden in it).
+          typedText(args.text) ?? '',
           signal,
         );
         break;

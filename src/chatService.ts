@@ -55,6 +55,8 @@ import { howToWork, unsentMessages } from './chatContext';
 import { planningEnabled } from './taskPlan';
 import type { SearchContext } from './search';
 import type { ApprovalLevel } from './toolPolicy';
+import { normalizeSite } from './siteTrust';
+import type { SiteTrust } from './siteTrust';
 import { SearchError } from './webSearch';
 import type { ChatSendResult } from './types';
 
@@ -84,6 +86,9 @@ export interface ChatService {
     partId: number,
     decision: 'allow' | 'allow-rest' | 'deny',
   ): void;
+  // "Trust this site" on a waiting card (popped out over the page): trusts the site the card names
+  // and allows the step. False if the card is not waiting or names no site.
+  trustSiteOfCard(chatId: number, messageId: number, partId: number): boolean;
   // Send a message in a chat from inside the app (the new-tab page's Ask).
   sendMessage(chatId: number, text: string, mentions?: unknown): ChatSendResult;
   // Send the UI the messages that have @ mentions or attached pages again (their
@@ -182,6 +187,10 @@ export function createChatService(options: {
   };
   // How much a tool may do without asking (your choice in the Tools panel).
   toolLevel(tool: string): ApprovalLevel;
+  // What the assistant may do on a site you have trusted or blocked (see siteTrust.ts), and the way
+  // a card's "Trust this site" button makes a site trusted. Only you can: nothing here is a tool.
+  siteTrust(host: string): SiteTrust;
+  trustSite(host: string): void;
   // Web search (set up in Settings).
   search: Promise<SearchContext | null>;
 
@@ -420,6 +429,8 @@ export function createChatService(options: {
                 chats.findConversation(options.getChats(), chatId)?.refs ?? [],
                 options.getWorkspace(),
               ),
+            // Looked up again at each use, so a change you make mid-reply counts at once.
+            siteTrust: (host: string) => options.siteTrust(host),
             // The artifacts and Spaces the chat links to, as they are now.
             linkedArtifacts: () =>
               linkedArtifacts(
@@ -861,6 +872,41 @@ export function createChatService(options: {
     pending.get(key(chatId, messageId, partId))?.(decision);
   };
 
+  // "Trust this site" on a card: the site is the one the card names (read here from the waiting
+  // step, never from what the page sent), and the step is allowed. Only for a question that is
+  // really waiting. Returns whether it was done.
+  const trustFromCard = (
+    chatId: number,
+    messageId: number,
+    partId: number,
+  ): boolean => {
+    const answer = pending.get(key(chatId, messageId, partId));
+    if (!answer) return false;
+    const part = chats
+      .findConversation(options.getChats(), chatId)
+      ?.messages.find((m) => m.id === messageId)
+      ?.parts.find((p) => p.type === 'tool' && p.id === partId);
+    const site =
+      part?.type === 'tool' && part.status === 'waiting'
+        ? part.card?.site
+        : undefined;
+    // Only a site written the way the browser writes it; a card that names none offers no trust.
+    if (site === undefined || normalizeSite(site) !== site) return false;
+    options.trustSite(site);
+    answer('allow');
+    return true;
+  };
+  const onTrustSite = (
+    event: Electron.IpcMainEvent,
+    chatId: unknown,
+    messageId: unknown,
+    partId: unknown,
+  ) => {
+    if (fromUi(event) && isId(chatId) && isId(messageId) && isId(partId)) {
+      trustFromCard(chatId, messageId, partId);
+    }
+  };
+
   const onStop = (event: Electron.IpcMainEvent, chatId: unknown) => {
     if (fromUi(event) && isId(chatId)) runner.stop(chatId);
   };
@@ -960,6 +1006,7 @@ export function createChatService(options: {
 
   ipcMain.on('chat:stop', onStop);
   ipcMain.on('chat:decide', onDecide);
+  ipcMain.on('chat:trust-site', onTrustSite);
   ipcMain.on('chat:copy', onCopy);
   ipcMain.on('chat:model-menu', onModelMenu);
   ipcMain.on('chat:message-menu', onMessageMenu);
@@ -976,6 +1023,8 @@ export function createChatService(options: {
     decide: (chatId, messageId, partId, decision) => {
       pending.get(key(chatId, messageId, partId))?.(decision);
     },
+    trustSiteOfCard: (chatId, messageId, partId) =>
+      trustFromCard(chatId, messageId, partId),
     refreshMentions() {
       for (const chat of options.getChats().conversations) {
         for (const message of chat.messages) {
@@ -995,6 +1044,7 @@ export function createChatService(options: {
       ipcMain.removeHandler('chat:name-ai');
       ipcMain.removeListener('chat:stop', onStop);
       ipcMain.removeListener('chat:decide', onDecide);
+      ipcMain.removeListener('chat:trust-site', onTrustSite);
       ipcMain.removeListener('chat:copy', onCopy);
       ipcMain.removeListener('chat:model-menu', onModelMenu);
       ipcMain.removeListener('chat:message-menu', onMessageMenu);

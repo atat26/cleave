@@ -621,6 +621,7 @@ export interface ApprovalView {
 export function ApprovalCardView({
   view,
   onDecide,
+  onTrust,
   onStop,
   onMinimize,
   onGoToTab,
@@ -628,6 +629,9 @@ export function ApprovalCardView({
 }: {
   view: ApprovalView;
   onDecide: (decision: 'allow' | 'allow-rest' | 'deny') => void;
+  // Trust the site the card names (card.site), and allow this step. Quiet: shown when the pointer
+  // or the keyboard is on the card. The same choice is in the site panel and in Settings.
+  onTrust?: () => void;
   // Stop is shown only where nothing else on screen already has one (so, not in the chat,
   // where the message box has it, and not over a page that shows its pill).
   onStop?: () => void;
@@ -747,7 +751,7 @@ export function ApprovalCardView({
         )}
         <div className="ac-next">{nextLine(view.toolName)}</div>
       </div>
-      <div className="ac-foot">
+      <div className="ac-foot reveal-host">
         <div className="actions">
           <Button
             variant="primary"
@@ -785,6 +789,18 @@ export function ApprovalCardView({
             </Button>
           )}
         </div>
+        {onTrust && card?.site && (
+          <div className="reveal ac-trust">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onTrust}
+              title={`Let the assistant act on ${card.site} without asking, and allow this. You can change it in Settings, or from the site panel.`}
+            >
+              Trust {card.site}
+            </Button>
+          </div>
+        )}
         <div className="ac-wait">
           If you do nothing, it waits. Nothing happens until you answer.
           {focused &&
@@ -820,6 +836,11 @@ export function ApprovalCard({
       }}
       onDecide={(decision) =>
         window.browserApi.chatDecide(chatId, messageId, part.id, decision)
+      }
+      onTrust={
+        part.card?.site
+          ? () => window.browserApi.chatTrustSite(chatId, messageId, part.id)
+          : undefined
       }
       takeKeyboard
     />

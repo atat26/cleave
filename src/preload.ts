@@ -298,6 +298,13 @@ const browserApi: BrowserApi = {
   setSpaceAbout: (id, text) => ipcRenderer.send('space:about', id, text),
   showSpaceSwitcher: (x, y) => ipcRenderer.send('spaces:switcher', x, y),
   appInfo: () => ipcRenderer.invoke('app:info'),
+  siteTrustList: () => ipcRenderer.invoke('site-trust:list'),
+  siteTrustSet: (site, level) =>
+    ipcRenderer.invoke('site-trust:set', site, level),
+  siteTrustCurrent: () => ipcRenderer.invoke('site-trust:current'),
+  chatTrustSite: (chatId, messageId, partId) =>
+    ipcRenderer.send('chat:trust-site', chatId, messageId, partId),
+  overlayTrust: () => ipcRenderer.send('overlay:trust'),
   backupInfo: () => ipcRenderer.invoke('backup:info'),
   backupCreate: (includeKeys) =>
     ipcRenderer.invoke('backup:create', includeKeys === true),
