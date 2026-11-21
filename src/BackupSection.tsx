@@ -148,6 +148,15 @@ export function BackupSection() {
             the ones in the backup. Cleave keeps what you have now in a folder
             called “before-restore…” inside your data folder, then restarts.
           </div>
+          <div style={{ fontSize: 'var(--fs-xs)' }}>
+            <strong>
+              Only restore a backup you made yourself, or one you trust.
+            </strong>{' '}
+            It also replaces which sites may use your camera, microphone and
+            clipboard, the assistant’s tool settings, skills and system prompt,
+            and where downloads go, so a backup from someone else could change
+            all of those.
+          </div>
           <div className="row-flex" style={{ gap: 'var(--s-3)' }}>
             <Button
               variant="danger"

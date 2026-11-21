@@ -83,6 +83,7 @@ import {
   PASTED_IMAGE_EXTENSIONS,
   planUpload,
 } from './uploadRules';
+import { isViewableExtension } from './uploadTypes';
 import {
   defaultSleepSettings,
   idleSleepers,
@@ -262,6 +263,7 @@ import type { LlmContext } from './llm';
 import type { SearchContext } from './search';
 import {
   createSaver,
+  isUnreadable,
   loadArtifacts,
   loadChats,
   loadJson,
@@ -4417,6 +4419,9 @@ export async function createTabs(
   }
   // At start: files whose artifact is gone for good are deleted.
   const sweepUploads = () => {
+    // If the list of artifacts could not be read, it is empty only because of that: nothing is
+    // swept, or every upload would be deleted for want of a list.
+    if (isUnreadable(artifactsFile)) return;
     try {
       const keep = new Set(
         [...artifacts.artifacts, ...artifacts.trash]
@@ -7323,7 +7328,16 @@ export async function createTabs(
   });
   ipcMain.handle('download-settings:set', (event, changes: unknown) => {
     if (!fromWindow(event)) throw new Error('Not allowed.');
-    downloadSettings = withDownloadSettings(downloadSettings, changes);
+    // The page can turn "ask where" on or off and go back to the default folder; a new folder is
+    // only taken from the folder window below, never from what the page sends.
+    const asked =
+      typeof changes === 'object' && changes !== null
+        ? (changes as Record<string, unknown>)
+        : {};
+    downloadSettings = withDownloadSettings(downloadSettings, {
+      askWhere: asked.askWhere,
+      ...(asked.folder === null ? { folder: null } : {}),
+    });
     downloadSettingsSaver.schedule();
     return downloadSettings;
   });
@@ -8051,7 +8065,15 @@ ${artifact.content.slice(0, 1500)}`;
       const found = isId(id)
         ? artifactsModel.findArtifact(artifacts, id)
         : undefined;
-      if (!found?.file || !fs.existsSync(uploadPath(found))) return false;
+      // Only an image or a PDF is ever opened with another program (see uploadTypes.ts); a saved list
+      // that says a file is anything else is not believed.
+      if (
+        !found?.file ||
+        !isViewableExtension(found.file.ext) ||
+        !fs.existsSync(uploadPath(found))
+      ) {
+        return false;
+      }
       if (how === 'folder') {
         shell.showItemInFolder(uploadPath(found));
         return true;

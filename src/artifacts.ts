@@ -3,6 +3,7 @@
 // functions with no Electron, so it is easy to test. An uploaded image or PDF is an
 // artifact of kind "file": its bytes live in the app's uploads folder, not here.
 import { cleanEmoji } from './emoji.ts';
+import { isViewableExtension } from './uploadTypes.ts';
 
 // What kind of document it is. The text kinds have an editor (and the assistant can
 // read and write them); "file" is an uploaded image or PDF, which can only be viewed.
@@ -97,7 +98,8 @@ export function cleanStoredFile(value: unknown): StoredFile | null {
   if (typeof value !== 'object' || value === null) return null;
   const f = value as Record<string, unknown>;
   if (typeof f.name !== 'string' || typeof f.mime !== 'string') return null;
-  if (typeof f.ext !== 'string' || !EXT.test(f.ext) || !MIME.test(f.mime))
+  // Only an image or a PDF: a saved file of any other kind is never opened with another program.
+  if (!isViewableExtension(f.ext) || !EXT.test(f.ext) || !MIME.test(f.mime))
     return null;
   if (typeof f.bytes !== 'number' || !Number.isInteger(f.bytes) || f.bytes < 0)
     return null;

@@ -2,6 +2,8 @@
 // download's state is, how its progress reads, which finished downloads are kept,
 // and when one page is starting too many at once. Pure data and functions with no
 // Electron, so it is easy to test.
+import path from 'node:path';
+import { isLocalFilePath } from './downloadSettings.ts';
 
 export type DownloadState =
   | 'downloading'
@@ -83,11 +85,19 @@ export function parseDownloads(raw: unknown, now: number): DownloadsState {
     ids.add(r.id);
     highest = Math.max(highest, r.id);
     const saved = DOWNLOAD_STATES.find((s) => s === r.state) ?? 'failed';
+    // The saved path is only kept if it is a path on this computer whose file name is the name shown
+    // (an entry cannot say "photo.jpg" and point at a program, or at a network share). Without a
+    // path the entry stays in the list but cannot be opened.
+    const savedPath =
+      isLocalFilePath(r.path) &&
+      path.win32.basename(r.path) === r.name.slice(0, 200)
+        ? r.path.slice(0, MAX_TEXT)
+        : '';
     state.items.push({
       id: r.id,
       url: typeof r.url === 'string' ? r.url.slice(0, MAX_TEXT) : '',
       name: r.name.slice(0, 200),
-      path: typeof r.path === 'string' ? r.path.slice(0, MAX_TEXT) : '',
+      path: savedPath,
       totalBytes: num(r.totalBytes),
       receivedBytes: num(r.receivedBytes),
       state: isActive(saved) ? 'failed' : saved,

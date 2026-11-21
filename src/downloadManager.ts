@@ -253,8 +253,10 @@ export function registerDownloads(deps: DownloadManagerDeps) {
         change(id, { state: 'failed' });
         return;
       }
+      // Judged by the real file on disk as well as by the name in the list: the list is a saved file
+      // (and could come from a backup), so what it says is not trusted on its own.
       if (
-        isRiskyFile(found.name) &&
+        (isRiskyFile(found.name) || isRiskyFile(path.basename(found.path))) &&
         !(await deps.confirm({
           title: 'Open this file?',
           message: `Open “${found.name}”?`,
