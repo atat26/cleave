@@ -29,6 +29,10 @@ const shortModel = (id: string) => id.split('/').pop() ?? id;
 
 const MAX_TAG = 60;
 
+// What was typed in each chat's box and not sent, kept while you are in another chat (or while the box
+// is rebuilt, for example when the chat moves between the new-chat screen and the bar). Only in memory.
+const drafts = new Map<number, string>();
+
 // The pill for an item picked from the list.
 function makePill(item: PickerItem): HTMLSpanElement {
   const tag = `${item.skill ? '/' : '@'}${item.label.replace(/\s+/g, ' ').trim().slice(0, MAX_TAG)}`;
@@ -221,6 +225,22 @@ export function ChatComposer({
     if (box.current) setText(readBox(box.current).text);
   };
 
+  // Each chat has its own draft: put it away when you leave the chat, and bring back the next one's.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.innerHTML = drafts.get(chat.id) ?? '';
+    setText(readBox(el).text);
+    return () => {
+      // (The box's own element is used: the ref is already cleared when the box is removed.)
+      if (el.textContent?.trim() || el.querySelector('[data-tag]')) {
+        drafts.set(chat.id, el.innerHTML);
+      } else {
+        drafts.delete(chat.id);
+      }
+    };
+  }, [chat.id]);
+
   // Measure the text box and the room above it. Returns the room.
   const placeAnchor = (): number => {
     const rect = box.current?.getBoundingClientRect();
@@ -411,7 +431,10 @@ export function ChatComposer({
           setPickerIndex((i) => (i - 1 + items.length) % items.length);
           return;
         }
-        if (e.key === 'Enter' || e.key === 'Tab') {
+        if (
+          (e.key === 'Enter' || e.key === 'Tab') &&
+          !e.nativeEvent.isComposing
+        ) {
           e.preventDefault();
           pick(items[index]);
           return;

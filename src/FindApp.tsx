@@ -54,7 +54,7 @@ export function FindApp() {
           window.browserApi.findQuery(event.target.value, true, false);
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
             event.preventDefault();
             step(!event.shiftKey);
           } else if (event.key === 'Escape') {

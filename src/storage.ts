@@ -182,6 +182,28 @@ export function saveJsonSync(file: string, data: unknown): void {
   }
 }
 
+// Temporary files left in the data folder by a save that was cut off (the app was killed, or the power
+// went) are removed at start. They are only ever copies: the real file is replaced in one step, so a
+// leftover temporary file is never the only copy of anything. Only names this file makes are touched.
+export async function sweepTempFiles(dir: string): Promise<number> {
+  let removed = 0;
+  try {
+    for (const name of await fs.readdir(dir)) {
+      if (/\.json(\.\d+\.\d+)?\.tmp$/.test(name)) {
+        try {
+          await fs.rm(path.join(dir, name), { force: true });
+          removed++;
+        } catch {
+          // Still in use or not ours to remove: leave it.
+        }
+      }
+    }
+  } catch {
+    // The folder is not there yet.
+  }
+  return removed;
+}
+
 // The two save files:
 export const loadState = (file: string): Promise<SavedState> =>
   loadJson(file, parseState, defaultState);

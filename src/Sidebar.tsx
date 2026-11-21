@@ -434,7 +434,8 @@ function SpaceGroup({
             onFocus={(e) => e.target.select()}
             onBlur={(e) => finishRename(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+                e.currentTarget.blur();
               if (e.key === 'Escape') setEditing(false);
             }}
             style={{ flex: 1, minWidth: 0, height: 26 }}
