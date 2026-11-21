@@ -59,6 +59,56 @@ export function safeLink(raw: string): string | null {
   return url.href;
 }
 
+function withoutLinks(nodes: Inline[]): Inline[] {
+  const out: Inline[] = [];
+  for (const node of nodes) {
+    if (node.type === 'link') {
+      for (const child of withoutLinks(node.children)) {
+        if (child.type === 'text') pushText(out, child.text);
+        else out.push(child);
+      }
+    } else if (
+      node.type === 'strong' ||
+      node.type === 'em' ||
+      node.type === 'del'
+    ) {
+      out.push({ ...node, children: withoutLinks(node.children) });
+    } else if (node.type === 'text') {
+      pushText(out, node.text);
+    } else {
+      out.push(node);
+    }
+  }
+  return out;
+}
+
+// The words of some pieces with the formatting taken off.
+const plainWords = (nodes: Inline[]): string =>
+  nodes
+    .map((n) =>
+      n.type === 'text' || n.type === 'code' ? n.text : plainWords(n.children),
+    )
+    .join('');
+
+const ADDRESS_WORDS =
+  /^(?:https?:\/\/)?([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})(?::\d+)?(?:[/?#]\S*)?$/i;
+
+// The real site of a link whose words look like the address of another site, or null. A link reading
+// "https://bank.example/login" that leads to evil.example is the classic trick; showing where it truly
+// goes costs nothing when the words are honest (the same site, with or without "www.").
+export function misleadingHost(words: string, url: string): string | null {
+  const said = ADDRESS_WORDS.exec(words.trim());
+  if (!said) return null;
+  const bare = (host: string) => host.toLowerCase().replace(/^www\./, '');
+  let real: string;
+  try {
+    real = new URL(url).hostname;
+  } catch {
+    return null;
+  }
+  return bare(said[1]) === bare(real) ? null : real;
+}
+
 // ---- Inline pieces -----------------------------------------------------------------
 
 const PUNCTUATION = /[!-/:-@[-`{-~]/;
@@ -137,10 +187,15 @@ export function parseInline(text: string, depth = 0): Inline[] {
       if (link) {
         flush();
         const url = safeLink(link[2]);
-        const inner = parseInline(link[1], depth + 1);
+        // A link inside a link would be two places in one: the words stay, the inner link goes.
+        const inner = withoutLinks(parseInline(link[1], depth + 1));
         // An address that is not a plain web address shows only its words.
-        if (url) out.push({ type: 'link', url, children: inner });
-        else for (const piece of inner) out.push(piece);
+        if (url) {
+          // Words that look like a web address but lead somewhere else say where it really goes.
+          const real = misleadingHost(plainWords(inner), url);
+          if (real) inner.push({ type: 'text', text: ` (goes to ${real})` });
+          out.push({ type: 'link', url, children: inner });
+        } else for (const piece of inner) out.push(piece);
         i += link[0].length;
         continue;
       }
