@@ -14,6 +14,7 @@ import type { StepTarget } from './marker';
 import { clipboard, ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { createAgentTools } from './agentTools';
+import { chatHasReadWeb } from './webSeen';
 import type { ActionEnv, OutlineRead, PageRead } from './agentTools';
 import { readLinkText } from './linkReader';
 import type { OutlineElement } from './pageOutline';
@@ -432,6 +433,18 @@ export function createChatService(options: {
               ),
             // Looked up again at each use, so a change you make mid-reply counts at once.
             siteTrust: (host: string) => options.siteTrust(host),
+            // Any earlier reply in this chat that read the web (a skill outlives the reply).
+            webSeenInChat: () =>
+              chatHasReadWeb(
+                (
+                  chats.findConversation(options.getChats(), chatId)
+                    ?.messages ?? []
+                ).flatMap((message) =>
+                  message.parts.flatMap((part) =>
+                    part.type === 'tool' ? [part] : [],
+                  ),
+                ),
+              ),
             // The artifacts and Spaces the chat links to, as they are now.
             linkedArtifacts: () =>
               linkedArtifacts(
