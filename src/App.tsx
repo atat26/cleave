@@ -160,6 +160,13 @@ export function App() {
     <>
       <Toolbar
         url={onNewTab ? '' : (activeTab?.url ?? '')}
+        tabKey={
+          state.active === null
+            ? ''
+            : state.active.kind === 'lead'
+              ? `lead:${state.active.spaceId}`
+              : `${state.active.kind}:${state.active.id}`
+        }
         canGoBack={state.canGoBack}
         canGoForward={state.canGoForward}
         loading={state.loading}

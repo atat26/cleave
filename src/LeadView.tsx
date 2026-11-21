@@ -152,6 +152,7 @@ function AboutBlock({ space }: { space: SpaceInfo }) {
               finish(false);
             } else if (
               event.key === 'Enter' &&
+              !event.nativeEvent.isComposing &&
               (event.ctrlKey || event.metaKey)
             ) {
               event.preventDefault();
@@ -378,7 +379,8 @@ export function LeadView({
                 onFocus={(e) => e.target.select()}
                 onBlur={(e) => finishRename(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') finishRename(e.currentTarget.value);
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+                    finishRename(e.currentTarget.value);
                   if (e.key === 'Escape') setEditing(false);
                 }}
                 style={{

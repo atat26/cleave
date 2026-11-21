@@ -56,6 +56,21 @@ function ChatRow({
   return (
     <div
       className="reveal-host"
+      // A row you can reach with Tab: Enter or Space opens the chat, F2 renames it, and the
+      // context-menu key opens its menu (as the right-click does).
+      role="button"
+      tabIndex={0}
+      aria-current={active ? 'true' : undefined}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return; // Not from a button inside.
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          window.browserApi.selectChat(chat.id);
+        } else if (event.key === 'F2') {
+          event.preventDefault();
+          setEditing(true);
+        }
+      }}
       onClick={() => window.browserApi.selectChat(chat.id)}
       onDoubleClick={() => setEditing(true)}
       onContextMenu={openMenu(chat)}
@@ -97,7 +112,8 @@ function ChatRow({
           onFocus={(e) => e.target.select()}
           onBlur={(e) => finishRename(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+              e.currentTarget.blur();
             if (e.key === 'Escape') setEditing(false);
           }}
           style={{ flex: 1, minWidth: 0, fontSize: 13 }}
@@ -288,6 +304,15 @@ export function ChatStrip({ chats }: { chats: ChatsInfo }) {
         {newestFirst(chats).map((chat) => (
           <div
             key={chat.id}
+            role="button"
+            tabIndex={0}
+            aria-label={chat.title}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                window.browserApi.selectChat(chat.id);
+              }
+            }}
             onClick={() => window.browserApi.selectChat(chat.id)}
             onContextMenu={openMenu(chat)}
             title={chat.title}

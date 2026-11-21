@@ -548,6 +548,7 @@ button {
   display: none;
 }
 .lrow.collapse-actions:hover .hover-only,
+.lrow.collapse-actions:focus-visible .hover-only,
 .lrow.collapse-actions:has(:focus-visible) .hover-only {
   display: inline-flex;
 }

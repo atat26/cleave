@@ -72,7 +72,7 @@ export function TabSearch({
           setIndex(
             rows.length === 0 ? 0 : (current - 1 + rows.length) % rows.length,
           );
-        } else if (event.key === 'Enter') {
+        } else if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
           event.preventDefault();
           const chosen = rows[current];
           if (chosen) onChoose(chosen.id);

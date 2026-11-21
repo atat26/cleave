@@ -473,7 +473,11 @@ function MessageView({
                 e.currentTarget.setSelectionRange(draft.length, draft.length)
               }
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (
+                  e.key === 'Enter' &&
+                  !e.nativeEvent.isComposing &&
+                  !e.shiftKey
+                ) {
                   e.preventDefault();
                   void saveEdit();
                 } else if (e.key === 'Escape') {
@@ -764,6 +768,21 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages, chatId]);
 
+  // The conversation also grows without a new message: a step's details opening, a thumbnail loading,
+  // the chat being made taller or shorter. If you are at the bottom, stay there.
+  const content = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    const inner = content.current;
+    if (!el || !inner || typeof ResizeObserver === 'undefined') return;
+    const follow = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    follow.observe(inner);
+    follow.observe(el);
+    return () => follow.disconnect();
+  }, []);
+
   const lastId = messages[messages.length - 1]?.id;
   // Where what is sent to the assistant begins (a long chat leaves its first messages out).
   const cutAt = firstSentIndex(messages);
@@ -785,31 +804,33 @@ export function MessageList({
         padding: 'var(--s-3) var(--s-4)',
       }}
     >
-      {messages.length === 0 && (
-        <p style={{ ...muted, fontSize: 13, margin: '12px 0' }}>
-          Ask anything. Your chat is saved on this computer.
-        </p>
-      )}
-      {messages.map((m, i) => (
-        <Fragment key={m.id}>
-          {i === cutAt && (
-            <div className="chat-cut" role="note">
-              Messages above are no longer sent to the assistant
-            </div>
-          )}
-          <MessageView
-            message={m}
-            isLast={m.id === lastId}
-            isNewestUser={m.id === newestUserId}
-            busy={generating}
-            chatId={chatId}
-            tabs={tabs}
-            spaces={spaces}
-            artifacts={artifacts}
-            poppedOut={poppedOut}
-          />
-        </Fragment>
-      ))}
+      <div ref={content}>
+        {messages.length === 0 && (
+          <p style={{ ...muted, fontSize: 13, margin: '12px 0' }}>
+            Ask anything. Your chat is saved on this computer.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+            {i === cutAt && (
+              <div className="chat-cut" role="note">
+                Messages above are no longer sent to the assistant
+              </div>
+            )}
+            <MessageView
+              message={m}
+              isLast={m.id === lastId}
+              isNewestUser={m.id === newestUserId}
+              busy={generating}
+              chatId={chatId}
+              tabs={tabs}
+              spaces={spaces}
+              artifacts={artifacts}
+              poppedOut={poppedOut}
+            />
+          </Fragment>
+        ))}
+      </div>
     </div>
   );
 }

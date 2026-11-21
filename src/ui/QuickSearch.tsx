@@ -56,20 +56,35 @@ export function QuickSearch({
   const listRef = useRef<HTMLDivElement>(null);
   // Only the newest answer is shown.
   const asked = useRef(0);
+  // The words the rows on screen are for. While it is not the box's text, the rows are from an earlier
+  // moment of typing, and Enter must not pick one of them.
+  const [shownFor, setShownFor] = useState('');
+  // Enter was pressed before the rows for the typed words arrived: the first row is picked when they do.
+  const enterWaiting = useRef(false);
 
   useEffect(() => {
     if (query === '') {
       asked.current++;
       setItems(first);
+      setShownFor('');
       return;
     }
     const mine = ++asked.current;
     const timer = setTimeout(() => {
       void window.browserApi.quickQuery(query).then((rows) => {
-        if (mine === asked.current) setItems(rows);
+        if (mine !== asked.current) return;
+        setItems(rows);
+        setShownFor(query);
+        if (enterWaiting.current) {
+          enterWaiting.current = false;
+          const top = rows.find((row): row is MenuEntry => row.type === 'item');
+          if (top) onChoose(top.id);
+        }
       });
     }, WAIT_MS);
     return () => clearTimeout(timer);
+    // (onChoose is a fresh function each time and only used when the answer arrives.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, first]);
 
   const rows = items.filter((i): i is MenuEntry => i.type === 'item');
@@ -104,8 +119,13 @@ export function QuickSearch({
           setIndex(
             rows.length === 0 ? 0 : (current - 1 + rows.length) % rows.length,
           );
-        } else if (event.key === 'Enter') {
+        } else if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
           event.preventDefault();
+          if (shownFor !== query) {
+            // The rows are for what was typed a moment ago: wait for the right ones.
+            enterWaiting.current = true;
+            return;
+          }
           const chosen = rows[current];
           if (chosen) onChoose(chosen.id);
         }
@@ -119,6 +139,7 @@ export function QuickSearch({
           onChange={(event) => {
             setQuery(event.target.value);
             setIndex(0);
+            enterWaiting.current = false;
           }}
           placeholder="Search tabs, Spaces, artifacts, chats and history, or ask"
           aria-label="Search everything"

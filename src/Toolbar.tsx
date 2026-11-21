@@ -15,6 +15,9 @@ import { Icon } from './ui/Icon';
 
 interface ToolbarProps {
   url: string;
+  // Which tab (or document, or nothing) the address belongs to: a different one shows its own address
+  // even if the box still has the keyboard.
+  tabKey: string;
   canGoBack: boolean;
   canGoForward: boolean;
   // True when no web page is selected (e.g. on a Space's Overview).
@@ -66,7 +69,8 @@ function ChatTitle({ chats }: { chats: ChatsInfo }) {
         onFocus={(e) => e.target.select()}
         onBlur={(e) => finish(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+            e.currentTarget.blur();
           if (e.key === 'Escape') setEditing(false);
         }}
         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
@@ -191,6 +195,7 @@ function ViewSwitch({ viewMode }: { viewMode: ViewMode }) {
 // there is no address: the chat's name takes the address bar's place.
 export function Toolbar({
   url,
+  tabKey,
   canGoBack,
   canGoForward,
   disabled,
@@ -219,9 +224,18 @@ export function Toolbar({
   );
 
   // Follow the active tab's address, unless the user is typing in the box.
+  const urlNow = useRef(url);
+  urlNow.current = url;
   useEffect(() => {
     if (document.activeElement !== inputRef.current) setText(url);
   }, [url]);
+  // Another tab was chosen (for example by clicking it in the sidebar, which leaves the box holding
+  // the keyboard): show that tab's address, whatever was typed.
+  useEffect(() => {
+    setText(urlNow.current);
+  }, [tabKey]);
+  // Pressing Enter sends the address, so leaving the box then must not put the old one back.
+  const sent = useRef(false);
 
   // The suggestions under the address bar (drawn by a view of their own).
   const [rows, setRows] = useState<Suggestion[]>([]);
@@ -270,6 +284,7 @@ export function Toolbar({
     if (row) window.browserApi.suggestPick(selected);
     else window.browserApi.navigate(text);
     closeSuggestions();
+    sent.current = true;
     inputRef.current?.blur();
   };
 
@@ -403,13 +418,23 @@ export function Toolbar({
                           : selected - 1;
                     setSelected(next);
                     showRows(rows, next);
-                  } else if (e.key === 'Escape' && rows.length > 0) {
+                  } else if (e.key === 'Escape') {
+                    // First Escape closes the suggestions; then it puts the page's address back.
                     e.preventDefault();
-                    closeSuggestions();
+                    if (rows.length > 0) closeSuggestions();
+                    else {
+                      setText(urlNow.current);
+                      e.currentTarget.select();
+                    }
                   }
                 }}
                 // A moment's grace, so a click on a suggestion is not lost.
-                onBlur={() => setTimeout(closeSuggestions, 150)}
+                onBlur={() => {
+                  setTimeout(closeSuggestions, 150);
+                  // Leaving the box drops what was typed (unless it was just sent).
+                  if (sent.current) sent.current = false;
+                  else setText(urlNow.current);
+                }}
                 onFocus={(e) => e.target.select()}
                 onContextMenu={(event) => {
                   event.preventDefault();

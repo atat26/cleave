@@ -38,7 +38,8 @@ function RenameBox({
       onChange={(event) => setDraft(event.target.value)}
       onBlur={onCancel}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') onSave(draft);
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing)
+          onSave(draft);
         else if (event.key === 'Escape') onCancel();
       }}
       style={{ flex: 1, minWidth: 0 }}

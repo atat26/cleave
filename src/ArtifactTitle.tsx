@@ -22,7 +22,8 @@ export function ArtifactTitle({ id, title }: { id: number; title: string }) {
           onFocus={(e) => e.target.select()}
           onBlur={(e) => finish(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') finish(e.currentTarget.value);
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing)
+              finish(e.currentTarget.value);
             if (e.key === 'Escape') setRenaming(false);
           }}
           style={{

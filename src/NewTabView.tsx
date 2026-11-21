@@ -386,7 +386,10 @@ export function NewTabView({
                   );
                   return;
                 }
-                if (event.key === 'Enter' || event.key === 'Tab') {
+                if (
+                  (event.key === 'Enter' || event.key === 'Tab') &&
+                  !event.nativeEvent.isComposing
+                ) {
                   event.preventDefault();
                   const chosen = mentionItems[mentionIndex];
                   if (chosen) pickMention(chosen);
@@ -417,7 +420,10 @@ export function NewTabView({
               } else if (event.key === 'ArrowUp' && rows.length > 0) {
                 event.preventDefault();
                 setPicked((picked - 1 + rows.length) % rows.length);
-              } else if (event.key === 'Enter') {
+              } else if (
+                event.key === 'Enter' &&
+                !event.nativeEvent.isComposing
+              ) {
                 event.preventDefault();
                 const row = rows[picked];
                 if (row) pick(row);
