@@ -13,6 +13,25 @@ import {
   versionFrom,
 } from './updateState';
 import type { UpdateEvent, UpdateState } from './updateState';
+import { snapshotIfDue } from './backupFiles';
+
+// A copy of your data before a new version starts, in case it ever goes wrong (kept in the data
+// folder, newest three). Skipped when one was made in the last 15 minutes. Never stops an update.
+const snapshotBeforeUpdate = () => {
+  try {
+    snapshotIfDue({
+      dataDir: app.getPath('userData'),
+      appVersion: app.getVersion(),
+      now: new Date(),
+      minGapMs: 15 * 60 * 1000,
+    });
+  } catch (error) {
+    console.error(
+      'Could not make a copy of your data before the update:',
+      error,
+    );
+  }
+};
 
 // Squirrel puts Update.exe one folder above the running app (...\Cleave\Update.exe).
 const updateExePath = () =>
@@ -58,9 +77,11 @@ export function registerUpdates(win: BrowserWindow): void {
     }
     autoUpdater.on('update-available', () => dispatch({ type: 'found' }));
     autoUpdater.on('update-not-available', () => dispatch({ type: 'none' }));
-    autoUpdater.on('update-downloaded', (_event, _notes, name) =>
-      dispatch({ type: 'downloaded', version: versionFrom(name) }),
-    );
+    autoUpdater.on('update-downloaded', (_event, _notes, name) => {
+      // The new version is now on disk and starts the next time Cleave does.
+      snapshotBeforeUpdate();
+      dispatch({ type: 'downloaded', version: versionFrom(name) });
+    });
     autoUpdater.on('error', (error) =>
       dispatch({ type: 'failed', message: plainError(error) }),
     );
@@ -91,7 +112,10 @@ export function registerUpdates(win: BrowserWindow): void {
   });
   ipcMain.handle('update:install', () => {
     // Restarts Cleave into the version that was prepared.
-    if (state.kind === 'ready') autoUpdater.quitAndInstall();
+    if (state.kind === 'ready') {
+      snapshotBeforeUpdate();
+      autoUpdater.quitAndInstall();
+    }
     return state;
   });
 }

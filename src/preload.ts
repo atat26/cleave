@@ -298,6 +298,11 @@ const browserApi: BrowserApi = {
   setSpaceAbout: (id, text) => ipcRenderer.send('space:about', id, text),
   showSpaceSwitcher: (x, y) => ipcRenderer.send('spaces:switcher', x, y),
   appInfo: () => ipcRenderer.invoke('app:info'),
+  backupInfo: () => ipcRenderer.invoke('backup:info'),
+  backupCreate: (includeKeys) =>
+    ipcRenderer.invoke('backup:create', includeKeys === true),
+  backupChooseRestore: () => ipcRenderer.invoke('backup:choose-restore'),
+  backupRestore: () => ipcRenderer.invoke('backup:restore'),
   updateGet: () => ipcRenderer.invoke('update:get'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
