@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
+import { patchWebStoreOriginCheck } from './src/libraryPatches.ts';
 
 // The two extension libraries each have a small helper script that is loaded into web pages. They look
 // for it next to the built main file. While developing, they find it in node_modules; the installed
@@ -26,6 +27,33 @@ const copyExtensionHelperScripts = (): Plugin => ({
   },
 });
 
+// Fix the Web Store library's origin check as it is bundled (see src/libraryPatches.ts). The build
+// stops if the library's code is not found or has changed.
+const patchWebStoreLibrary = (): Plugin => {
+  let patched = false;
+  return {
+    name: 'patch-web-store-origin-check',
+    transform(code, id) {
+      if (
+        !/electron-chrome-web-store[\\/]dist[\\/](esm|cjs)[\\/]browser[\\/]index\.m?js$/.test(
+          id,
+        )
+      ) {
+        return null;
+      }
+      patched = true;
+      return { code: patchWebStoreOriginCheck(code), map: null };
+    },
+    buildEnd() {
+      if (!patched) {
+        throw new Error(
+          'The Web Store library was not part of the build, so its origin check was not fixed (see src/libraryPatches.ts).',
+        );
+      }
+    },
+  };
+};
+
 // https://vitejs.dev/config
 export default defineConfig({
   // The extension libraries look for their own helper scripts relative to where
@@ -34,5 +62,5 @@ export default defineConfig({
   define: {
     'import.meta.dirname': '__dirname',
   },
-  plugins: [copyExtensionHelperScripts()],
+  plugins: [copyExtensionHelperScripts(), patchWebStoreLibrary()],
 });
