@@ -480,7 +480,10 @@ export async function createTabs(
   chats = chatsModel.dropUntouched(chats, chats.activeId);
   // Documents made inside the browser (not uploads).
   const artifactsFile = path.join(app.getPath('userData'), 'artifacts.json');
-  let artifacts: ArtifactsState = await loadArtifacts(artifactsFile);
+  let artifacts: ArtifactsState = artifactsModel.releaseMissingSpaces(
+    await loadArtifacts(artifactsFile),
+    state.spaces.map((space) => space.id),
+  );
   // How much each tool may do without asking (the Tools panel's choices).
   const toolsFile = path.join(app.getPath('userData'), 'tools.json');
   let toolSettings = await loadJson(
@@ -1078,6 +1081,9 @@ export async function createTabs(
       );
     });
   };
+
+  // The window, or the page that draws it, is already gone (the app is closing).
+  const windowGone = () => win.isDestroyed() || win.webContents.isDestroyed();
 
   const sendToUi = (channel: string, ...args: unknown[]) => {
     for (const contents of [win.webContents, sidebar]) {
@@ -2197,6 +2203,10 @@ export async function createTabs(
     // A page can close its own window (window.close()). Its page is then gone, so
     // the tab closes with it (and is kept in Recently closed, like any closed tab).
     contents.once('destroyed', () => {
+      // The window itself is closing and is taking its pages with it: there is nothing to tidy
+      // (the tab must stay as it was saved, and the window can no longer be touched). Without this
+      // an uncaught "Object has been destroyed" error could appear when the app was closed.
+      if (windowGone()) return;
       if (htmlFullscreen === tab.id) leaveHtmlFullscreen();
       if (views.get(tab.id) !== view) return; // we closed it ourselves
       views.delete(tab.id);
@@ -2663,6 +2673,7 @@ export async function createTabs(
   // views. A Lead tab has no web page: the toolbar window draws it instead.
   let lastOnNewTabPage = false;
   const showActive = () => {
+    if (windowGone()) return;
     exitFullscreenIfAway();
     const id = activeTabId();
     const tab = id === null ? undefined : model.findTab(state, id);
@@ -4335,6 +4346,8 @@ export async function createTabs(
     ungroupSpace: (spaceId) => {
       syncLinkSnapshots(); // The Space goes away; links to it remember its name.
       commitAndShow(model.ungroupSpace(state, spaceId));
+      // Its documents stay, just no longer in a Space (they used to be lost from the panel).
+      commitArtifacts(artifactsModel.releaseSpace(artifacts, spaceId));
     },
     deleteSpace: (spaceId) => void deleteSpace(spaceId),
   };
@@ -8381,7 +8394,8 @@ ${artifact.content.slice(0, 1500)}`;
   }, 3000);
 
   // Save for sure when the window closes (a plain write might not finish).
-  win.on('close', () => {
+  // (Also run when Windows itself is shutting down or logging off: 'close' does not fire then.)
+  const saveEverythingNow = () => {
     // Stop any reply still being written. (A reply cut off like this is saved as
     // it stands and marked "stopped" the next time the app starts.)
     chatService?.dispose();
@@ -8409,7 +8423,40 @@ ${artifact.content.slice(0, 1500)}`;
     extensionSettingsSaver.flushSync();
     skillsSaver.flushSync();
     themeSaver.flushSync();
+  };
+  // Closing the window: first ask the UI page to send what it is still holding (the document
+  // editor's last half second of typing), wait for its answer (at most a moment), and then close
+  // and save everything. Without this the last typing reached the app after the final save.
+  let closeApproved = false;
+  let askingToClose = false;
+  const askUiToSave = () =>
+    new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        ipcMain.removeListener('app:before-close-done', onDone);
+        resolve();
+      };
+      const onDone = (event: Electron.IpcMainEvent) => {
+        if (event.sender === win.webContents) finish();
+      };
+      const timer = setTimeout(finish, 1500);
+      ipcMain.on('app:before-close-done', onDone);
+      win.webContents.send('app:before-close');
+    });
+  win.on('close', (event) => {
+    if (!closeApproved && !windowGone() && ready.has(win.webContents)) {
+      event.preventDefault();
+      if (askingToClose) return;
+      askingToClose = true;
+      void askUiToSave().then(() => {
+        closeApproved = true;
+        if (!win.isDestroyed()) win.close();
+      });
+      return;
+    }
+    saveEverythingNow();
   });
+  win.on('session-end', saveEverythingNow);
   win.on('closed', () => {
     stopAnimation();
     stopWatching();

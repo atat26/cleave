@@ -451,6 +451,26 @@ export function releaseSpace(
   };
 }
 
+// Artifacts that belong to a Space that no longer exists (an older version, or a Space that went away
+// some other way) are put outside every Space, so they show in the panel again.
+export function releaseMissingSpaces(
+  state: ArtifactsState,
+  spaceIds: readonly number[],
+): ArtifactsState {
+  const known = new Set(spaceIds);
+  if (
+    !state.artifacts.some((a) => a.spaceId !== null && !known.has(a.spaceId))
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    artifacts: state.artifacts.map((a) =>
+      a.spaceId !== null && !known.has(a.spaceId) ? { ...a, spaceId: null } : a,
+    ),
+  };
+}
+
 // The artifacts in a Space, or (null) those outside every Space; newest edit first.
 export function artifactsIn(
   state: ArtifactsState,

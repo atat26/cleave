@@ -192,6 +192,20 @@ function TextArtifactView({ tab }: { tab: ArtifactTabInfo }) {
     };
   }, [tab.id]);
 
+  // The window is closing: send what was typed in the last moment, and wait for it to be stored.
+  useEffect(
+    () =>
+      window.browserApi.onBeforeClose(async () => {
+        // A save already on its way finishes first, then the rest goes.
+        for (let i = 0; i < 20 && inFlight.current; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        await save();
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tab.id],
+  );
+
   const change = (value: string) => {
     version.current++;
     setText(value);

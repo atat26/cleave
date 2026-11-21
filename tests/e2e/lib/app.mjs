@@ -193,6 +193,25 @@ export async function startApp({ profile, env = {}, log } = {}) {
       })()`);
       return JSON.parse(text);
     },
+    // A close button that is already warmed up: PowerShell takes about a second to start, so a test
+    // that must close in the same moment as something else gets the closer first, then calls it.
+    // (It sends the same close request as the window's own close button.)
+    async prepareClose() {
+      const script = `$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'electron.exe' -and $_.CommandLine -like '*${folder.replace(/'/g, "''")}*' -and $_.CommandLine -notlike '*--type=*' } | Select-Object -First 1; $proc = Get-Process -Id $p.ProcessId; [Console]::Out.WriteLine('ready'); while (($l = [Console]::In.ReadLine()) -ne $null) { if ($l -eq 'close') { [void]$proc.CloseMainWindow(); break } }`;
+      const helper = spawn('powershell', ['-NoProfile', '-Command', script], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        windowsHide: true,
+      });
+      await new Promise((resolve, reject) => {
+        helper.stdout.once('data', resolve);
+        helper.once('error', reject);
+        setTimeout(
+          () => reject(new Error('the close helper did not start')),
+          20000,
+        );
+      });
+      return () => helper.stdin.write('close\n');
+    },
     // Close the app's window the way you do with the close button, so it saves everything and quits
     // properly (stop() is a hard kill, like a crash). Then clear away what is left of the dev server.
     async quit() {
@@ -205,12 +224,32 @@ export async function startApp({ profile, env = {}, log } = {}) {
         timeout: 20000,
       }).catch(() => undefined);
       await app.stop();
+      // Closing must be clean: no error dialog in the main process ("Object has been destroyed" once
+      // appeared when the app was closed).
+      const text = fs.readFileSync(logFile, 'utf8');
+      const bad =
+        /Uncaught Exception|Object has been destroyed|UnhandledPromiseRejection/.exec(
+          text,
+        );
+      if (bad) {
+        const at = text.indexOf(bad[0]);
+        throw new Error(
+          `The app reported an error while closing:
+${text.slice(Math.max(0, at - 200), at + 600)}`,
+        );
+      }
     },
     // Stop the app (and the dev server under it).
     async stop() {
       for (const c of connections.values()) c.close();
       connections.clear();
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+      });
+      // After a graceful quit the dev server's parent is already gone, so the line above cannot reach
+      // it: stop anything still running with this run's throwaway folder in its command line.
+      const sweep = `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*${folder.replace(/'/g, "''")}*' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }`;
+      spawnSync('powershell', ['-NoProfile', '-Command', sweep], {
         stdio: 'ignore',
       });
       await waitFor('the app to close', async () => !(await isUp(port)), {

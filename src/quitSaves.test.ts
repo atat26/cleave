@@ -11,7 +11,11 @@ test('every saver made in tabs.ts is written when the window closes', () => {
     (m) => m[1],
   );
   assert.ok(made.length > 20, 'the savers were not found');
-  const fromClose = source.slice(source.indexOf("win.on('close', () => {"));
+  assert.ok(source.includes('saveEverythingNow();'));
+  assert.ok(source.includes("win.on('session-end', saveEverythingNow)"));
+  const fromClose = source.slice(
+    source.indexOf('const saveEverythingNow = () => {'),
+  );
   const handler = fromClose.slice(0, fromClose.indexOf('});'));
   for (const name of made) {
     assert.ok(

@@ -131,9 +131,9 @@ test('a key that can no longer be decrypted reads as "no key", never as an error
 
 test('a failed save does not leave a secret behind in memory', async () => {
   const { dir, file } = await tempFile();
-  // Make saving impossible: a directory sits where the temporary file goes.
-  await fs.mkdir(`${file}.tmp`);
   const store = await createSecretStore(file, fakeCrypto());
+  // Make saving impossible: a directory sits where the file goes, so the rename cannot work.
+  await fs.mkdir(file);
   assert.deepEqual(await store.set('openrouter', KEY), {
     ok: false,
     reason: 'failed',

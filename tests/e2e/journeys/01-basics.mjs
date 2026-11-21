@@ -25,7 +25,7 @@ export const journeys = [
         'the sidebar to draw',
         async () =>
           (await app.pageEv(
-            'localhost:5173/#sidebar',
+            '/#sidebar',
             'document.getElementById("root").children.length',
           )) > 0,
         { timeout: 20000 },

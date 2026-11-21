@@ -6,6 +6,7 @@ import {
   messagesOf,
   newChat,
   openTab,
+  sleep,
   textOf,
   waitFor,
 } from '../lib/driver.mjs';
@@ -62,3 +63,39 @@ export const journeys = [
     },
   },
 ];
+
+// Text typed into a document in the last moment before closing must not be lost (the editor saves
+// half a second after you stop typing; closing used to beat it).
+journeys.push({
+  name: 'restart: typing in a document right before closing is kept',
+  async run(ctx) {
+    const { app } = ctx;
+    const id = await app.api('artifactCreate', 'text', 'E2E typing', null);
+    assert.ok(id, 'the document was not made');
+    // (A chat-only window has no room for the editor.)
+    await app.api('setViewMode', 'both');
+    await app.api('artifactOpen', id);
+    // Wait for the editor to load, then type the way the page sees it (a new value and an input event).
+    await waitFor(
+      'the editor',
+      async () =>
+        app.ev(
+          `document.querySelector("textarea[aria-label^='Edit ']") !== null`,
+        ),
+      { timeout: 45000, every: 500 },
+    );
+    await sleep(500);
+    const closeNow = await app.prepareClose();
+    await app.ev(`(() => {
+      const box = document.querySelector("textarea[aria-label^='Edit ']");
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      set.call(box, 'typed just before closing');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    // Close the window in the same moment (the editor waits half a second before saving).
+    closeNow();
+    const after = await ctx.restart();
+    const doc = await after.api('artifactRead', id);
+    assert.equal(doc.content, 'typed just before closing');
+  },
+});

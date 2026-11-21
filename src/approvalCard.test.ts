@@ -108,3 +108,35 @@ test('a new card takes the keyboard only when you are not typing', () => {
   assert.equal(cardMayTakeFocus({ tagName: 'INPUT' }), false);
   assert.equal(cardMayTakeFocus({ tagName: 'INPUT', type: 'checkbox' }), true);
 });
+
+test('Enter on a button or field inside the card belongs to it, so "Don\'t allow" is never answered "allow"', () => {
+  for (const tagName of [
+    'BUTTON',
+    'button',
+    'A',
+    'INPUT',
+    'SELECT',
+    'TEXTAREA',
+  ]) {
+    for (const risky of [false, true]) {
+      for (const extra of [{}, { shiftKey: true }, { ctrlKey: true }]) {
+        assert.equal(
+          answerFor({ key: 'Enter', ...extra, target: { tagName } }, risky),
+          null,
+          `${tagName} ${risky} ${JSON.stringify(extra)}`,
+        );
+      }
+    }
+  }
+  // Escape still says no from anywhere, and Enter on the card itself (or a plain element) still works.
+  assert.equal(
+    answerFor({ key: 'Escape', target: { tagName: 'BUTTON' } }, false),
+    'deny',
+  );
+  assert.equal(
+    answerFor({ key: 'Enter', target: { tagName: 'DIV' } }, false),
+    'allow',
+  );
+  assert.equal(answerFor({ key: 'Enter', target: null }, false), 'allow');
+  assert.equal(answerFor({ key: 'Enter', target: undefined }, false), 'allow');
+});
