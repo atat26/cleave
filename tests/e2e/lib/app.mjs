@@ -295,6 +295,28 @@ ${text.slice(Math.max(0, at - 200), at + 600)}`,
       },
       { timeout: 120000, every: 1000 },
     );
+    // The development server sometimes serves a page that loads but never draws (it is rebuilding its
+    // libraries just as the app starts). A person would press reload; so does this, a few times.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const drawn = await waitFor(
+        'the app page to draw',
+        async () =>
+          (await (
+            await on(await uiTarget())
+          ).ev('document.getElementById("root")?.children.length ?? 0')) > 0,
+        { timeout: attempt === 3 ? 30000 : 10000, every: 500 },
+      ).then(
+        () => true,
+        () => false,
+      );
+      if (drawn) break;
+      if (attempt === 3) throw new Error('The app page never drew.');
+      await (
+        await on(await uiTarget())
+      )
+        .ev('location.reload()')
+        .catch(() => undefined);
+    }
   } catch (error) {
     // Never leave a half-started app running.
     await app.stop();

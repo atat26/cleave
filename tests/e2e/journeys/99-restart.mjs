@@ -86,7 +86,7 @@ journeys.push({
     ).catch(async (error) => {
       const seen = await app
         .ev(
-          `JSON.stringify({ root: document.getElementById('root').children.length, text: document.body.innerText.slice(0, 120), textareas: document.querySelectorAll('textarea').length })`,
+          `JSON.stringify({ root: document.getElementById('root').children.length, text: document.body.innerText.slice(0, 120), textareas: document.querySelectorAll('textarea').length, href: location.href, ready: document.readyState, api: typeof window.browserApi, scripts: [...document.scripts].map((x) => x.src).join(' ') })`,
         )
         .catch((e) => String(e));
       const state = await app.state().catch(() => null);
