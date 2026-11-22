@@ -41,6 +41,9 @@ async function pointsOnlyAtPublicAddresses(host: string): Promise<boolean> {
 
 export function guardPreviewFrames(win: BrowserWindow): void {
   const contents = win.webContents;
+  // Read once: this runs for every request in the session, also while the window is closing, when the
+  // page object is already gone and may not be asked anything.
+  const windowPageId = contents.id;
   contents.on('will-frame-navigate', (event) => {
     // The window's own page is handled by 'will-navigate'.
     if (event.isMainFrame) return;
@@ -53,7 +56,7 @@ export function guardPreviewFrames(win: BrowserWindow): void {
     { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
     (details, callback) => {
       // Only the window's own frames are looked at; every other page goes through.
-      if (details.webContentsId !== contents.id) {
+      if (details.webContentsId !== windowPageId) {
         callback({});
         return;
       }

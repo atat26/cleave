@@ -38,14 +38,14 @@ The first bug came from the owner: "Object has been destroyed" when the app is c
 | #   | What goes wrong                                                                                                                                                                            | How likely   | Status |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ | ------ |
 | S1  | **"Object has been destroyed" when the app closes** (a page's destroyed event touched the closed window).                                                                                  | sometimes    | fixed  |
-| S2  | **No safety net for errors**: the app has no uncaughtException handler, so any throw in an event handler shows Electron's error dialog. Add one that logs, and stays quiet while quitting. | n/a          | todo   |
-| S3  | A crashed toolbar, sidebar, popup, find, suggest or overlay page is never reloaded (blank toolbar until restart).                                                                          | rare         | todo   |
-| S4  | A page's right-click menu, or "rewarn", acts on a page that may be gone (same error as S1).                                                                                                | rare         | todo   |
-| S5  | Assistant steps break when the page goes away mid-step ("A tool failed unexpectedly" and a 15-second wait instead of "closed").                                                            | sometimes    | todo   |
-| S6  | Sleeping a tab cancels its download or Save as. (Only with "sleep after N minutes" or the Space Sleep item.)                                                                               | sometimes    | todo   |
-| S7  | A crashed tab with reason "killed" or on a non-web address shows nothing; no "unresponsive" handling.                                                                                      | rare         | todo   |
-| S8  | Quitting during a link read can leave the process running for a second or more (a quick relaunch then does nothing).                                                                       | rare         | todo   |
-| S9  | The preview guard reads `contents.id` on a possibly destroyed page.                                                                                                                        | rare (guess) | todo   |
+| S2  | **No safety net for errors**: the app has no uncaughtException handler, so any throw in an event handler shows Electron's error dialog. Add one that logs, and stays quiet while quitting. | n/a          | fixed  |
+| S3  | A crashed toolbar, sidebar, popup, find, suggest or overlay page is never reloaded (blank toolbar until restart).                                                                          | rare         | fixed  |
+| S4  | A page's right-click menu, or "rewarn", acts on a page that may be gone (same error as S1).                                                                                                | rare         | fixed  |
+| S5  | Assistant steps break when the page goes away mid-step ("A tool failed unexpectedly" and a 15-second wait instead of "closed").                                                            | sometimes    | fixed  |
+| S6  | Sleeping a tab cancels its download or Save as. (Only with "sleep after N minutes" or the Space Sleep item.)                                                                               | sometimes    | fixed  |
+| S7  | A crashed tab with reason "killed" or on a non-web address shows nothing; no "unresponsive" handling.                                                                                      | rare         | part   |
+| S8  | Quitting during a link read can leave the process running for a second or more (a quick relaunch then does nothing).                                                                       | rare         | fixed  |
+| S9  | The preview guard reads `contents.id` on a possibly destroyed page.                                                                                                                        | rare (guess) | fixed  |
 | S10 | Windows shutdown or log-off: only the window's `close` flushes saves, no `session-end`.                                                                                                    | sometimes    | fixed  |
 | S11 | Many handlers are not removed when the window closes (a second window, or macOS reopen, would throw). **Blocks multiple windows**; do it as the first step of that work.                   | n/a          | later  |
 
@@ -66,6 +66,8 @@ The first bug came from the owner: "Object has been destroyed" when the app is c
 **C8 is partly fixed:** a step that has to be asked about is now refused if the reply has no room to show its card, and the assistant is told when a tab it opened could not be linked. Documents and saved pages made by the assistant that cannot be linked at 20 links are still not reported.
 
 **U5 and U6 are partly fixed:** a Sidebar row that has the keyboard now shows its hidden buttons, and chat rows can be reached, opened (Enter or Space), renamed (F2) and given their menu (the menu key). Enter while an input method is composing is ignored in every text entry. Not done: Escape in rename boxes possibly still saving (unconfirmed), the collapsed strip clipping extra tabs and chats, and the smaller items in U9. U3 and U7 have no automated test (they need a real pointer and layout).
+
+**Robustness batch notes:** S2 writes unexpected errors to errors.log in the data folder (installed app only; a development copy keeps the dialog). S3 reloads a crashed toolbar, sidebar, menu, find, suggestion or pop-out page (not more than four times in five minutes). S6: pages that are downloading or saving are not put to sleep by the rules (the assistant's own "sleep a tab" tool does not check yet). S7: a tab whose page process was killed from outside now shows the stopped page; an "unresponsive" page still has no handling.
 
 ## Not covered by this round
 

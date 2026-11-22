@@ -1084,6 +1084,37 @@ export async function createTabs(
     });
   };
 
+  // If one of the app's own pages (toolbar, sidebar, menus, find, suggestions, the pop-out card) crashes
+  // or is killed, it is loaded again, so a blank toolbar or menus that do nothing do not stay until the
+  // next start. `reset` says the page is no longer ready. Not forever: a page that keeps crashing
+  // (four times in five minutes) is left alone.
+  const uiCrashes = new Map<Electron.WebContents, number[]>();
+  const recoverOnCrash = (
+    contents: Electron.WebContents,
+    reset: () => void,
+  ) => {
+    contents.on('render-process-gone', (_event, details) => {
+      if (details.reason === 'clean-exit') return;
+      if (contents.isDestroyed() || windowGone()) return;
+      const at = Date.now();
+      const recent = (uiCrashes.get(contents) ?? []).filter(
+        (time) => at - time < 5 * 60_000,
+      );
+      recent.push(at);
+      uiCrashes.set(contents, recent);
+      if (recent.length > 4) {
+        console.error('[ui] a page keeps crashing: leaving it as it is');
+        return;
+      }
+      ready.delete(contents);
+      listening.delete(contents);
+      reset();
+      setTimeout(() => {
+        if (!contents.isDestroyed() && !windowGone()) contents.reload();
+      }, 500);
+    });
+  };
+
   // The window, or the page that draws it, is already gone (the app is closing).
   const windowGone = () => win.isDestroyed() || win.webContents.isDestroyed();
 
@@ -2346,8 +2377,17 @@ export async function createTabs(
     // A page whose process crashed (or ran out of memory) gets a page saying so,
     // with Reload, instead of staying blank.
     contents.on('render-process-gone', (_event, details) => {
-      if (details.reason === 'clean-exit' || details.reason === 'killed')
+      // Not when the page was closed on purpose, or the window is closing (nothing can be shown then).
+      // A page process that was killed from outside (the task manager, the system) shows the same
+      // "this page stopped" page as a crash: it used to be left blank.
+      if (details.reason === 'clean-exit') return;
+      if (
+        contents.isDestroyed() ||
+        windowGone() ||
+        views.get(tab.id) !== view
+      ) {
         return;
+      }
       const address = model.findTab(state, tab.id)?.url ?? '';
       if (!model.isWebUrl(address)) return;
       let host = '';
@@ -3004,13 +3044,17 @@ export async function createTabs(
     limitMs: number,
   ) =>
     new Promise<boolean>((resolve) => {
-      if (!contents.isLoading()) {
+      // A page that is already gone has nothing left to load (the caller then finds it closed).
+      if (contents.isDestroyed() || !contents.isLoading()) {
         resolve(true);
         return;
       }
       const done = (value: boolean) => {
         clearTimeout(timer);
-        contents.removeListener('did-stop-loading', onStop);
+        if (!contents.isDestroyed()) {
+          contents.removeListener('did-stop-loading', onStop);
+          contents.removeListener('destroyed', onStop);
+        }
         signal.removeEventListener('abort', onAbort);
         resolve(value);
       };
@@ -3018,6 +3062,8 @@ export async function createTabs(
       const onAbort = () => done(false);
       const timer = setTimeout(() => done(false), limitMs);
       contents.once('did-stop-loading', onStop);
+      // The page closing while it loads ends the wait at once, instead of after the whole limit.
+      contents.once('destroyed', onStop);
       signal.addEventListener('abort', onAbort);
     });
 
@@ -3509,11 +3555,16 @@ export async function createTabs(
     win.webContents.focus();
   };
 
-  const finished = (contents: Electron.WebContents): ActionResult => ({
-    ok: true,
-    url: contents.getURL(),
-    title: contents.getTitle(),
-  });
+  // The result of a step that ended with the page where it is now. If the step itself closed the page
+  // (a button that closes the tab, window.close()), that is what is reported, not a failure.
+  const finished = (contents: Electron.WebContents): ActionResult =>
+    contents.isDestroyed()
+      ? { ok: false, reason: 'closed' }
+      : {
+          ok: true,
+          url: contents.getURL(),
+          title: contents.getTitle(),
+        };
 
   // Do something in a tab's page through the debugger, then let it settle.
   const actOn = async (
@@ -4859,6 +4910,9 @@ export async function createTabs(
     const choice = parsePageChoice(choiceId);
     const tab = model.findTab(state, tabId);
     if (!choice || !tab) return;
+    // The menu was open while the page went away (it closed itself, or the assistant or an extension
+    // closed the tab): there is nothing to go back in, reload or inspect.
+    if (contents.isDestroyed()) return;
     const here = tab.spaceId;
     // Only ordinary web addresses are ever opened in a tab.
     const openIn = (url: string, spaceId: number | null) => {
@@ -5184,6 +5238,11 @@ export async function createTabs(
       closed: t.closed,
       audible: pageContents(t.id)?.isCurrentlyAudible() ?? false,
       working: working.has(t.id),
+      // Downloading or saving: closing its web page would cancel that.
+      busy: (() => {
+        const page = pageContents(t.id);
+        return page !== undefined && downloadManager.isBusy(page.id);
+      })(),
     }));
   // Put pages to sleep: their live web page goes (no memory used) and they load
   // again when opened.
@@ -6358,9 +6417,9 @@ export async function createTabs(
               // Not an address; nothing to forget.
             }
             closeMenu(true);
-            void contents.session
-              .closeAllConnections()
-              .then(() => reloadTab(id ?? -1, contents));
+            void contents.session.closeAllConnections().then(() => {
+              if (!contents.isDestroyed()) reloadTab(id ?? -1, contents);
+            });
             sendState();
             return;
           }
@@ -8352,6 +8411,20 @@ ${artifact.content.slice(0, 1500)}`;
   // file takes a moment, so the main window's page may already have loaded.)
   watchUi(win.webContents);
   watchUi(sidebar);
+  recoverOnCrash(win.webContents, () => undefined);
+  recoverOnCrash(sidebar, () => undefined);
+  recoverOnCrash(popup, () => {
+    popupReady = false;
+  });
+  recoverOnCrash(find, () => {
+    findReady = false;
+  });
+  recoverOnCrash(suggestPage, () => {
+    suggestReady = false;
+  });
+  recoverOnCrash(overlayPage, () => {
+    overlayReady = false;
+  });
   // The main window's page may have finished loading (and asked for its state)
   // while the save files were being read, before anyone was listening for that
   // request. Send it the state now so it is not left blank.
