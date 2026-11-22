@@ -2977,7 +2977,10 @@ export async function createTabs(
     ) {
       return;
     }
-    // The Space may have changed while the dialog was open.
+    // The Space may have changed (or been deleted by something else) while the dialog was open: what
+    // is put away is what it is now, and nothing is put away twice.
+    const current = model.findSpace(state, id);
+    if (!current) return;
     syncLinkSnapshots(); // Chats' links to this Space and its tabs remember them.
     // It waits in Recently deleted (its pages as links, and which artifacts it held),
     // unless there was nothing in it.
@@ -2987,14 +2990,15 @@ export async function createTabs(
     const artifactIds = artifacts.artifacts
       .filter((a) => a.spaceId === id)
       .map((a) => a.id);
-    if (pages.length > 0 || artifactIds.length > 0 || space.about !== '') {
+    if (pages.length > 0 || artifactIds.length > 0 || current.about !== '') {
       spaceTrash = trashSpace(
         spaceTrash,
         {
-          name: space.name,
-          color: space.color,
-          emoji: space.emoji,
-          about: space.about,
+          spaceId: id,
+          name: current.name,
+          color: current.color,
+          emoji: current.emoji,
+          about: current.about,
           pages,
           artifactIds,
         },
@@ -3912,9 +3916,15 @@ export async function createTabs(
           : null;
       },
       create: (chatId, input) => {
+        // A Space deleted while the card waited for you is not a place to put it: it goes outside every
+        // Space (it would otherwise be lost from the panel).
+        const place =
+          input.spaceId !== null && !model.findSpace(state, input.spaceId)
+            ? { ...input, spaceId: null }
+            : input;
         const result = artifactsModel.createArtifact(
           artifacts,
-          input,
+          place,
           Date.now(),
         );
         if (!result.ok) {
@@ -4203,9 +4213,29 @@ export async function createTabs(
       ...taken.item,
       pages: taken.item.pages.map((p) => ({ ...p, closed: true })),
     });
-    if (id === null) return;
+    if (id === null) {
+      // It stays in Recently deleted, and you are told why nothing happened.
+      void dialog.showMessageBox(win, {
+        type: 'info',
+        title: 'Cannot bring it back',
+        message: 'There are too many Spaces to bring this one back.',
+        detail: 'Delete a Space you no longer need, then try again.',
+        buttons: ['OK'],
+      });
+      return;
+    }
     spaceTrash = taken.trash;
     spaceTrashSaver.schedule();
+    // The chats that were linked to the Space are linked to it again (it has a new number now).
+    if (taken.item.spaceId !== null) {
+      commitChats(
+        chatsModel.retargetEverywhere(chats, 'space', taken.item.spaceId, {
+          id,
+          title: taken.item.name,
+          url: null,
+        }),
+      );
+    }
     let kept = artifacts;
     for (const artifactId of taken.item.artifactIds) {
       const found = artifactsModel.findArtifact(kept, artifactId);
