@@ -168,8 +168,15 @@ const clampChatHeight = (height: number) =>
 const clampPanelWidth = (width: number) =>
   clampTo(PANEL_MIN_WIDTH, PANEL_MAX_WIDTH, width);
 
-const MAX_TABS = 1000;
+// How many tabs (the pages and closed links in Spaces) there are before the oldest closed link is let go
+// to make room for a new tab (see addTab), and how many Spaces the assistant and "Restore" may make.
+export const MAX_TABS = 1000;
 export const MAX_SPACES = 200;
+// What is READ back from the save file is allowed to be much more than that, so that nothing you have
+// is ever dropped at start (it used to stop at 1,000 tabs and 200 Spaces, losing the newest). These
+// only guard against a damaged or hostile file.
+export const LOAD_MAX_TABS = 5000;
+export const LOAD_MAX_SPACES = 2000;
 const MAX_NAME = 60;
 const MAX_TITLE = 200;
 const MAX_URL = 4096;
@@ -238,7 +245,7 @@ export function parseState(raw: unknown): SavedState {
   const spaceIds = new Set<number>();
   if (Array.isArray(raw.spaces)) {
     for (const item of raw.spaces) {
-      if (state.spaces.length >= MAX_SPACES) break;
+      if (state.spaces.length >= LOAD_MAX_SPACES) break;
       if (!isRecord(item) || !isId(item.id) || spaceIds.has(item.id)) continue;
       spaceIds.add(item.id);
       state.spaces.push({
@@ -256,7 +263,7 @@ export function parseState(raw: unknown): SavedState {
   const tabIds = new Set<number>();
   if (Array.isArray(raw.tabs)) {
     for (const item of raw.tabs) {
-      if (state.tabs.length >= MAX_TABS) break;
+      if (state.tabs.length >= LOAD_MAX_TABS) break;
       if (
         !isRecord(item) ||
         !isId(item.id) ||
@@ -290,7 +297,7 @@ export function parseState(raw: unknown): SavedState {
   if (Array.isArray(raw.artifactTabs)) {
     const seen = new Set<number>();
     for (const item of raw.artifactTabs) {
-      if (state.artifactTabs.length >= MAX_TABS) break;
+      if (state.artifactTabs.length >= LOAD_MAX_TABS) break;
       if (
         !isRecord(item) ||
         !isId(item.artifactId) ||
@@ -449,17 +456,25 @@ export function addTab(
     spaceId,
     closed: false,
   };
+  // At the limit, the oldest closed link (a page kept in a Space after it was closed) is let go to
+  // make room. Pages that are open are never dropped; with none to let go, the new tab is added
+  // anyway.
+  let existing = state.tabs;
+  if (existing.length >= MAX_TABS) {
+    const oldest = existing.find((t) => t.closed);
+    if (oldest) existing = existing.filter((t) => t !== oldest);
+  }
   const position =
     options.after === undefined
       ? -1
-      : state.tabs.findIndex((t) => t.id === options.after);
+      : existing.findIndex((t) => t.id === options.after);
   const tabs =
     position < 0
-      ? [...state.tabs, tab]
+      ? [...existing, tab]
       : [
-          ...state.tabs.slice(0, position + 1),
+          ...existing.slice(0, position + 1),
           tab,
-          ...state.tabs.slice(position + 1),
+          ...existing.slice(position + 1),
         ];
   return {
     id,

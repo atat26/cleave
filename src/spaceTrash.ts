@@ -11,6 +11,9 @@ export interface TrashedPage {
 
 export interface TrashedSpace {
   id: number;
+  // The Space's own number when it was deleted, so the chats that were linked to it can be linked to
+  // it again when it is brought back (null for one put away by an older version).
+  spaceId: number | null;
   name: string;
   color: string;
   emoji: string | null;
@@ -27,10 +30,13 @@ export interface SpaceTrash {
 }
 
 export const MAX_TRASHED_SPACES = 50;
-export const MAX_TRASHED_PAGES = 300;
+// As many pages as a Space can hold (see MAX_TABS in model.ts), so deleting a big Space loses none.
+export const MAX_TRASHED_PAGES = 1000;
 const MAX_TEXT = 200;
 const MAX_ABOUT = 1000;
-const MAX_URL = 2000;
+// As long as an address in a tab may be (MAX_URL in model.ts): a long sign-in or search address must
+// survive "bring it back".
+const MAX_URL = 4096;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const defaultSpaceTrash = (): SpaceTrash => ({
@@ -70,6 +76,7 @@ function cleanItem(raw: unknown): TrashedSpace | null {
   const name = text(r.name, 60);
   return {
     id: r.id,
+    spaceId: isCount(r.spaceId) && r.spaceId >= 1 ? r.spaceId : null,
     name: name === '' ? 'Space' : name,
     color: text(r.color, 20),
     emoji:
@@ -111,6 +118,7 @@ export function parseSpaceTrash(raw: unknown): SpaceTrash {
 export function trashSpace(
   trash: SpaceTrash,
   space: {
+    spaceId?: number | null;
     name: string;
     color: string;
     emoji: string | null;
@@ -122,6 +130,10 @@ export function trashSpace(
 ): SpaceTrash {
   const item: TrashedSpace = {
     id: trash.nextId,
+    spaceId:
+      typeof space.spaceId === 'number' && isCount(space.spaceId)
+        ? space.spaceId
+        : null,
     name: text(space.name, 60) || 'Space',
     color: text(space.color, 20),
     emoji: space.emoji,

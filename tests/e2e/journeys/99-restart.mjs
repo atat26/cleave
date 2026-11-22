@@ -83,7 +83,17 @@ journeys.push({
           `document.querySelector("textarea[aria-label^='Edit ']") !== null`,
         ),
       { timeout: 45000, every: 500 },
-    );
+    ).catch(async (error) => {
+      const seen = await app
+        .ev(
+          `JSON.stringify({ root: document.getElementById('root').children.length, text: document.body.innerText.slice(0, 120), textareas: document.querySelectorAll('textarea').length, href: location.href, ready: document.readyState, api: typeof window.browserApi, scripts: [...document.scripts].map((x) => x.src).join(' ') })`,
+        )
+        .catch((e) => String(e));
+      const state = await app.state().catch(() => null);
+      throw new Error(
+        `${error.message}. The page: ${seen}. Active: ${JSON.stringify(state?.active)}, view: ${state?.viewMode}, tabs: ${JSON.stringify(state?.artifactTabs)}`,
+      );
+    });
     await sleep(500);
     const closeNow = await app.prepareClose();
     await app.ev(`(() => {
