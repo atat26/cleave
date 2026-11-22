@@ -34,6 +34,8 @@ export const journeys = [
       const info = await app.api('appInfo');
       assert.equal(info.version, version);
       assert.equal(info.installed, false);
+      // What a problem report is filled in with.
+      assert.match(info.system, /^Windows \d+\.\d+\.\d+/);
       const status = await app.api('llmStatus');
       assert.equal(status.hasKey, true);
     },

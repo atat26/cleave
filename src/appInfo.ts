@@ -13,6 +13,7 @@ export function registerAppInfo(win: BrowserWindow): void {
       version: app.getVersion(),
       installed: app.isPackaged,
       dataFolder: app.getPath('userData'),
+      system: `${process.platform === 'win32' ? 'Windows' : process.platform} ${process.getSystemVersion()}`,
     };
   });
 }

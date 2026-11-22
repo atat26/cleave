@@ -1,0 +1,63 @@
+name: Annoyance
+description: Something that works, but is slow, awkward, ugly, confusing or in the way
+title: '[Annoyance] '
+labels: ['annoyance']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Small things count. This list is **public**, so please do not paste passwords, API keys, or private pages: describe them instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What annoys you
+      description: What you were doing, and what got in the way.
+    validations:
+      required: true
+  - type: dropdown
+    id: often
+    attributes:
+      label: How often
+      options:
+        - Every time
+        - Often
+        - Now and then
+        - Once
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Tabs and pages
+        - Spaces
+        - Chat and the assistant
+        - Documents (artifacts)
+        - Settings
+        - Extensions
+        - Downloads
+        - Speed
+        - How it looks
+        - Something else
+    validations:
+      required: false
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would be better (optional)
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Cleave version
+      description: Filled in for you when you report from Settings → About.
+    validations:
+      required: false
+  - type: input
+    id: system
+    attributes:
+      label: Windows version
+    validations:
+      required: false
