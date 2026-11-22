@@ -1,0 +1,79 @@
+name: Bug
+description: Something broke, showed an error, or did the wrong thing
+title: '[Bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This list is **public**. Please do not paste passwords, API keys, or the addresses and text of private pages. Describe them instead ("my bank's login page").
+        To report a security problem privately, use the **Security** tab instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, and what went wrong. A sentence is enough.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: Steps, if you know them. "It just happened once" is fine too.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Tabs and pages
+        - Spaces
+        - Chat and the assistant
+        - Documents (artifacts)
+        - Settings
+        - Extensions
+        - Downloads
+        - Updating or installing
+        - Closing or starting the app
+        - Something else
+    validations:
+      required: false
+  - type: dropdown
+    id: dialog
+    attributes:
+      label: Did an error window appear?
+      options:
+        - 'No'
+        - "Yes: 'A JavaScript error occurred in the main process'"
+        - 'Yes: something else'
+    validations:
+      required: false
+  - type: textarea
+    id: log
+    attributes:
+      label: Error log (optional)
+      description: |
+        If the app kept a record, it is in `%APPDATA%\Cleave\errors.log` (open it with Notepad). Paste the last few entries, after removing anything private.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Cleave version
+      description: Filled in for you when you report from Settings → About.
+    validations:
+      required: false
+  - type: input
+    id: system
+    attributes:
+      label: Windows version
+    validations:
+      required: false

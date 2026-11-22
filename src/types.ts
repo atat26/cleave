@@ -52,6 +52,8 @@ export type AppInfo = {
   installed: boolean;
   // The folder this copy keeps its data in.
   dataFolder: string;
+  // The Windows version (for a report; nothing else about the computer).
+  system: string;
 };
 
 // The sites the assistant trusts or may not touch (see siteTrust.ts).

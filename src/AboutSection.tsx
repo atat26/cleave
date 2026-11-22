@@ -4,6 +4,7 @@ import type { AppInfo } from './types';
 import { describeUpdate } from './updateState';
 import type { UpdateState } from './updateState';
 import { Button } from './ui/controls';
+import { feedbackUrl, ISSUES_URL } from './feedback';
 
 // Settings > About: the name, the version, which copy of the app this is (the installed one, or a
 // copy started from the project folder, which keeps its data in a different folder), and the update
@@ -48,6 +49,55 @@ export function AboutSection() {
           </div>
         </>
       )}
+      <div>
+        <div style={{ fontWeight: 600 }}>Report a problem</div>
+        <div className="muted" style={{ fontSize: 'var(--fs-xs)' }}>
+          A bug, or something that annoys you. It opens a short form on the
+          project's issue list, already filled in with the version. The list is
+          public: do not put passwords or private pages in it.
+        </div>
+        <div
+          style={{
+            marginTop: 'var(--s-3)',
+            display: 'flex',
+            gap: 'var(--s-2)',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Button
+            variant="secondary"
+            onClick={() =>
+              window.browserApi.openUrl(
+                feedbackUrl('bug', {
+                  version: info?.version ?? '',
+                  system: info?.system ?? '',
+                }),
+              )
+            }
+          >
+            Report a bug
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              window.browserApi.openUrl(
+                feedbackUrl('annoyance', {
+                  version: info?.version ?? '',
+                  system: info?.system ?? '',
+                }),
+              )
+            }
+          >
+            Note an annoyance
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => window.browserApi.openUrl(ISSUES_URL)}
+          >
+            See the list
+          </Button>
+        </div>
+      </div>
       {view !== null && (
         <div>
           <div style={{ fontWeight: 600 }}>Updates</div>

@@ -36,6 +36,8 @@
 
 Cleave is an early, personal project, offered as it is with no warranty. The assistant can make mistakes, so check what it does before you rely on it.
 
+**Found a bug, or something that annoys you?** Use **Settings → About → Report a problem** in the app, or [open an issue](https://github.com/atat26/cleave/issues/new/choose). Security problems go through the private route in [SECURITY.md](SECURITY.md).
+
 ---
 
 ## For developers
