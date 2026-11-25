@@ -148,6 +148,23 @@ export function restingChatHeight(
   return base;
 }
 
+// Where an approval card should show while the page and the chat share the window: over the page when
+// the page is the taller half (or they are level), in the chat when the chat is the taller one, so it
+// appears where you are looking (issue #140). Judged by the sizes the two have when nothing is waiting
+// (a chat that opens up to hold a card must not move the card back again). With only the page or only
+// the chat showing there is nothing to choose, and the card stays over the page.
+export function cardBelongsOnPage(
+  viewMode: ViewMode,
+  expanded: boolean,
+  savedHeight: number,
+  window: Size,
+): boolean {
+  if (viewMode !== 'both') return true;
+  const chat = restingChatHeight(viewMode, expanded, savedHeight, window);
+  const page = window.height - TOOLBAR_HEIGHT - PAGE_INSET - chat;
+  return page >= chat;
+}
+
 // ---- Right panel -------------------------------------------------------------
 
 // The widest the right panel may be, so the web page always keeps some room.

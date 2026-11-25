@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   blendSizes,
+  cardBelongsOnPage,
   chatHeightWhileDragging,
   centreWidth,
   easeOutCubic,
@@ -291,4 +292,32 @@ test('a slim chat grows to show a reply being written, and any chat opens for an
     restingChatHeight('chat', false, 500, WINDOW, 'approval'),
     restingChatHeight('chat', false, 500, WINDOW, 'none'),
   );
+});
+
+test('an approval card shows over the page, unless the chat is the taller half', () => {
+  // A slim chat (the usual look): the page is by far the bigger half.
+  assert.equal(cardBelongsOnPage('both', false, 360, WINDOW), true);
+  // An expanded chat of the default height is still smaller than the page.
+  assert.equal(cardBelongsOnPage('both', true, 360, WINDOW), true);
+  // Dragged taller than the page: the card moves to the chat.
+  assert.equal(cardBelongsOnPage('both', true, 600, WINDOW), false);
+  // Only the page, or only the chat: nothing to choose, the card stays over the page.
+  assert.equal(cardBelongsOnPage('page', true, 600, WINDOW), true);
+  assert.equal(cardBelongsOnPage('chat', true, 600, WINDOW), true);
+});
+
+test('the card rule is judged without a waiting card, so opening the chat for it cannot move it back', () => {
+  // The chat is slim, so the page is the bigger half. A waiting card would open the chat to
+  // CHAT_APPROVAL_HEIGHT, but that must not change where the card is shown.
+  assert.equal(cardBelongsOnPage('both', false, 360, WINDOW), true);
+  const withCard = restingChatHeight('both', false, 360, WINDOW, 'approval');
+  assert.ok(withCard >= CHAT_APPROVAL_HEIGHT);
+  assert.equal(cardBelongsOnPage('both', false, 360, WINDOW), true);
+});
+
+test('level halves count as the page', () => {
+  // Find the saved height that makes chat and page level in this window.
+  const level = (WINDOW.height - TOOLBAR_HEIGHT - PAGE_INSET) / 2;
+  assert.equal(cardBelongsOnPage('both', true, level, WINDOW), true);
+  assert.equal(cardBelongsOnPage('both', true, level + 2, WINDOW), false);
 });

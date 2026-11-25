@@ -5,8 +5,10 @@ import {
   ask,
   assert,
   liveTabs,
+  messagesOf,
   newChat,
   openTab,
+  sleep,
   textOf,
   toolParts,
   waitFor,
@@ -246,6 +248,86 @@ export const journeys = [
         assert.equal(reply.status, 'error', JSON.stringify(scripted));
         assert.equal(reply.errorKind, kind, JSON.stringify(scripted));
       }
+    },
+  },
+  {
+    name: 'assistant: in split view the approval card shows over the page, or stays in the chat when the chat is the bigger half (#140)',
+    async run({ app, site, model }) {
+      const tab = await openTab(app, site.ip('/'));
+      await app.api('setViewMode', 'both');
+      // Is the card drawn over the page (in the overlay)?
+      const overlayCard = () =>
+        app.pageEv('#overlay', 'Boolean(document.querySelector(".ao-card"))');
+      // Set the height of the chat the way dragging its top edge does.
+      const dragChat = async (height) => {
+        await app.api('startResize', 'chat');
+        await app.api('resize', 'chat', height);
+        await app.api('endResize', 'chat', height);
+        await sleep(600);
+      };
+      // Ask for something that needs a card, look at where the card is, then say no.
+      const where = async (text) => {
+        const chat = await newChat(app, { tabs: [tab] });
+        model.script([
+          {
+            tools: [
+              {
+                name: 'go_to',
+                args: { tab: tab.id, url: site.local('/about') },
+              },
+            ],
+          },
+          { text: 'Not done.' },
+        ]);
+        const sent = await app.api('chatSend', chat, text, []);
+        assert.ok(sent?.ok);
+        const waiting = await waitFor('the card to wait', async () => {
+          const last = [...(await messagesOf(app, chat))]
+            .reverse()
+            .find((m) => m.role === 'assistant');
+          return last?.parts.find(
+            (p) => p.type === 'tool' && p.status === 'waiting',
+          )
+            ? last
+            : null;
+        });
+        await sleep(800);
+        const over = await overlayCard();
+        const part = waiting.parts.find((p) => p.status === 'waiting');
+        await app.api('chatDecide', chat, waiting.id, part.id, 'deny');
+        await waitFor('the reply to finish', async () => {
+          const last = [...(await messagesOf(app, chat))]
+            .reverse()
+            .find((m) => m.role === 'assistant');
+          return (
+            last && last.status !== 'streaming' && last.status !== 'waiting'
+          );
+        });
+        return over;
+      };
+
+      // A slim chat: the page is the bigger half, so the card is over the page.
+      await dragChat(40);
+      assert.equal(
+        await where('Open the about page'),
+        true,
+        'slim chat: over the page',
+      );
+      // A chat dragged taller than the page: the card stays in the chat.
+      await dragChat(560);
+      assert.equal(
+        await where('Open the about page again'),
+        false,
+        'tall chat: in the chat',
+      );
+      // Back to a slim chat: over the page again.
+      await dragChat(40);
+      assert.equal(
+        await where('Open the about page once more'),
+        true,
+        'slim chat again',
+      );
+      await app.api('removeTab', tab.id);
     },
   },
 ];
