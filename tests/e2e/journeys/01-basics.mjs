@@ -80,6 +80,32 @@ export const journeys = [
     },
   },
   {
+    name: 'tabs: a tab keeps its icon when you move about inside the site (#139)',
+    async run({ app, site }) {
+      const tab = await openTab(app, site.ip('/icon-a'));
+      const icon = site.ip('/icon.png');
+      const iconOf = async () =>
+        (await tabsOf(app)).find((t) => t.id === tab.id)?.favicon ?? null;
+      await waitFor(
+        'the page to report its icon',
+        async () => (await iconOf()) === icon,
+      );
+      // Go to another page of the same site, which names the same icon.
+      await app.api('selectTab', tab.id);
+      await app.api('navigate', site.ip('/icon-b'));
+      await waitFor(
+        'the second page',
+        async () =>
+          (await tabsOf(app)).find((t) => t.id === tab.id)?.title ===
+          'E2E Icon B',
+      );
+      // Give the page time to say its icon again, if it is going to.
+      await sleep(2000);
+      assert.equal(await iconOf(), icon, 'the tab lost its icon');
+      await app.api('removeTab', tab.id);
+    },
+  },
+  {
     name: 'spaces: make one, rename it, put a tab in it, move a tab between Spaces',
     async run({ app, site }) {
       const work = await makeSpace(app, 'E2E Work');
