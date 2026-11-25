@@ -169,7 +169,12 @@ export function FileArtifactView({
           This file is no longer there.
         </p>
       ) : isPdf ? (
-        <PdfPages data={shown.data} zoom={zoom} onPages={setPages} />
+        <PdfPages
+          data={shown.data}
+          zoom={zoom}
+          onPages={setPages}
+          memoryId={tab.id}
+        />
       ) : (
         <div className="file-stage image-stage">
           <img

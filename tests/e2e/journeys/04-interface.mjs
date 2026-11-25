@@ -1,4 +1,8 @@
 // Things you do with the interface itself: the message box, the address bar.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { makePdf } from '../lib/makePdf.mjs';
 import {
   ask,
   assert,
@@ -31,7 +35,103 @@ const scrollInfo = (app) =>
 const setScrollTop = (app, top) =>
   app.ev(`(() => { const el = ${LIST}; el.scrollTop = ${top}; })()`);
 
+// The scrolling list of a PDF that is open: where it is, how long it is, and whether it shows.
+const pdfInfo = (app) =>
+  app.ev(`(() => {
+    const el = document.querySelector(".file-stage");
+    if (!el) return null;
+    return {
+      top: el.scrollTop,
+      height: el.scrollHeight,
+      pages: el.querySelectorAll(".pdf-page").length,
+      shown: getComputedStyle(el).visibility !== "hidden",
+    };
+  })()`);
+
 export const journeys = [
+  {
+    name: 'interface: a PDF keeps where you were reading when you go to another tab and back (#137)',
+    async run({ app, site }) {
+      const file = path.join(os.tmpdir(), `e2e-pages-${Date.now()}.pdf`);
+      fs.writeFileSync(file, makePdf(40));
+      try {
+        await app.api('setViewMode', 'both');
+        const page = await openTab(app, site.ip('/about'));
+        // Hand the app a real file the way dropping it on the window does: a file input gets the file
+        // through the debugging connection, and its path is what the app is given.
+        await app.ev(
+          `(() => { const i = document.createElement('input'); i.type = 'file'; i.id = 'e2e-file'; document.body.append(i); })()`,
+        );
+        const { root } = await app.uiSend('DOM.getDocument', {});
+        const { nodeId } = await app.uiSend('DOM.querySelector', {
+          nodeId: root.nodeId,
+          selector: '#e2e-file',
+        });
+        await app.uiSend('DOM.setFileInputFiles', { nodeId, files: [file] });
+        const added = await app.ev(
+          `window.browserApi.uploadDrop([document.getElementById('e2e-file').files[0]], null).then(String)`,
+        );
+        assert.equal(added, '1', 'the PDF was not added');
+        await app.ev(`document.getElementById('e2e-file').remove()`);
+        const doc = await waitFor('the PDF tab', async () =>
+          (await app.state()).artifactTabs.find((t) =>
+            t.title.includes('e2e-pages'),
+          ),
+        );
+        const open = () =>
+          waitFor('the PDF pages', async () => {
+            const info = await pdfInfo(app);
+            return info && info.pages === 40 && info.shown && info.height > 5000
+              ? info
+              : null;
+          });
+
+        const first = await open();
+        assert.ok(first.top < 5, 'a PDF opens at the top');
+        // Read down to about 40% of the way, then go to a web page and come back.
+        const share = 0.4;
+        await app.ev(
+          `(() => { const el = document.querySelector(".file-stage"); el.scrollTop = Math.round(el.scrollHeight * ${share}); })()`,
+        );
+        await sleep(400);
+        await app.api('selectTab', page.id);
+        await waitFor(
+          'the PDF to go',
+          async () => (await pdfInfo(app)) === null,
+        );
+        await app.api('artifactSelect', doc.id);
+        const back = await open();
+        // (A moment for the place to be put back once the pages are measured.)
+        await sleep(500);
+        const now = await pdfInfo(app);
+        assert.ok(
+          Math.abs(now.top / now.height - share) < 0.02,
+          `it should be about ${share} of the way down, not ${(now.top / now.height).toFixed(3)}`,
+        );
+        assert.ok(back.shown);
+
+        // A PDF you left at the top opens at the top.
+        await app.ev(
+          `(() => { document.querySelector(".file-stage").scrollTop = 0; })()`,
+        );
+        await sleep(400);
+        await app.api('selectTab', page.id);
+        await waitFor(
+          'the PDF to go again',
+          async () => (await pdfInfo(app)) === null,
+        );
+        await app.api('artifactSelect', doc.id);
+        await open();
+        await sleep(300);
+        assert.ok((await pdfInfo(app)).top < 5, 'it should be at the top');
+
+        await app.api('artifactDelete', doc.id);
+        await app.api('removeTab', page.id);
+      } finally {
+        fs.rmSync(file, { force: true });
+      }
+    },
+  },
   {
     name: 'interface: shrinking the chat and opening it again keeps where you were reading (#138)',
     async run({ app, site, model }) {
