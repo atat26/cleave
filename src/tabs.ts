@@ -20,6 +20,7 @@ import {
   fitCentre,
   pageRect,
   panelWidthWhileDragging,
+  cardBelongsOnPage,
   restingChatHeight,
   settleChat,
   settlePanel,
@@ -2035,8 +2036,17 @@ export async function createTabs(
     const webTab =
       pageArea && activeId !== null && views.has(activeId) ? activeId : null;
     const run = overlayReply ? runOf(overlayReply.message) : null;
+    // A waiting card pops out over the page, unless the chat is the taller half of the window: then
+    // it stays in the chat, where you are looking.
     const approval =
-      overlayReady && overlayReply
+      overlayReady &&
+      overlayReply &&
+      cardBelongsOnPage(
+        state.settings.viewMode,
+        state.settings.chatExpanded,
+        state.settings.chatHeight,
+        windowSize(),
+      )
         ? popoutOf(overlayReply.message, state.tabs)
         : null;
     const approvalKey = approval
