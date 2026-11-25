@@ -22,6 +22,8 @@ const PAGES = {
     'E2E Form',
     '<h1>Contact</h1><form onsubmit="return false"><label>Name <input id="name" name="name" type="text"></label><label>Email <input id="email" name="email" type="email"></label><button type="submit">Send</button></form>',
   ),
+  // A page whose look comes from a separate style sheet (the heading is red only if it was loaded).
+  '/styled': `<!doctype html><html><head><meta charset="utf-8"><title>E2E Styled</title><link rel="stylesheet" href="/style.css"></head><body><h1 id="title">Styled</h1></body></html>`,
   // A page that tries to give the assistant orders.
   '/hostile': page(
     'E2E Hostile',
@@ -32,6 +34,10 @@ const PAGES = {
 export async function startSite() {
   const server = http.createServer((req, res) => {
     const path = new URL(req.url, 'http://x').pathname;
+    if (path === '/style.css') {
+      res.writeHead(200, { 'content-type': 'text/css' });
+      return res.end('#title { color: rgb(200, 0, 0); }');
+    }
     const html = PAGES[path];
     if (html === undefined) {
       res.writeHead(404, { 'content-type': 'text/plain' });
