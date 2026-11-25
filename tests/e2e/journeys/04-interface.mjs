@@ -21,7 +21,76 @@ const typeInBox = (app, text) =>
   })()`);
 const boxText = (app) => app.ev(`${BOX}?.textContent ?? null`);
 
+// The conversation box of the chat that is showing: where it is scrolled to, and how tall it is.
+const LIST = `document.querySelector(".chat-messages")`;
+const scrollInfo = (app) =>
+  app.ev(`(() => {
+    const el = ${LIST};
+    return el ? { top: Math.round(el.scrollTop), max: el.scrollHeight - el.clientHeight } : null;
+  })()`);
+const setScrollTop = (app, top) =>
+  app.ev(`(() => { const el = ${LIST}; el.scrollTop = ${top}; })()`);
+
 export const journeys = [
+  {
+    name: 'interface: shrinking the chat and opening it again keeps where you were reading (#138)',
+    async run({ app, site, model }) {
+      await app.api('setViewMode', 'both');
+      const page = await openTab(app, site.ip('/about'));
+      const lines = Array.from(
+        { length: 60 },
+        (_, i) => `Paragraph ${i + 1} of a long answer.`,
+      ).join('\n\n');
+      model.script([{ text: lines }]);
+      const chat = await newChat(app);
+      await ask(app, chat, 'Write a long answer');
+      // Show the chat on its own (the whole window), where the list is drawn and long.
+      const open = async () => {
+        await app.api('setViewMode', 'chat');
+        return waitFor('a long conversation', async () => {
+          const info = await scrollInfo(app);
+          return info && info.max > 600 ? info : null;
+        });
+      };
+      // Back to the page with the slim chat bar: the list is taken away.
+      const shrink = async () => {
+        await app.api('setViewMode', 'both');
+        await waitFor(
+          'the list to go',
+          async () => (await scrollInfo(app)) === null,
+        );
+      };
+      const long = await open();
+      // A chat opens at the bottom.
+      assert.ok(
+        Math.abs(long.top - long.max) < 5,
+        'it should start at the bottom',
+      );
+
+      // Scroll up to read something, then shrink the chat and open it again.
+      const place = Math.round(long.max / 3);
+      await setScrollTop(app, place);
+      await sleep(300);
+      await shrink();
+      const back = await open();
+      assert.ok(
+        Math.abs(back.top - place) < 5,
+        'it should be where you left it (' + place + '), not at ' + back.top,
+      );
+
+      // Scrolled to the bottom, it opens at the bottom again.
+      await setScrollTop(app, back.max);
+      await sleep(300);
+      await shrink();
+      const bottom = await open();
+      assert.ok(
+        Math.abs(bottom.top - bottom.max) < 5,
+        'it should be at the bottom',
+      );
+      await app.api('setViewMode', 'both');
+      await app.api('removeTab', page.id);
+    },
+  },
   {
     name: 'interface: each chat keeps its own draft',
     async run({ app, site, model }) {
