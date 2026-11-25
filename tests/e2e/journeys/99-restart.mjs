@@ -18,6 +18,8 @@ export const journeys = [
       const { app, site, model } = ctx;
       const space = await makeSpace(app, 'E2E Persist');
       await openTab(app, site.ip('/price'), space.id);
+      // A page with its own style sheet, which must come back styled (issue #141).
+      const styled = await openTab(app, site.ip('/styled'));
       model.script([{ text: 'Remember this answer.' }]);
       const chat = await newChat(app);
       await ask(app, chat, 'A question that should be kept');
@@ -37,6 +39,18 @@ export const journeys = [
         ),
         'the tab in the Space is gone',
       );
+      // The page that was open comes back with its look: the style sheet was applied.
+      await after.api('selectTab', styled.id);
+      const color = await waitFor('the styled page to load', async () => {
+        const value = await after
+          .pageEv(
+            '/styled',
+            'getComputedStyle(document.getElementById("title")).color',
+          )
+          .catch(() => null);
+        return value || null;
+      });
+      assert.equal(color, 'rgb(200, 0, 0)', 'the page came back with no style');
       const messages = await waitFor('the chat to load', async () => {
         const m = await messagesOf(after, chat);
         return m.length > 0 ? m : null;
