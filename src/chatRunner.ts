@@ -13,6 +13,7 @@ import type { ChatsState } from './chats.ts';
 import { MAX_PAGE_CHARS } from './agentTools.ts';
 import type { AgentTools, ToolOutcome } from './agentTools.ts';
 import { cutOffNote } from './cutOffNote.ts';
+import { cutOffPlan } from './cutOffCall.ts';
 import { SET_PLAN } from './taskPlan.ts';
 import { lengthNote } from './lengthNote.ts';
 import { pruneConversation } from './pruneConversation.ts';
@@ -258,7 +259,15 @@ export function createChatRunner(deps: RunnerDeps) {
         // what it found back to the model.
         conversation = [
           ...conversation,
-          { role: 'assistant', content: roundText, toolCalls: calls },
+          {
+            role: 'assistant',
+            content: roundText,
+            // A cut-off call is sent back as an empty one: its text is not whole (some providers
+            // refuse arguments that are not valid), and the refusal that follows says what happened.
+            toolCalls: calls.map((c) =>
+              c.cutOff ? { id: c.id, name: c.name, arguments: '{}' } : c,
+            ),
+          },
         ];
         // Pictures the tools of this round want the model to look at.
         const pictures: NonNullable<ToolOutcome['images']> = [];
@@ -292,7 +301,8 @@ export function createChatRunner(deps: RunnerDeps) {
             });
             continue;
           }
-          const plan = tools.plan(call);
+          // A call that was cut off has unfinished arguments: it is refused, and the model is told why.
+          const plan = call.cutOff ? cutOffPlan(call) : tools.plan(call);
           // Asking you first, unless you already allowed the rest of this reply
           // and this one is not a kind that always asks.
           const mustAsk =

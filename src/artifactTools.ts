@@ -65,6 +65,12 @@ export const WRITING_ARTIFACT_TOOLS: ReadonlySet<string> = new Set([
   'create_space',
 ]);
 
+// About how much text one call may hold (the limit on a call, MAX_TOOL_ARGUMENTS in openrouter.ts, is
+// a little more, because quotes and new lines take extra room when the call is written). A longer
+// document is made in parts.
+export const DOCUMENT_CHARS_PER_CALL = 30_000;
+const PARTS_HINT = `At most about ${DOCUMENT_CHARS_PER_CALL.toLocaleString('en-US')} characters in one call; for a longer document, make it with the first part and add the rest with edit_artifact.`;
+
 export const MAX_ARTIFACT_READS = 10;
 export const MAX_ARTIFACT_WRITES = 10;
 // How much of an artifact one read returns (use "start" to continue).
@@ -176,7 +182,7 @@ export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [
         kind: KIND_SCHEMA,
         content: {
           type: 'string',
-          description: 'The full text of the document.',
+          description: `The full text of the document. ${PARTS_HINT}`,
         },
         emoji: EMOJI_SCHEMA,
       },
@@ -202,7 +208,7 @@ export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [
         kind: KIND_SCHEMA,
         content: {
           type: 'string',
-          description: 'The full text of the document.',
+          description: `The full text of the document. ${PARTS_HINT}`,
         },
         emoji: EMOJI_SCHEMA,
       },
@@ -244,7 +250,7 @@ export const ARTIFACT_DEFINITIONS: ToolDefinition[] = [
         emoji: EMOJI_SCHEMA,
         content: {
           type: 'string',
-          description: 'The new full text, replacing the old text.',
+          description: `The new full text, replacing the old text. At most about ${DOCUMENT_CHARS_PER_CALL.toLocaleString('en-US')} characters in one call; for more, change it in several edits (find and replace).`,
         },
         find: {
           type: 'string',

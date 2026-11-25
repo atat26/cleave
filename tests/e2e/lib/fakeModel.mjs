@@ -9,6 +9,7 @@
 //   { tools: [{ name: 'go_to', args: { tab: 1, url } }] }   asks for tools (and may also have text)
 //   { status: 429 }                                         an HTTP error (401, 402, 429, 500...)
 //   { midStreamError: true }                                an error inside the stream
+//   { ..., finish: 'length' }                               ends the reply the way the length limit does
 //   (request) => reply                                      decides from what it was sent
 // A request that finds the script empty gets a plain "(no more script)" answer and is counted in
 // `unscripted`, so a test can assert the app did not ask for more than expected.
@@ -150,7 +151,11 @@ export async function startFakeModel() {
     });
     send({
       choices: [
-        { delta: {}, finish_reason: tools.length > 0 ? 'tool_calls' : 'stop' },
+        {
+          delta: {},
+          finish_reason:
+            reply.finish ?? (tools.length > 0 ? 'tool_calls' : 'stop'),
+        },
       ],
     });
     send({
