@@ -5,6 +5,12 @@ import http from 'node:http';
 const page = (title, body) =>
   `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${body}</body></html>`;
 
+// A one-pixel picture, for the pages' icon.
+const ICON = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 const PAGES = {
   '/': page(
     'E2E Home',
@@ -24,6 +30,9 @@ const PAGES = {
   ),
   // A page whose look comes from a separate style sheet (the heading is red only if it was loaded).
   '/styled': `<!doctype html><html><head><meta charset="utf-8"><title>E2E Styled</title><link rel="stylesheet" href="/style.css"></head><body><h1 id="title">Styled</h1></body></html>`,
+  // Two pages of one site that name the same icon (moving between them is the usual way to lose it).
+  '/icon-a': `<!doctype html><html><head><meta charset="utf-8"><title>E2E Icon A</title><link rel="icon" type="image/png" href="/icon.png"></head><body><h1>Icon A</h1><a href="/icon-b">B</a></body></html>`,
+  '/icon-b': `<!doctype html><html><head><meta charset="utf-8"><title>E2E Icon B</title><link rel="icon" type="image/png" href="/icon.png"></head><body><h1>Icon B</h1></body></html>`,
   // A page that tries to give the assistant orders.
   '/hostile': page(
     'E2E Hostile',
@@ -37,6 +46,10 @@ export async function startSite() {
     if (path === '/style.css') {
       res.writeHead(200, { 'content-type': 'text/css' });
       return res.end('#title { color: rgb(200, 0, 0); }');
+    }
+    if (path === '/icon.png') {
+      res.writeHead(200, { 'content-type': 'image/png' });
+      return res.end(ICON);
     }
     const html = PAGES[path];
     if (html === undefined) {

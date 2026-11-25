@@ -188,6 +188,13 @@ export async function startApp({ profile, env = {}, log } = {}) {
       if (!target) throw new Error(`no page with "${urlPart}" in its address`);
       return (await on(target)).ev(expression);
     },
+    // Send a debugging command to the app's own window and bring back the answer (for example
+    // DOM.setFileInputFiles, to give a file input a real file from this computer).
+    async uiSend(method, params = {}) {
+      const answer = await (await on(await uiTarget())).send(method, params);
+      if (answer.error) throw new Error(`${method}: ${answer.error.message}`);
+      return answer.result;
+    },
     // Send a debugging command to a page (found by part of its address), for example Page.crash.
     // The connection to a page that dies cannot be used again, so all of them are dropped afterwards.
     async pageSend(urlPart, method, params = {}) {

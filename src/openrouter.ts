@@ -155,6 +155,9 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
+  // The call was cut off (it was longer than a call may be, or the provider stopped the reply at its
+  // length limit), so its arguments are not whole. It must not be run.
+  cutOff?: true;
 }
 
 // A piece of a message that is not plain text: a picture (base64 bytes of the file).
@@ -356,25 +359,32 @@ const headers = (apiKey: string, json = false): Record<string, string> => ({
 // At most this many tool calls in one reply, and this much text in a call's
 // arguments (a model that goes beyond is misbehaving).
 const MAX_TOOL_CALLS = 8;
-const MAX_TOOL_ARGUMENTS = 10_000;
+export const MAX_TOOL_ARGUMENTS = 40_000;
 
 // A call the provider gave no id gets one of ours, different from every other in the run of the app (the
 // same "call_0" in every round would make two calls look like one to the provider and to the app).
 let fallbackId = 0;
 
 // Join the streamed pieces of tool calls into whole calls.
-function gatherToolCalls(
+// `stoppedAtLimit`: the provider ended the reply at its length limit, so the last call may be unfinished.
+export function gatherToolCalls(
   pieces: Map<number, { id: string; name: string; arguments: string }>,
+  stoppedAtLimit = false,
 ): ToolCall[] {
-  return [...pieces.entries()]
+  const calls = [...pieces.entries()]
     .sort((a, b) => a[0] - b[0])
     .filter(([, call]) => call.name !== '')
-    .slice(0, MAX_TOOL_CALLS)
-    .map(([, call]) => ({
-      id: call.id || `call_${++fallbackId}`,
-      name: call.name,
-      arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS),
-    }));
+    .slice(0, MAX_TOOL_CALLS);
+  return calls.map(([, call], i) => ({
+    id: call.id || `call_${++fallbackId}`,
+    name: call.name,
+    arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS),
+    // Too long for us, or the reply stopped while this (the last) call was being written.
+    ...(call.arguments.length > MAX_TOOL_ARGUMENTS ||
+    (stoppedAtLimit && i === calls.length - 1)
+      ? { cutOff: true as const }
+      : {}),
+  }));
 }
 
 // Send a conversation and get the reply back piece by piece. Stops quietly (an
@@ -461,6 +471,8 @@ async function* streamChatRaw(
   // Did the reply end properly (a finish reason, or the closing "[DONE]")? A stream that just stops
   // was cut off, and must not be saved as a finished reply.
   let finishedProperly = false;
+  // "length": the provider stopped the reply at the limit we set.
+  let finishReason: string | null = null;
   // Which of our pieces each of the provider's call numbers is writing into. A provider that gives
   // every parallel call the number 0 but a different id each is told apart by the id.
   const slotOf = new Map<number, number>();
@@ -500,7 +512,10 @@ async function* streamChatRaw(
         const result = interpretData(event.data);
         for (const item of result.events) {
           if (item.type !== 'tool-call-delta') {
-            if (item.type === 'finish') finishedProperly = true;
+            if (item.type === 'finish') {
+              finishedProperly = true;
+              finishReason = item.reason;
+            }
             yield item;
             continue;
           }
@@ -540,7 +555,7 @@ async function* streamChatRaw(
     }
     // The connection closed with no finish and no "[DONE]": the reply was cut off.
     if (!finishedProperly) throw new ChatError('network');
-    const calls = gatherToolCalls(pieces);
+    const calls = gatherToolCalls(pieces, finishReason === 'length');
     if (calls.length > 0) yield { type: 'tool-calls', calls };
   } finally {
     // Closing the connection also tells OpenRouter to stop generating.

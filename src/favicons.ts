@@ -84,3 +84,22 @@ export function parseFavicons(raw: unknown): FaviconCache {
   }
   return cache;
 }
+
+// The icon a tab shows right after it moves to a new page, until that page reports its own (issue #139).
+// The browser engine does not always announce an icon again when the new page names the same icon as the
+// one before (moving about inside a site), and a tab whose icon was cleared at every move kept the grey
+// circle for good. So: the same site keeps the icon it had, and another site shows the icon remembered
+// for it from an earlier visit, or none. A page that reports a different icon replaces it, as before.
+export function iconAfterNavigation(
+  cache: FaviconCache,
+  previousPage: string,
+  newPage: string,
+  previousIcon: string | null,
+): string | null {
+  const after = siteName(newPage);
+  if (after === null) return null;
+  if (previousIcon !== null && siteName(previousPage) === after) {
+    return previousIcon;
+  }
+  return faviconFor(cache, after);
+}

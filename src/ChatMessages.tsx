@@ -10,6 +10,7 @@ import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import { firstSentIndex } from './chatContext';
+import { chatScroll } from './scrollMemory';
 import { blocksOf, stepView } from './runModel';
 import {
   ApprovalCard,
@@ -759,13 +760,31 @@ export function MessageList({
   const box = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
+  // Where to put the conversation back to when it opens (you had scrolled up in it before it was shrunk
+  // away or you went to another chat), until the messages are there to scroll in.
+  const restoreTo = useRef<number | null>(null);
+  // The messages shown when the chat changed: still the previous chat's, so they do not count.
+  const staleMessages = useRef(messages);
+
   useLayoutEffect(() => {
-    stick.current = true; // A different chat starts at the bottom.
+    // A chat you left scrolled up opens where you were; any other starts at the bottom.
+    restoreTo.current = chatScroll.recall(chatId);
+    staleMessages.current = messages;
+    stick.current = restoreTo.current === null;
   }, [chatId]);
 
   useLayoutEffect(() => {
     const el = box.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (restoreTo.current !== null) {
+      el.scrollTop = restoreTo.current;
+      // Done once this chat's own messages are drawn (a shorter chat just ends where it can).
+      if (messages.length > 0 && messages !== staleMessages.current) {
+        restoreTo.current = null;
+      }
+    } else if (stick.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages, chatId]);
 
   // The conversation also grows without a new message: a step's details opening, a thumbnail loading,
@@ -793,9 +812,14 @@ export function MessageList({
   return (
     <div
       ref={box}
+      className="chat-messages"
       onScroll={(e) => {
         const el = e.currentTarget;
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        // While the old place is being put back, the list is not yet tall enough to say where it is.
+        if (restoreTo.current === null) {
+          chatScroll.remember(chatId, el.scrollTop, stick.current);
+        }
       }}
       style={{
         flex: 1,

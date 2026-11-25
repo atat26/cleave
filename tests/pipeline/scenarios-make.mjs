@@ -359,4 +359,61 @@ export const MAKE_SCENARIOS = [
       ];
     },
   },
+  {
+    // Issue #142: a document longer than one tool call used to be cut off in silence, and the model was
+    // told only "The request was not usable". A call may now hold about 30,000 characters, and a call
+    // that is cut off is refused with a reason that says how to build the document in parts.
+    id: 's34',
+    title: 'Create a long document (longer than the old limit of one call)',
+    turns: [
+      'Write a detailed guide to how HTTPS and TLS work, of at least 16,000 characters (about 2,500 words): one section for each of ten topics, with a worked example in each. Save it as a document.',
+    ],
+    tabs: [],
+    approve: allow,
+    // Measured: about 70,000 to 105,000 tokens (a 40,000-character document is written and read back).
+    budgetTokens: 120000,
+    checks: ({ calls, after, turns }) => {
+      const docs = (after?.artifacts ?? []).filter((a) => a.isNew);
+      const doc = docs[0];
+      const writes = [
+        ...callsOf(calls, 'create_artifact'),
+        ...callsOf(calls, 'edit_artifact'),
+      ];
+      return [
+        check(
+          'makes exactly one document',
+          docs.length === 1,
+          `${docs.length} new documents`,
+        ),
+        check(
+          'the document is longer than the old limit (over 10,000 characters)',
+          !!doc && doc.chars > 10000,
+          doc ? `${doc.chars} chars` : 'none',
+        ),
+        check(
+          'no call was refused as "not usable"',
+          !calls.some((c) => /not usable/i.test(String(c.outcome ?? ''))),
+          `${writes.length} writing calls: ${names(writes)}`,
+        ),
+        // A call that is too long is refused (that is correct); the model must then build the
+        // document in parts, not give up or send the same call again.
+        check(
+          'after a call that was cut off, the document is built in parts',
+          !calls.some((c) => /cut off/i.test(String(c.outcome ?? ''))) ||
+            (count(calls, 'edit_artifact') >= 1 &&
+              callsOf(calls, 'create_artifact').length <= 2),
+          `create x${count(calls, 'create_artifact')}, edit x${count(calls, 'edit_artifact')}`,
+        ),
+        check(
+          'the document is about HTTPS',
+          !!doc && /TLS|HTTPS|certificate/i.test(doc.content),
+        ),
+        check(
+          'says it saved the document',
+          /document|saved|artifact|created/i.test(turns[0].answer),
+          '(read the answer)',
+        ),
+      ];
+    },
+  },
 ];

@@ -7,6 +7,7 @@ import {
   interpretData,
   isValidModelId,
   listModels,
+  MAX_TOOL_ARGUMENTS,
   OPENROUTER_BASE,
   apiBase,
   parseModels,
@@ -904,4 +905,40 @@ test('the model address is OpenRouter, unless a development copy is pointed at t
     if (saved === undefined) delete process.env.AIB_API_BASE;
     else process.env.AIB_API_BASE = saved;
   }
+});
+
+test('a tool call longer than the limit, or cut off by the length limit, is marked as cut off', async () => {
+  const long = (n: number) => `{"content":"${'a'.repeat(n)}"}`;
+  const run = async (arg: string, reason: string) => {
+    const fetchImpl: FetchLike = async () =>
+      streamResponse([
+        toolPiece({
+          index: 0,
+          id: 'c',
+          function: { name: 'create_artifact', arguments: arg },
+        }),
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: reason }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]);
+    const events = await collect(
+      streamChat({ apiKey: KEY, model: 'm', messages: [], fetchImpl }),
+    );
+    return (
+      events.find((e) => e.type === 'tool-calls') as Extract<
+        StreamEvent,
+        { type: 'tool-calls' }
+      >
+    ).calls[0];
+  };
+  // A document of about 20,000 characters now fits whole.
+  const fits = await run(long(20_000), 'tool_calls');
+  assert.equal(fits.cutOff, undefined);
+  assert.equal(JSON.parse(fits.arguments).content.length, 20_000);
+  // Too long for a call: cut, and marked.
+  const tooLong = await run(long(MAX_TOOL_ARGUMENTS), 'tool_calls');
+  assert.equal(tooLong.cutOff, true);
+  assert.equal(tooLong.arguments.length, MAX_TOOL_ARGUMENTS);
+  // The provider stopped the reply at the length limit: the call is unfinished.
+  const stopped = await run('{"content":"abc', 'length');
+  assert.equal(stopped.cutOff, true);
 });

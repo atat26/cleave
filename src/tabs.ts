@@ -20,6 +20,7 @@ import {
   fitCentre,
   pageRect,
   panelWidthWhileDragging,
+  cardBelongsOnPage,
   restingChatHeight,
   settleChat,
   settlePanel,
@@ -202,6 +203,7 @@ import { cookieIsOfSite, siteDataGroups } from './siteData';
 import {
   defaultFavicons,
   faviconFor,
+  iconAfterNavigation,
   parseFavicons,
   rememberFavicon,
 } from './favicons';
@@ -2035,8 +2037,17 @@ export async function createTabs(
     const webTab =
       pageArea && activeId !== null && views.has(activeId) ? activeId : null;
     const run = overlayReply ? runOf(overlayReply.message) : null;
+    // A waiting card pops out over the page, unless the chat is the taller half of the window: then
+    // it stays in the chat, where you are looking.
     const approval =
-      overlayReady && overlayReply
+      overlayReady &&
+      overlayReply &&
+      cardBelongsOnPage(
+        state.settings.viewMode,
+        state.settings.chatExpanded,
+        state.settings.chatHeight,
+        windowSize(),
+      )
         ? popoutOf(overlayReply.message, state.tabs)
         : null;
     const approvalKey = approval
@@ -2341,8 +2352,19 @@ export async function createTabs(
       }
       // A new page: the search is over.
       if (tab.id === findTabId) closeFind(false);
-      // The new page will report its own icon.
-      updateTab(tab.id, { url: contents.getURL(), favicon: null });
+      // The new page will report its own icon if it has another one. Until then the tab keeps the
+      // icon it had on the same site (the engine does not always say it again), or shows the one
+      // remembered for the other site.
+      const before = model.findTab(state, tab.id);
+      updateTab(tab.id, {
+        url: contents.getURL(),
+        favicon: iconAfterNavigation(
+          favicons,
+          before?.url ?? '',
+          contents.getURL(),
+          before?.favicon ?? null,
+        ),
+      });
     });
     contents.on('did-navigate-in-page', () =>
       updateTab(tab.id, { url: contents.getURL() }),
