@@ -10,7 +10,7 @@ import { Badge, Banner, Button, Textarea } from './ui/controls';
 import { Icon } from './ui/Icon';
 import { errorMessage } from './openrouter';
 import { firstSentIndex } from './chatContext';
-import { recallScroll, rememberScroll } from './scrollMemory';
+import { chatScroll } from './scrollMemory';
 import { blocksOf, stepView } from './runModel';
 import {
   ApprovalCard,
@@ -768,7 +768,7 @@ export function MessageList({
 
   useLayoutEffect(() => {
     // A chat you left scrolled up opens where you were; any other starts at the bottom.
-    restoreTo.current = recallScroll(chatId);
+    restoreTo.current = chatScroll.recall(chatId);
     staleMessages.current = messages;
     stick.current = restoreTo.current === null;
   }, [chatId]);
@@ -818,7 +818,7 @@ export function MessageList({
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
         // While the old place is being put back, the list is not yet tall enough to say where it is.
         if (restoreTo.current === null) {
-          rememberScroll(chatId, el.scrollTop, stick.current);
+          chatScroll.remember(chatId, el.scrollTop, stick.current);
         }
       }}
       style={{
