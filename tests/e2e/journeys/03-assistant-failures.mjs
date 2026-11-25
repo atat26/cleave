@@ -40,4 +40,57 @@ export const journeys = [
       await app.api('removeTab', tab.id);
     },
   },
+  {
+    name: 'assistant: a document call cut off by the length limit is not run, and the model is told how to build it in parts',
+    async run({ app, model }) {
+      const chat = await newChat(app);
+      model.script([
+        {
+          // The reply ran out of room while the document was being written.
+          tools: [
+            {
+              name: 'create_artifact',
+              args: '{"title": "Long notes", "kind": "markdown", "content": "# Part one. Some text that never ends',
+            },
+          ],
+          finish: 'length',
+        },
+        // The model starts again with a shorter first part, as it was told.
+        {
+          tools: [
+            {
+              name: 'create_artifact',
+              args: {
+                title: 'Long notes',
+                kind: 'markdown',
+                content: '# Part one\n\n(more to come)',
+              },
+            },
+          ],
+        },
+        { text: 'Made the first part.' },
+      ]);
+      const { reply, cards } = await ask(app, chat, 'Write long notes', {
+        decide: () => 'allow',
+      });
+      // The cut-off call was refused with no card; only the good call asked.
+      assert.equal(cards.length, 1);
+      const parts = toolParts(reply, 'create_artifact');
+      assert.equal(parts.length, 2);
+      assert.equal(parts[0].status, 'error');
+      assert.equal(parts[0].blocked, true);
+      assert.equal(parts[1].status, 'ok');
+      // What the model was told after the cut-off call.
+      const told = model.requests[1].messages.filter((m) => m.role === 'tool');
+      assert.match(String(told[0].content), /cut off before it ended/);
+      assert.match(String(told[0].content), /edit_artifact/);
+      // Nothing half-written was saved: one artifact, whole.
+      const made = (await app.state()).artifacts.filter(
+        (a) => a.title === 'Long notes',
+      );
+      assert.equal(made.length, 1);
+      assert.equal(model.unscripted, 0);
+      await app.api('artifactDelete', made[0].id);
+    },
+  },
 ];

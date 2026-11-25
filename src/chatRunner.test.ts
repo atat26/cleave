@@ -1346,3 +1346,27 @@ test('a step that must be asked about is never run just because the reply has no
   assert.equal(answer.role, 'tool');
   assert.match(String(answer.content), /as many steps as it can hold/);
 });
+
+test('a tool call that was cut off is never run: the model is told what happened, and gets an empty call back', async () => {
+  const { tools, runs } = fakeTools();
+  const cut: StreamEvent = {
+    type: 'tool-calls',
+    calls: [
+      { id: 'c1', name: 'read_page', arguments: '{"tab": 3, "x', cutOff: true },
+    ],
+  };
+  const t = setup(scripted([cut], [text('I will make it shorter.')]));
+  const started = t.runner.send(t.chatId, 'Go', { ...CONTEXT, tools });
+  assert.ok(started.ok);
+  await started.done;
+  assert.deepEqual(runs, [], 'a cut-off call must not run');
+  const second = t.calls[1].messages;
+  const asked = second.find((m) => m.role === 'assistant' && m.toolCalls);
+  assert.deepEqual(asked && 'toolCalls' in asked ? asked.toolCalls : null, [
+    { id: 'c1', name: 'read_page', arguments: '{}' },
+  ]);
+  const answer = second[second.length - 1];
+  assert.equal(answer.role, 'tool');
+  assert.match(String(answer.content), /cut off before it ended/);
+  assert.equal(t.chat.messages[1].status, 'done');
+});
