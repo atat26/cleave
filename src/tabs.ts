@@ -202,6 +202,7 @@ import { cookieIsOfSite, siteDataGroups } from './siteData';
 import {
   defaultFavicons,
   faviconFor,
+  iconAfterNavigation,
   parseFavicons,
   rememberFavicon,
 } from './favicons';
@@ -2341,8 +2342,19 @@ export async function createTabs(
       }
       // A new page: the search is over.
       if (tab.id === findTabId) closeFind(false);
-      // The new page will report its own icon.
-      updateTab(tab.id, { url: contents.getURL(), favicon: null });
+      // The new page will report its own icon if it has another one. Until then the tab keeps the
+      // icon it had on the same site (the engine does not always say it again), or shows the one
+      // remembered for the other site.
+      const before = model.findTab(state, tab.id);
+      updateTab(tab.id, {
+        url: contents.getURL(),
+        favicon: iconAfterNavigation(
+          favicons,
+          before?.url ?? '',
+          contents.getURL(),
+          before?.favicon ?? null,
+        ),
+      });
     });
     contents.on('did-navigate-in-page', () =>
       updateTab(tab.id, { url: contents.getURL() }),

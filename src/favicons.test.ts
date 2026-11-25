@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   defaultFavicons,
   faviconFor,
+  iconAfterNavigation,
   parseFavicons,
   rememberFavicon,
 } from './favicons.ts';
@@ -79,4 +80,42 @@ test('the cache is capped, dropping the oldest, and repaired from disk', () => {
   for (const junk of [null, 5, 'x', [], { icons: [] }]) {
     assert.deepEqual(parseFavicons(junk), defaultFavicons());
   }
+});
+
+test('moving about inside a site keeps its icon; another site shows the one remembered for it', () => {
+  const cache = rememberFavicon(
+    defaultFavicons(),
+    'https://b.com/',
+    'https://b.com/b.png',
+  );
+  const icon = 'https://a.com/a.png';
+  // Same site (www. does not matter): the tab keeps its icon.
+  assert.equal(
+    iconAfterNavigation(
+      cache,
+      'https://a.com/blog',
+      'https://www.a.com/blog/post',
+      icon,
+    ),
+    icon,
+  );
+  // Another site: the icon remembered for it, or none.
+  assert.equal(
+    iconAfterNavigation(cache, 'https://a.com/', 'https://b.com/page', icon),
+    'https://b.com/b.png',
+  );
+  assert.equal(
+    iconAfterNavigation(cache, 'https://a.com/', 'https://c.com/', icon),
+    null,
+  );
+  // No icon before: the same site has nothing to keep.
+  assert.equal(
+    iconAfterNavigation(cache, 'https://a.com/', 'https://a.com/x', null),
+    null,
+  );
+  // A page that is not a web page (the new-tab page, an error page) has no icon.
+  assert.equal(
+    iconAfterNavigation(cache, 'https://a.com/', 'data:text/html,hi', icon),
+    null,
+  );
 });
